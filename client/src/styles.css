@@ -1788,3 +1788,32 @@ button.danger {
   color: var(--bad);
   background: var(--bad-bg);
 }
+
+/* Engine card on the dashboard */
+.engine {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.engine > * {
+  margin: 0;
+  min-width: 0;
+}
+.engine-problems {
+  padding-left: var(--s4);
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.engine-settings {
+  display: grid;
+  gap: var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.engine-settings > * {
+  margin: 0;
+  min-width: 0;
+}
+.engine-settings select {
+  width: 100%;
+}

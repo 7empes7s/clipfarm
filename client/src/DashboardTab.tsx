@@ -22,6 +22,7 @@ import {
   PLATFORMS,
   WATCH_PLATFORM_LABELS,
 } from "../../shared/types";
+import { EngineCard } from "./EngineCard";
 import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { compact, duration, shortDate, usd } from "./format";
@@ -134,6 +135,8 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
           wide
         />
       </dl>
+
+      <EngineCard jobs={jobs} />
 
       <LiveNow />
 

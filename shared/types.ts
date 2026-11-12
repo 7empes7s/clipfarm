@@ -620,3 +620,47 @@ export interface Watchlist {
   platforms: WatchPlatformStatus[];
   lastPollAt: string | null;
 }
+
+/** How clipfarm transcribes and picks: on this server by default, cloud AI only as a speed-up. */
+export interface EngineSettings {
+  /** "Use cloud AI for speed": OpenAI transcribes and picks instead of the local engine. */
+  cloud: boolean;
+  /** The local speech model, e.g. "base.en". */
+  sttModel: string;
+  /** Let the local writer (a small model on this server) write hooks and titles. */
+  writer: boolean;
+}
+
+export interface EngineDownload {
+  id: string;
+  label: string;
+  bytes: number;
+}
+
+export interface EngineModelChoice {
+  id: string;
+  label: string;
+  note: string;
+  bytes: number;
+  needMb: number;
+  present: boolean;
+}
+
+export interface EngineStatus {
+  /** "test" when the server runs on fakes (demos and tests). */
+  mode: "local" | "cloud" | "test";
+  ready: boolean;
+  /** e.g. "Local engine: ready". */
+  headline: string;
+  /** Exactly what is missing or short, in plain words; empty when ready. */
+  problems: string[];
+  /** What "Set up the local engine" would download now. */
+  downloads: EngineDownload[];
+  /** The download job, while it waits, runs or after it failed. */
+  setupJob: { id: number; status: JobStatus; progress: number; message: string; error: string | null } | null;
+  memory: { availableMb: number; needMb: number; ok: boolean };
+  settings: EngineSettings;
+  sttModels: EngineModelChoice[];
+  /** Whether an OpenAI key is on the server, so "Use cloud AI for speed" can be switched on. */
+  cloudAvailable: boolean;
+}

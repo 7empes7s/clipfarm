@@ -39,8 +39,15 @@ open to the internet, not even for a minute.
 | systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
 | Backups | `/opt/backups/YYYY-MM-DD/clipfarm.db.gz`, newest 3 kept, database only |
 
-Memory: the service is capped at 1536 MiB (`MemoryMax`), which covers the server plus the one
-ffmpeg or yt-dlp job that runs at a time. Idle it uses about 100 MiB.
+Memory: the service is capped at 3072 MiB (`MemoryMax`), which covers the server plus the one
+heavy job that runs at a time (ffmpeg, yt-dlp, the local speech model at about 0.5 GiB, or the
+local hook writer at about 1.9 GiB). Idle it uses about 100 MiB. Before it loads a model the
+engine checks that the box has that much free plus 1 GiB spare, and refuses with the reason if not.
+
+Engine: clipfarm transcribes and picks highlights on this box, with no outside AI service. On
+its first start it downloads its programs and models into `/var/lib/clipfarm/models` (about
+1.3 GB, each file checked against a pinned SHA-256) as a job called "Engine setup". The
+Dashboard shows "Local engine: ready", or what is missing with a button that fetches it.
 
 ---
 
@@ -123,8 +130,8 @@ Fill in what the manager gives you. The file explains every line. The ones that 
 | Line | Value |
 |---|---|
 | `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
-| `OPENAI_API_KEY` | for transcripts (and for picking highlights, unless `LLM_API_KEY` is set) |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | only if highlights are picked by another provider |
+| `OPENAI_API_KEY` | optional: only for "Use cloud AI for speed" on the Dashboard. Empty = everything runs on this box |
+| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | optional: only if cloud picks should use another provider |
 | `POSTIZ_API_KEY` | step 11 |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | watchlist; empty skips that platform |
 
@@ -142,7 +149,7 @@ systemctl enable clipfarm
 systemctl cat clipfarm | grep -E '^(User|ExecStart|MemoryMax)='
 ```
 
-You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` and `MemoryMax=1536M`.
+You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` and `MemoryMax=3072M`.
 
 ## 5. First deploy (IT)
 
@@ -454,6 +461,15 @@ systemctl start clipfarm-backup.service              # fresh backup first
 clipfarm-deploy origin/main
 ```
 
+If `systemctl cat clipfarm | grep MemoryMax` still shows `MemoryMax=1536M` (a box set up before
+the local engine), install the new unit once, before the deploy. Until then the hook writer is
+refused for memory and hooks come from the transcript:
+
+```bash
+install -m 644 /opt/clipfarm-live/repo/ops/clipfarm/clipfarm.service /etc/systemd/system/clipfarm.service
+systemctl daemon-reload
+```
+
 `origin/main` is the newest merged commit; a commit id (`clipfarm-deploy 460bfc0`) or a tag works too.
 The script fetches from GitHub, builds in a new folder while the old release keeps running,
 then switches and restarts (a few seconds of downtime; a job that was running goes back in the
@@ -520,7 +536,7 @@ Common problems:
 | Phone shows the Cloudflare login again and again | The email is not in the Access policy (step 7) |
 | Phone shows "Sign in through Cloudflare Access to use clipfarm." | The request did not come through Access: a bypass was added for a path it should not cover (step 7), or someone called the port directly |
 | `NRestarts` keeps growing | `journalctl -u clipfarm -n 50`: a bad setting in the env file, or the port is taken (step 1) |
-| A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 1536 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
+| A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 3072 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
 | Downloads fail for every link | `yt-dlp -U`, then retry the job in the app |
 | Disk filling up | `du -sh /var/lib/clipfarm/media`; lower `MEDIA_KEEP_REJECTED_DAYS`, `systemctl start clipfarm-media-cleanup.service` |
 

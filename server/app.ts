@@ -10,6 +10,7 @@ import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
+import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
@@ -35,6 +36,8 @@ export interface AppDeps {
   accountStats?: AccountStatsStore;
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
+  /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
+  engine?: { engine: Engine; fake: boolean };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -78,6 +81,7 @@ export function createApp({
   publisher,
   accountStats,
   watchlist,
+  engine,
   seedDemoClip,
   clientDir,
   requireAccess,
@@ -314,6 +318,28 @@ export function createApp({
   }
 
   // "Load demo clips" on an empty gallery: generated test patterns, made by a queued job.
+  if (engine) {
+    const status = () => engine.engine.status(queue.list(200), engine.fake ? "test" : "auto");
+
+    app.get("/api/engine", (_req, res) => {
+      res.json(status());
+    });
+
+    app.put("/api/engine/settings", (req, res) => {
+      engine.engine.saveSettings(req.body);
+      res.json(status());
+    });
+
+    // "Set up the local engine": one download job at a time; a second tap joins the one waiting.
+    app.post("/api/engine/setup", (_req, res) => {
+      const now = status();
+      if (now.mode === "local" && now.downloads.length > 0 && !(now.setupJob && now.setupJob.status !== "failed")) {
+        queue.enqueue(ENGINE_SETUP_JOB, {});
+      }
+      res.status(202).json(status());
+    });
+  }
+
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
   });

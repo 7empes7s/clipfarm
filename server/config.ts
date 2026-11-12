@@ -1,10 +1,11 @@
 import { join, resolve } from "node:path";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
+import { Engine } from "./engine/engine.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
-import type { Transcriber, TranscribeOptions } from "./pipeline/transcript/types.js";
+import type { Transcriber } from "./pipeline/transcript/types.js";
 import { FakePicker } from "./pipeline/picks/fake.js";
 import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
@@ -29,6 +30,11 @@ export interface Config {
   requireAccess: boolean;
   dbFile: string;
   downloader: AudioDownloader;
+  /** clipfarm's own engine: local speech-to-text and picks by default, cloud AI as an option. */
+  engine: Engine;
+  /** True when transcription and picks are test doubles (demos, e2e), so the engine is not used. */
+  fakeEngine: boolean;
+  /** The engine's transcriber and picker, or the fakes. */
   transcriber: Transcriber;
   picker: Picker;
   sectionDownloader: SectionDownloader;
@@ -50,6 +56,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const fakes = env.CLIPFARM_FAKES === "1";
   const dataDir = resolve(env.DATA_DIR ?? "data");
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
+  const engine = new Engine({
+    modelsDir: join(dataDir, "models"),
+    whisperBin: env.WHISPER_BIN || undefined,
+    llamaServerBin: env.LLAMA_SERVER_BIN || undefined,
+    cloudTranscriber: env.OPENAI_API_KEY ? new OpenAiTranscriber({ apiKey: env.OPENAI_API_KEY }) : null,
+    cloudPicker: cloudPicker(env),
+  });
+  const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
+  const fakePicker = fakes || env.PICKER === "fake";
   return {
     port: Number(env.PORT ?? 3000),
     host: env.HOST || undefined,
@@ -58,8 +73,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     downloader: fakeDownloads
       ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))
       : new YtDlpDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
-    transcriber: fakes || env.TRANSCRIBER === "fake" ? new FakeTranscriber() : openAiOrMissingKey(env.OPENAI_API_KEY),
-    picker: fakes || env.PICKER === "fake" ? new FakePicker() : llmPickerOrMissingKey(env),
+    engine,
+    fakeEngine: fakeTranscriber && fakePicker,
+    transcriber: fakeTranscriber ? new FakeTranscriber() : engine.transcriber,
+    picker: fakePicker ? new FakePicker() : engine.picker,
     sectionDownloader: fakeDownloads ? new FakeSectionDownloader() : new YtDlpSectionDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
@@ -78,15 +95,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-function llmPickerOrMissingKey(env: NodeJS.ProcessEnv): Picker {
+/** The optional cloud picker ("Use cloud AI for speed"); null without a key. */
+function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
-  if (!apiKey) {
-    // No signals-only fallback: only the model can flag spoilers and leaks, so picking stops instead.
-    return {
-      name: "llm",
-      pick: () => Promise.reject(new Error("LLM_API_KEY is not set on the server, so highlights cannot be picked.")),
-    };
-  }
+  if (!apiKey) return null;
   return new LlmPicker(
     new OpenAiCompatibleChat({
       apiKey,
@@ -117,15 +129,4 @@ function postingService(env: NodeJS.ProcessEnv): PostingService {
   if (choice === "postiz" && postiz) return new PostizService(postiz);
   if (choice === "upload-post" && uploadPost) return new UploadPostService(uploadPost);
   return new NoPostingService();
-}
-
-function openAiOrMissingKey(apiKey: string | undefined): Transcriber {
-  if (apiKey) return new OpenAiTranscriber({ apiKey });
-  // Start anyway so the gallery works; transcription jobs fail with a clear reason.
-  return {
-    name: "openai",
-    transcribe(_audio: string, _opts: TranscribeOptions) {
-      return Promise.reject(new Error("OPENAI_API_KEY is not set on the server, so audio cannot be transcribed."));
-    },
-  };
 }
