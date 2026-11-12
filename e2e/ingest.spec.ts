@@ -6,6 +6,7 @@ test("add a campaign, add a VOD link, watch the job run and read the transcript 
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "clipfarm" })).toBeVisible();
+  await page.getByRole("link", { name: /^Sources/ }).click();
   await expect(page.getByText("No campaigns yet.")).toBeVisible();
 
   await page.getByRole("button", { name: "Add a campaign" }).click();
@@ -27,8 +28,10 @@ test("add a campaign, add a VOD link, watch the job run and read the transcript 
   await campaign.getByLabel("Stream or video link").fill("https://www.twitch.tv/videos/123456");
   await campaign.getByRole("button", { name: "Add", exact: true }).click();
 
+  await page.getByRole("link", { name: /^Jobs/ }).click();
   const job = page.getByTestId("job").first();
   await expect(job.locator(".job-status")).toHaveText("Done", { timeout: 30_000 });
+  await page.getByRole("link", { name: /^Sources/ }).click();
   const vod = campaign.getByTestId("vod");
   await expect(vod.getByText("Transcript ready")).toBeVisible();
   await expect(vod.getByText("20 words")).toBeVisible();
@@ -42,7 +45,7 @@ test("add a campaign, add a VOD link, watch the job run and read the transcript 
 });
 
 test("closing the campaign sheet with × keeps the page as it was", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/#sources");
   await page.getByRole("button", { name: "Add a campaign" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Db } from "../db/index.js";
 import type { Job, JobStatus } from "../../shared/types.js";
-import { HttpError, NotFoundError } from "../errors.js";
+import { HttpError, NotFoundError, ValidationError } from "../errors.js";
 
 export interface JobContext {
   job: Job;
@@ -38,6 +38,7 @@ interface JobRow {
   max_attempts: number;
   cancel_requested: number;
   vod_id: number | null;
+  clip_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +54,7 @@ function toJob(r: JobRow): Job {
     attempts: r.attempts,
     maxAttempts: r.max_attempts,
     vodId: r.vod_id,
+    clipId: r.clip_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -91,15 +93,15 @@ export class JobQueue {
     this.current?.controller.abort();
   }
 
-  enqueue(type: string, payload: unknown, opts: { vodId?: number; maxAttempts?: number } = {}): Job {
+  enqueue(type: string, payload: unknown, opts: { vodId?: number; clipId?: number; maxAttempts?: number } = {}): Job {
     if (!this.opts.handlers[type]) throw new Error(`No handler for job type "${type}"`);
     const ts = this.now().toISOString();
     const { lastInsertRowid } = this.db
       .prepare(
-        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, created_at, updated_at)
-         VALUES (?, ?, 'queued', ?, ?, ?, ?)`,
+        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, clip_id, created_at, updated_at)
+         VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)`,
       )
-      .run(type, JSON.stringify(payload ?? {}), opts.maxAttempts ?? 3, opts.vodId ?? null, ts, ts);
+      .run(type, JSON.stringify(payload ?? {}), opts.maxAttempts ?? 3, opts.vodId ?? null, opts.clipId ?? null, ts, ts);
     const job = this.get(Number(lastInsertRowid));
     if (!this.stopped) this.kick();
     return job;
@@ -123,6 +125,22 @@ export class JobQueue {
       this.db.prepare("UPDATE jobs SET cancel_requested = 1 WHERE id = ?").run(id);
       if (this.current?.id === id) this.current.controller.abort();
     }
+    return this.get(id);
+  }
+
+  /** Puts a failed or cancelled job back in the queue with fresh tries. */
+  retry(id: number): Job {
+    const job = this.get(id);
+    if (job.status !== "failed" && job.status !== "cancelled") {
+      throw new ValidationError("Only a failed or cancelled job can be tried again.");
+    }
+    this.db
+      .prepare(
+        `UPDATE jobs SET status = 'queued', attempts = 0, progress = 0, error = NULL, cancel_requested = 0,
+           message = 'Waiting', updated_at = ? WHERE id = ?`,
+      )
+      .run(this.now().toISOString(), id);
+    if (!this.stopped) this.kick();
     return this.get(id);
   }
 

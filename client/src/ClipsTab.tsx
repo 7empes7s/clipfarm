@@ -1,12 +1,24 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import type { Clip, Post, PostingInfo, Source } from "../../shared/types";
-import { PLATFORM_LABELS } from "../../shared/types";
+import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { ExportSheet } from "./ExportSheet";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
 import { shortDate } from "./format";
+import { filterClips } from "./review";
 
-const CLIP_STATUS_LABEL: Record<Clip["status"], string> = { pending: "To review", approved: "Approved", rejected: "Rejected" };
+const CLIP_STATUS_LABEL: Record<Clip["status"], string> = {
+  pending: "To review",
+  approved: "Approved",
+  rejected: "Rejected",
+  rendering: "Being remade",
+};
+
+const VIEW_TEXT = {
+  approved: { title: "Approved", empty: "No approved clips waiting to post. Approve clips in the Inbox." },
+  posted: { title: "Posted", empty: "Nothing posted yet. Post an approved clip to see it here." },
+  rejected: { title: "Rejected", empty: "No rejected clips." },
+} as const;
 
 export function postStatusLabel(p: Post): string {
   if (p.status === "posted") return "Posted";
@@ -18,8 +30,18 @@ function shortTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export function ClipsTab({ sources }: { sources: Source[] }) {
-  const [clips, setClips] = useState<Clip[]>([]);
+/** The Approved, Posted and Rejected lists: posting, export, views and Whop tracking. */
+export function ClipsTab({
+  view,
+  clips: allClips,
+  sources,
+  onChange,
+}: {
+  view: keyof typeof VIEW_TEXT;
+  clips: Clip[];
+  sources: Source[];
+  onChange: () => Promise<void>;
+}) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [info, setInfo] = useState<PostingInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,14 +50,13 @@ export function ClipsTab({ sources }: { sources: Source[] }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [c, p] = await Promise.all([api.clips(), api.posts()]);
-      setClips(c);
+      const [, p] = await Promise.all([onChange(), api.posts()]);
       setPosts(p);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
-  }, []);
+  }, [onChange]);
 
   useEffect(() => {
     const first = setTimeout(() => {
@@ -47,6 +68,7 @@ export function ClipsTab({ sources }: { sources: Source[] }) {
 
   const closePost = useCallback(() => setPosting(null), []);
   const closeExport = useCallback(() => setExporting(null), []);
+  const clips = filterClips(allClips, view);
 
   async function act(fn: () => Promise<unknown>) {
     try {
@@ -59,22 +81,22 @@ export function ClipsTab({ sources }: { sources: Source[] }) {
 
   return (
     <section aria-labelledby="clips-title">
-      <h2 id="clips-title">Clips</h2>
-      {info && (
+      <h2 id="clips-title">{VIEW_TEXT[view].title}</h2>
+      {view !== "rejected" && info && (
         <p className="hint">
           {info.service === "none"
             ? "No posting service is set up: use Export to post by hand."
             : `Posting through ${info.label}, ${info.accounts.length} account${info.accounts.length === 1 ? "" : "s"} connected.`}
         </p>
       )}
-      {info && <RulesForm info={info} onSaved={(rules) => setInfo({ ...info, rules })} />}
+      {view !== "rejected" && info && <RulesForm info={info} onSaved={(rules) => setInfo({ ...info, rules })} />}
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
       {clips.length === 0 ? (
-        <p className="empty">No clips yet. They appear here once a stream has been cut into clips.</p>
+        <p className="empty">{VIEW_TEXT[view].empty}</p>
       ) : (
         <ul className="stack">
           {clips.map((clip) => {
@@ -90,6 +112,7 @@ export function ClipsTab({ sources }: { sources: Source[] }) {
                   </div>
                   <p className="hint">
                     {source?.creatorName ?? "Unknown creator"} · {Math.round(clip.durationSec)} s
+                    {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
                   <div className="actions">
                     {clip.status !== "approved" && (
@@ -107,7 +130,7 @@ export function ClipsTab({ sources }: { sources: Source[] }) {
                         </button>
                       </>
                     )}
-                    {clip.status !== "rejected" && (
+                    {clip.status !== "rejected" && clip.postCount === 0 && (
                       <button type="button" onClick={() => void act(() => api.rejectClip(clip.id))}>
                         Reject
                       </button>

@@ -9,11 +9,12 @@ test("approve a clip, post it on two accounts, export it and see it in Stats (39
   expect(seeded.status()).toBe(201);
 
   await page.goto("/");
-  await page.getByRole("link", { name: "Clips" }).click();
+  // Approve it in the inbox, then post it from Approved.
+  await expect(page.getByTestId("current-clip")).toContainText("He actually landed the jump");
+  await page.getByTestId("decide").getByRole("button", { name: /^Approve/ }).click();
+  await page.getByRole("link", { name: /^Approved/ }).click();
   await expect(page.getByText("Posting through Test posting service, 4 accounts connected.")).toBeVisible();
-  const clip = page.getByTestId("clip").filter({ hasText: "He actually landed the jump" }).first();
-  await expect(clip.getByText("To review")).toBeVisible();
-  await clip.getByRole("button", { name: "Approve" }).click();
+  let clip = page.getByTestId("clip").filter({ hasText: "He actually landed the jump" }).first();
   await expect(clip.getByText("Approved")).toBeVisible();
 
   await clip.getByRole("button", { name: "Post", exact: true }).click();
@@ -26,6 +27,9 @@ test("approve a clip, post it on two accounts, export it and see it in Stats (39
   await expect(sheet.getByText(/private until the posting app passes their review/)).toBeVisible();
   await sheet.getByRole("button", { name: "Post now" }).click();
   await expect(sheet).toBeHidden();
+
+  await page.getByRole("link", { name: /^Posted/ }).click();
+  clip = page.getByTestId("clip").filter({ hasText: "He actually landed the jump" }).first();
 
   const posts = clip.getByTestId("post");
   await expect(posts).toHaveCount(2);

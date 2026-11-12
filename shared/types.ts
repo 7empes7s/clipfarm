@@ -35,11 +35,21 @@ export interface Permission {
 
 export type PermissionState = "active" | "expired" | "none";
 
+/** Where the face cam sits in the stream's frame, as fractions (0..1) of its width and height. */
+export interface FaceCam {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Source {
   id: number;
   creatorName: string;
   channelUrls: string[];
   bannedContent: string;
+  /** Set once per creator in Sources; the stacked layout puts this region on top. */
+  faceCam: FaceCam | null;
   createdAt: string;
   permissions: Permission[];
   /** Whether the source has a permission record that is in force right now. */
@@ -75,6 +85,7 @@ export interface Job {
   attempts: number;
   maxAttempts: number;
   vodId: number | null;
+  clipId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -111,18 +122,69 @@ export interface VodDetail extends Vod {
   words: Word[];
 }
 
-export type ClipStatus = "pending" | "approved" | "rejected";
+/** "rendering": an edit was saved and the new version is being made; it returns to "pending". */
+export type ClipStatus = "pending" | "approved" | "rejected" | "rendering";
+
+export const CLIP_LAYOUTS = ["stacked", "center", "full"] as const;
+export type ClipLayout = (typeof CLIP_LAYOUTS)[number];
+
+export const CLIP_LAYOUT_LABELS: Record<ClipLayout, string> = {
+  stacked: "Face cam on top",
+  center: "Center crop",
+  full: "Full frame",
+};
+
+export const REJECT_REASONS = ["boring", "spoiler", "bad-crop", "bad-captions", "other"] as const;
+export type RejectReason = (typeof REJECT_REASONS)[number];
+
+export const REJECT_REASON_LABELS: Record<RejectReason, string> = {
+  boring: "Boring",
+  spoiler: "Spoiler",
+  "bad-crop": "Bad crop",
+  "bad-captions": "Bad captions",
+  other: "Other",
+};
+
+/** Shortest and longest clip an edit may produce, in seconds. */
+export const CLIP_MIN_SEC = 3;
+export const CLIP_MAX_SEC = 60;
 
 export interface Clip {
   id: number;
   sourceId: number;
   vodId: number | null;
   title: string;
+  /** The text on screen for the first seconds. */
+  hook: string;
+  /** Why the picker chose it. */
+  reason: string;
+  /** 0..100 from the picker; null when unknown. */
+  score: number | null;
   durationSec: number;
   status: ClipStatus;
+  rejectReason: RejectReason | null;
+  layout: ClipLayout;
+  /** Cut points inside the longer source section ("master") the clip was rendered from. */
+  startSec: number;
+  endSec: number;
+  masterDurationSec: number;
+  /** Caption words, timed in master seconds. */
+  captionWords: Word[];
+  postCount: number;
   /** Where the gallery plays and downloads the MP4. */
   videoUrl: string;
+  /** The source section, for trimming and the face cam frame. */
+  masterUrl: string;
   createdAt: string;
+}
+
+export interface ClipEditInput {
+  title: string;
+  hook: string;
+  captionText: string;
+  layout: ClipLayout;
+  startSec: number;
+  endSec: number;
 }
 
 export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none"] as const;
