@@ -62,6 +62,9 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `UPLOAD_POST_PLATFORMS` | `tiktok,youtube,instagram` | Platforms connected on that profile |
 | `POSTING_SERVICE` | auto | `postiz`, `upload-post` or `none`; only needed when both are set |
 | `POSTING_REFRESH_MINUTES` | `60` | How often post links and views are read (5 or more) |
+| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
+| `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist |
+| `WATCHLIST_POLL_MINUTES` | `15` | How often the watchlist checks for live streams and new VODs (5 or more) |
 
 ## Posting (Postiz or Upload-Post)
 
@@ -99,6 +102,27 @@ Views come from the service on a timer, or by hand. "Mark sent to Whop" records 
 counted once a post reaches the campaign's minimum views) per campaign and platform, plus cost per
 approved clip.
 
+## Watchlist
+
+The **Watchlist** tab follows the streamers worth clipping: their Twitch, Kick and YouTube channels,
+language, games (GTA VI first) and clipping program (Whop Content Rewards, their own program, Kick's
+clipping program, or none known). It starts from `server/sources/watchlist/seed.json` (names and
+handles only: the most-clipped streamers of 2026 and the top GTA streamers on Twitch and Kick, with
+the sources and date) on the first start; after that the list is edited in the app.
+
+- **Permission first.** A creator counts as allowed only when a campaign in Sources (found by the
+  same name, or picked in Edit) has an active permission record. Without one they are watched but
+  never ingested: "Needs permission: join their program".
+- **New VODs.** Every `WATCHLIST_POLL_MINUTES` the server reads Twitch Helix
+  (`videos?type=archive`, `streams`), Kick's public channel endpoints and YouTube's uploads playlist
+  (1 quota unit a call, not search). A finished VOD from the last 48 hours whose category or title
+  names one of the creator's games (and no leak) is queued for ingest, newest first, when the
+  creator's **Auto-ingest** switch is on. The job queue still runs one job at a time. The same
+  stream simulcast on two platforms is queued once.
+- **Live now** shows who on the list is streaming and what.
+- A platform that errors is backed off (5 min, doubling up to 6 h, longer if it sends Retry-After);
+  a platform without keys is skipped and the tab says what to set.
+
 ## Checks
 
 ```sh
@@ -108,7 +132,7 @@ npm test           # Vitest: unit tests + a real-ffmpeg fixture test on a genera
 npm run test:e2e   # Playwright at 390 px against the built app, with fakes
 ```
 
-No test touches the network or a paid API: yt-dlp, OpenAI, Postiz and Upload-Post are faked
+No test touches the network or a paid API: yt-dlp, OpenAI, Postiz, Upload-Post, Twitch, Kick and YouTube are faked
 (adapter tests use fixtures of their documented answers). Sample media is generated
 by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is committed.
 

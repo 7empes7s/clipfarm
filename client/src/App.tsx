@@ -8,6 +8,7 @@ import { FaceCamSheet } from "./FaceCamSheet";
 import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
 import { StatsTab } from "./StatsTab";
+import { WatchlistTab } from "./WatchlistTab";
 import { Clips } from "./Clips";
 import { clock, shortDate, usd } from "./format";
 
@@ -40,6 +41,7 @@ const TABS = [
   { id: "approved", label: "Approved" },
   { id: "posted", label: "Posted" },
   { id: "sources", label: "Sources" },
+  { id: "watchlist", label: "Watchlist" },
   { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
 ] as const;
@@ -122,7 +124,7 @@ export function App() {
         {TABS.map((t) => (
           <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
             {t.label}
-            {t.id !== "stats" && <span className="count">{counts[t.id]}</span>}
+            {t.id !== "stats" && t.id !== "watchlist" && <span className="count">{counts[t.id]}</span>}
           </a>
         ))}
       </nav>
@@ -138,6 +140,7 @@ export function App() {
         <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />
       )}
       {tab === "stats" && <StatsTab />}
+      {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
 
       {tab === "sources" && (
         <section aria-labelledby="campaigns-title">

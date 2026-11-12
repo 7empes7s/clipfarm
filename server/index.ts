@@ -16,6 +16,9 @@ import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
 import { SourcesRepo } from "./sources/repo.js";
+import { WatchlistPoller } from "./sources/watchlist/poller.js";
+import { WatchlistRepo } from "./sources/watchlist/repo.js";
+import seed from "./sources/watchlist/seed.json" with { type: "json" };
 import { VodsRepo } from "./vods/repo.js";
 
 const config = loadConfig();
@@ -51,17 +54,33 @@ const queue: JobQueue = new JobQueue(db, {
   },
 });
 
+const watchRepo = new WatchlistRepo(db, sources);
+watchRepo.seedOnce(seed.creators);
+const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
+
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
 const here = fileURLToPath(import.meta.url);
 const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : undefined;
 const seedDemoClip =
   process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
-const app = createApp({ sources, vods, picks, queue, clips, posts, publisher, seedDemoClip, clientDir });
+const app = createApp({
+  sources,
+  vods,
+  picks,
+  queue,
+  clips,
+  posts,
+  publisher,
+  watchlist: { repo: watchRepo, poller },
+  seedDemoClip,
+  clientDir,
+});
 
 queue.start();
 // Post links and views, read on a timer within the service's API limits.
 const refreshTimer = setInterval(() => void publisher.refresh(), config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
+poller.start(config.watchPollMinutes * 60_000);
 const server = app.listen(config.port, () => {
   console.log(
     `clipfarm on http://localhost:${config.port} (downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -72,6 +91,7 @@ function shutdown() {
   // A running job is aborted and put back in the queue for the next start.
   queue.stop();
   clearInterval(refreshTimer);
+  poller.stop();
   server.close(() => {
     void queue.idle().then(() => {
       db.close();

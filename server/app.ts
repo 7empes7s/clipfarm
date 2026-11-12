@@ -14,6 +14,8 @@ import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
 import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
+import type { WatchlistPoller } from "./sources/watchlist/poller.js";
+import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
@@ -24,6 +26,8 @@ export interface AppDeps {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  /** Streamer watchlist and its live / new-VOD checks. */
+  watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -48,7 +52,18 @@ function platformParam(raw: unknown): Platform {
   return raw as Platform;
 }
 
-export function createApp({ sources, vods, picks, queue, clips, posts, publisher, seedDemoClip, clientDir }: AppDeps): express.Express {
+export function createApp({
+  sources,
+  vods,
+  picks,
+  queue,
+  clips,
+  posts,
+  publisher,
+  watchlist,
+  seedDemoClip,
+  clientDir,
+}: AppDeps): express.Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
@@ -219,6 +234,44 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
   app.get("/api/stats", (_req, res) => {
     res.json(publisher.stats());
   });
+
+  if (watchlist) {
+    const { repo, poller } = watchlist;
+
+    app.get("/api/watchlist", (_req, res) => {
+      res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+
+    app.post("/api/watchlist", (req, res) => {
+      res.status(201).json(repo.create(parseWatchedCreator(req.body)));
+    });
+
+    app.put("/api/watchlist/:id", (req, res) => {
+      res.json(repo.update(idParam(req.params.id), parseWatchedCreator(req.body)));
+    });
+
+    app.delete("/api/watchlist/:id", (req, res) => {
+      repo.remove(idParam(req.params.id));
+      res.status(204).end();
+    });
+
+    // Turning auto-ingest on checks that creator right away, so a new VOD is queued without waiting.
+    app.put("/api/watchlist/:id/auto-ingest", async (req, res) => {
+      const id = idParam(req.params.id);
+      const on = (req.body ?? {}).on === true;
+      if (on && repo.get(id).permissionState !== "active") {
+        throw new ValidationError("Needs permission: join their program and add it as a campaign first.");
+      }
+      repo.setAutoIngest(id, on);
+      if (on) await poller.pollCreator(id);
+      res.json(repo.get(id));
+    });
+
+    app.post("/api/watchlist/poll", async (_req, res) => {
+      await poller.pollAll();
+      res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+  }
 
   // "Load demo clips" on an empty gallery: generated test patterns, made by a queued job.
   app.post("/api/demo", (_req, res) => {
