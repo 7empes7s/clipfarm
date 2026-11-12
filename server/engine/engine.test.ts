@@ -94,7 +94,7 @@ function setup(opts: { availableMb?: number; capRoomMb?: number; cloud?: boolean
   const vods = new VodsRepo(db);
   const publisher = new Publisher({ sources, clips, posts, service: new FakePostingService(), vodTitle: () => null });
   const app = createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher, engine: { engine, fake: false } });
-  return { engine, queue, modelsDir, app };
+  return { engine, queue, modelsDir, app, db };
 }
 
 const transcribeOpts = { durationSec: 10, tmpDir: tmpdir() };
@@ -251,6 +251,21 @@ describe("engine API", () => {
     expect(refused.body.error).toContain("Cloud AI needs an OpenAI key");
 
     await queue.idle();
+    const done = await request(app).get("/api/engine").expect(200);
+    expect(done.body).toMatchObject({ ready: true, headline: "Local engine: ready" });
+  });
+
+  it("a tap gets a setup job that is sitting in the queue going", async () => {
+    const { app, queue, db } = setup();
+    const ts = new Date().toISOString();
+    // A waiting job nothing is working on: the queue was never told about it.
+    db.prepare(
+      "INSERT INTO jobs (type, payload, status, max_attempts, created_at, updated_at) VALUES (?, '{}', 'queued', 3, ?, ?)",
+    ).run(ENGINE_SETUP_JOB, ts, ts);
+
+    await request(app).post("/api/engine/setup").expect(202);
+    await queue.idle();
+    expect(queue.list().map((j) => `${j.type}:${j.status}`)).toEqual([`${ENGINE_SETUP_JOB}:done`]);
     const done = await request(app).get("/api/engine").expect(200);
     expect(done.body).toMatchObject({ ready: true, headline: "Local engine: ready" });
   });

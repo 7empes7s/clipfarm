@@ -392,6 +392,9 @@ export function createApp({
       const now = status();
       if (now.mode === "local" && now.downloads.length > 0 && !(now.setupJob && now.setupJob.status !== "failed")) {
         queue.enqueue(ENGINE_SETUP_JOB, {});
+      } else if (now.setupJob?.status === "queued") {
+        // Already waiting: make sure the queue is working on it, so the tap is never a dead end.
+        void queue.kick();
       }
       res.status(202).json(status());
     });
