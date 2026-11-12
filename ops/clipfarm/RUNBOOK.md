@@ -23,6 +23,7 @@ logs, backups and restore.
 | 10 | Backups and disk cleanup | IT |
 | 11 | Point clipfarm at the local Postiz | IT, key from the manager |
 | 12 | Test the live site end to end | Manager makes the token, then runs it (or IT does) |
+| IT ops | Test keys, add a source, turn a video into clips, list clips: no browser | IT |
 
 Do step 7 before step 8: the sign-in exists before the address does, so the gallery is never
 open to the internet, not even for a minute.
@@ -34,6 +35,7 @@ open to the internet, not even for a minute.
 | Code | `/opt/clipfarm-live/`: `repo/` (git clone), `releases/<time>-<commit>/` (last 2 kept), `current` → the live release |
 | Settings and keys | `/etc/clipfarm/clipfarm.env` (mode 600, never in git) |
 | Scripts root runs | `/usr/local/sbin/clipfarm-deploy`, `/usr/local/sbin/clipfarm-backup` (root-owned copies of `deploy.sh`, `backup.sh`) |
+| Ops command | `/usr/local/sbin/clipfarm-ops` (copy of `ops.sh`; runs as the `clipfarm` user through `systemd-run`, see "IT ops") |
 | Data | `/var/lib/clipfarm/`: `clipfarm.db` (SQLite) and `media/` (final clips) |
 | Web app | `127.0.0.1:5310` only, published through Caddy (`:80`) and the Cloudflare tunnel |
 | systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
@@ -101,10 +103,11 @@ install -d -o root -g root -m 700 /etc/clipfarm
 runuser -u clipfarm -- git clone https://github.com/7empes7s/clipfarm.git /opt/clipfarm-live/repo
 install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/deploy.sh /usr/local/sbin/clipfarm-deploy
 install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/backup.sh /usr/local/sbin/clipfarm-backup
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/ops.sh /usr/local/sbin/clipfarm-ops
 ls /opt/clipfarm-live /usr/local/sbin/clipfarm-*
 ```
 
-You should see `releases repo` and the two scripts. They are copied to `/usr/local/sbin` on
+You should see `releases repo` and the three scripts. They are copied to `/usr/local/sbin` on
 purpose: root runs them, so they must be files only root can change (everything under
 `/opt/clipfarm-live` belongs to the `clipfarm` user).
 
@@ -128,6 +131,7 @@ The file explains every line. The ones that matter:
 | Line | Value |
 |---|---|
 | `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
+| `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | leave as they are: the server finds the Cloudflare team and application by itself from the public address (an env file without these lines works the same) |
 | `OPENAI_API_KEY` | for transcripts (and for picking highlights, unless `LLM_API_KEY` is set) |
 | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | only if highlights are picked by another provider |
 | `POSTIZ_API_KEY` | step 11 |
@@ -178,7 +182,10 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5310/    # expect: 40
 ss -ltnp 'sport = :5310'                                            # expect 127.0.0.1:5310, not 0.0.0.0 or *
 ```
 
-The 403 is right: the gallery only answers requests that came through the Cloudflare sign-in.
+The 403 is right: the gallery only answers requests that carry a sign-in signed by Cloudflare
+Access for this application. The server checks the signature against the team's public keys, so
+a header someone made up on the box (`-H "Cf-Access-Jwt-Assertion: x"`) gets 403 too. To work on
+the box, use `clipfarm-ops` ("IT ops" below): it needs no sign-in.
 
 ## 6. Caddy: route the hostname to clipfarm (IT)
 
@@ -243,7 +250,7 @@ private (a name, colours and the icon), and the server keeps exactly these paths
 3. Policy: Action **Bypass**, Include **Everyone**. Save.
 
 Don't bypass anything else. In particular not `/api/*`: the server would refuse it anyway
-(`CLIPFARM_REQUIRE_ACCESS=1` turns away every request that did not come through Access).
+(`CLIPFARM_REQUIRE_ACCESS=1` turns away every request without a sign-in signed by Access).
 
 ## 8. Cloudflare tunnel: add the public hostname (Manager)
 
@@ -453,10 +460,87 @@ Result: PASS
 | A step says `FAIL` | The table names the step; the lines above it say what was expected | Fix, then run again: each run uses its own test campaign |
 
 Whatever happens, the run removes its test campaigns ("E2E test …") and their clips at the end.
-If the machine dies mid-run, they stay: open **Sources**, note the "E2E test …" names, and run
-`curl -X DELETE` on `http://127.0.0.1:5310/api/sources/<id>` on the box for each (ids from
-`curl -s http://127.0.0.1:5310/api/sources`; both need `-H "Cf-Access-Jwt-Assertion: x"` while
-`CLIPFARM_REQUIRE_ACCESS=1`). A campaign whose clips were really posted is never removed this way.
+If the machine dies mid-run, they stay: on the box, `clipfarm-ops source list` shows the
+"E2E test …" entries with their ids and `clipfarm-ops source remove <id>` removes each (how to
+run it: "IT ops" below). A campaign whose clips were really posted is never removed this way.
+
+## IT ops: run clipfarm without a browser (IT)
+
+`clipfarm-ops` does on the box what the app does in the browser: test the keys, add a source,
+turn a video into clips, list the clips, show the queue. It needs no sign-in and no token: it
+runs as the `clipfarm` user and reads the same database and saved keys as the service. It never
+posts, never prints a key, and exits non-zero with one plain line when something fails.
+
+Install it once (and again after an update that changed `ops/clipfarm/ops.sh`):
+
+```bash
+runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull --ff-only
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/ops.sh /usr/local/sbin/clipfarm-ops
+```
+
+Every command is run the same way, as one `systemd-run` (as root). Only the last words change:
+
+```bash
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops test-keys
+```
+
+You should see one line per connection: `OpenAI: Working`, `Twitch: Working`, `YouTube: Not set`...
+A `Failed <reason>` line says what the service answered (the key is wrong, no connection). The
+manager fixes a key in the app under **⋯ > Settings**; nothing to restart.
+
+**A first run, for the TJR campaign** (replace `<campaign>` with the campaign's Whop link, or its
+id on whop.com):
+
+```bash
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops source add kick.com/tjr --kind whop-campaign --campaign <campaign> --name TJR --rules "Caption must include #TJR. English only. Made without AI voices or added logos. Submit within 30 minutes of posting."
+
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops run latest kick.com/tjr
+```
+
+`source add` prints `Added. Source 1: TJR (https://kick.com/tjr), Whop campaign …, permission active`
+(run twice, it says `Already there, nothing changed`). The rules are the campaign's brief: a
+hashtag in them (`#TJR`) is put in every caption, and the picker reads the rest.
+
+`run` prints the job, one line per step as it moves, and ends like this:
+
+```
+Job 14: video 5 of TJR: https://kick.com/tjr/videos/…
+The clipfarm service does the work; this command follows it.
+[02:14:07] job 14 ingest: Downloading audio 5%
+[02:19:40] job 14 ingest: Transcribing 62%
+[02:26:12] job 15 picks: Finding highlights 10%
+[02:27:30] job 16 render: Cutting and adding captions 30%
+Done in 24m 10s: 11 clips from a 1h 2m video (2 picks left out by the rules). Kept private: nothing was posted.
+clip 31  pending  score 92  27 s  2026-11-13 02:31  /var/lib/clipfarm/media/clips/pick-31.mp4  …
+```
+
+The clips are then in the gallery on the phone, waiting for review. Nothing is posted by this
+command, ever: posting stays a tap in the app.
+
+| Command (the last words of the line) | What it does |
+|---|---|
+| `test-keys` | Tests each saved key, the same test as the Test button in Settings |
+| `source add <channel link> --campaign <link or Whop id> [--name … --rules "…" --banned "…" --platforms tiktok,youtube,instagram --rate 1.5 --min-views 3000 --expires 2026-12-31]` | Adds a creator with its permission record. `--kind direct-permission` or `own-content` for the other kinds |
+| `source list`, `source remove <id>` | Shows the sources; removes one with everything made from it (refused once its clips were posted) |
+| `run latest <channel link or source id> [--count N]` | The channel's newest finished video → clips. Says `Nothing new` when that video was already done |
+| `run <video link> [--source <id or channel link>] [--count N]` | One video → clips. `--source` when the link does not start with the channel (Twitch and YouTube video links) |
+| `clips [--since 2h]` | Clips ready for review or approved, with file and score (`--since` takes `45m`, `2h`, `3d` or a date) |
+| `status` | Whether the service is working the queue, the jobs, and the disk |
+| `help` | Every command |
+
+Good to know:
+
+- One heavy job at a time still holds: while the service is up it does the work and `run` only
+  follows it. If the service is down, `run` does the work itself (that is why the line caps
+  memory), and gives the queue back when it ends.
+- `run` waits up to 3 hours (`--timeout <minutes>`). Stopping it (Ctrl+C) does not cancel the
+  job: `status` shows it, and the clips still arrive in the gallery.
+- Exit code 0: done. 1: it failed, the last line says why (`clipfarm-ops: The permission for TJR
+  expired on …`, `clipfarm-ops: The ingest step failed: …`). 2: the command was mistyped.
+- `run it as the clipfarm user` or `DATA_DIR is not set`: it was started without the
+  `systemd-run … -p EnvironmentFile=…` part. Use the full line above.
+- `run latest` on a Kick channel asks kick.com, which sometimes refuses servers (`Kick refused
+  the request`). Then copy the video's link from the channel page and use `run <video link>`.
 
 ## Update (IT)
 
@@ -483,6 +567,7 @@ something under `ops/clipfarm/`):
 runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull --ff-only
 install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/deploy.sh /usr/local/sbin/clipfarm-deploy
 install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/backup.sh /usr/local/sbin/clipfarm-backup
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/ops.sh /usr/local/sbin/clipfarm-ops
 ```
 
 then install any changed `.service` / `.timer` file again as in steps 4 and 10, and
@@ -530,6 +615,7 @@ Common problems:
 |---|---|
 | Phone shows the Cloudflare login again and again | The email is not in the Access policy (step 7) |
 | Phone shows "Sign in through Cloudflare Access to use clipfarm." | The request did not come through Access: a bypass was added for a path it should not cover (step 7), or someone called the port directly |
+| Everyone gets that message, and the log has a line starting `Access gate:` | The server could not find the Cloudflare team's keys to check sign-ins with; the line says why (the public address does not lead to the Access login: steps 7 and 8, or no connection to Cloudflare). It tries again every minute and recovers by itself. To pin the values instead: `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` in the env file, then `systemctl restart clipfarm` |
 | `NRestarts` keeps growing | `journalctl -u clipfarm -n 50`: a bad setting in the env file, or the port is taken (step 1) |
 | A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 1536 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
 | Downloads fail for every link | `yt-dlp -U`, then retry the job in the app |
@@ -575,7 +661,7 @@ systemctl start clipfarm-backup.service
 systemctl disable --now clipfarm clipfarm-backup.timer clipfarm-media-cleanup.timer
 rm /etc/systemd/system/clipfarm.service /etc/systemd/system/clipfarm-backup.service /etc/systemd/system/clipfarm-backup.timer \
    /etc/systemd/system/clipfarm-media-cleanup.service /etc/systemd/system/clipfarm-media-cleanup.timer \
-   /usr/local/sbin/clipfarm-deploy /usr/local/sbin/clipfarm-backup
+   /usr/local/sbin/clipfarm-deploy /usr/local/sbin/clipfarm-backup /usr/local/sbin/clipfarm-ops
 systemctl daemon-reload
 ```
 
