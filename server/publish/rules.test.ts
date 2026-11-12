@@ -95,6 +95,25 @@ describe("nextFreeSlot (spacing per account)", () => {
   });
 });
 
+describe("nextFreeSlot (the same clip on our other accounts)", () => {
+  const rules = { maxPerDay: 3, minGapMinutes: 90 };
+  const at = (hhmm: string) => new Date(`2026-11-19T${hhmm}:00.000Z`);
+
+  it("keeps the spacing from the same clip on another account, before or after", () => {
+    expect(nextFreeSlot([], NOW, rules, [NOW])).toEqual(at("13:30"));
+    expect(nextFreeSlot([], NOW, rules, [at("12:30")])).toEqual(at("14:00"));
+    expect(nextFreeSlot([], NOW, rules, [at("09:00")])).toEqual(NOW);
+  });
+
+  it("fits around both its own posts and the clip's other accounts", () => {
+    expect(nextFreeSlot([at("13:00")], NOW, rules, [NOW])).toEqual(at("14:30"));
+  });
+
+  it("never shares the exact time, even with no spacing set", () => {
+    expect(nextFreeSlot([], NOW, { maxPerDay: 3, minGapMinutes: 0 }, [NOW])).toEqual(at("12:01"));
+  });
+});
+
 describe("buildCaption", () => {
   const base = {
     title: "He actually landed the jump",

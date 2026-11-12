@@ -288,6 +288,64 @@ export interface PostingAccount {
   platform: Platform;
   name: string;
   disabled: boolean;
+  /** The @handle and picture, when the service has them. */
+  handle?: string | null;
+  avatarUrl?: string | null;
+}
+
+/** "burner" marks a throwaway channel for tests (what a claim or strike really does). */
+export const ACCOUNT_ROLES = ["main", "burner"] as const;
+export type AccountRole = (typeof ACCOUNT_ROLES)[number];
+
+export const ACCOUNT_ROLE_LABELS: Record<AccountRole, string> = { main: "Main", burner: "Burner" };
+
+/** How the platform treats the account; set by hand, since the posting services do not say. */
+export const ACCOUNT_HEALTHS = ["healthy", "limited", "banned"] as const;
+export type AccountHealth = (typeof ACCOUNT_HEALTHS)[number];
+
+export const ACCOUNT_HEALTH_LABELS: Record<AccountHealth, string> = { healthy: "Healthy", limited: "Limited", banned: "Banned" };
+
+/** What we decide about one of our posting accounts. */
+export interface ChannelSettings {
+  role: AccountRole;
+  /** What the channel is about, e.g. "GTA VI moments"; empty takes any clip. */
+  niche: string;
+  /** Posts a day and minutes between posts; null follows the shared spacing. */
+  maxPerDay: number | null;
+  minGapMinutes: number | null;
+  /** Off stops new posts to the account. */
+  enabled: boolean;
+  health: AccountHealth;
+}
+
+/** A connected account plus our settings for it. */
+export interface ChannelAccount extends PostingAccount, ChannelSettings {
+  handle: string | null;
+  avatarUrl: string | null;
+  /** The pace in force: its own numbers, else the shared spacing. */
+  pace: PostingRules;
+}
+
+/** One account in the picker for a clip. */
+export interface AccountChoice {
+  account: ChannelAccount;
+  canPost: boolean;
+  /** Ticked to start with: a main account whose niche fits the clip. */
+  suggested: boolean;
+  /** Why it cannot be picked, or a warning, in plain words. */
+  note: string | null;
+}
+
+/** An account that was picked but left out, and why. */
+export interface SkippedAccount {
+  accountId: string;
+  accountName: string;
+  reason: string;
+}
+
+export interface PostOutcome {
+  posts: Post[];
+  skipped: SkippedAccount[];
 }
 
 export interface PostingRules {
@@ -300,7 +358,7 @@ export interface PostingRules {
 export interface PostingInfo {
   service: PostingServiceName;
   label: string;
-  accounts: PostingAccount[];
+  accounts: ChannelAccount[];
   /** Why accounts could not be loaded, in plain words. */
   accountsError: string | null;
   /** Posts per platform per day the service allows (Upload-Post); empty when it has no caps. */
@@ -414,6 +472,11 @@ export interface AccountCard {
   postsLast7Days: number;
   /** Posts the spacing rules plan for 7 days (posts per day × 7). */
   plannedLast7Days: number;
+  /** Our settings for it; null for demo accounts and ones the service no longer lists. */
+  account: ChannelAccount | null;
+  estimatedEarningsUsd: number;
+  /** Claims or strikes, when the posting service reports them. */
+  claims: number | null;
   updatedAt: string | null;
   /** Made by "Load demo data", not a real account. */
   demo: boolean;
@@ -423,6 +486,8 @@ export interface AccountsInfo {
   service: PostingServiceName;
   label: string;
   cards: AccountCard[];
+  /** The shared spacing, used by accounts without their own pace. */
+  rules: PostingRules;
   /** The last error from the posting service, in plain words. */
   error: string | null;
   /** Hours between reads of account stats (kept inside the service's API limits). */

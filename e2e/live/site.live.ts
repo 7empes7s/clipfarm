@@ -397,6 +397,9 @@ test(`Posting: ${settings.dryRun ? "dry run and export only, nothing is publishe
   } else {
     assertMayPost(settings, posting.service);
     expect(account, "the test posting service has an account the permission allows").toBeTruthy();
+    // Suggested accounts start ticked; this run posts to one account only.
+    const ticked = sheet.getByRole("checkbox", { checked: true });
+    while ((await ticked.count()) > 0) await ticked.first().uncheck();
     await sheet.getByRole("checkbox", { name: new RegExp(`^${literal(account!.name)} · `) }).first().check();
     await sheet.getByRole("button", { name: "Post now" }).click();
     await expect(sheet).toBeHidden();

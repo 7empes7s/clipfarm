@@ -87,7 +87,7 @@ export interface NewPost {
 
 export class PostsRepo {
   constructor(
-    private db: Db,
+    readonly db: Db,
     private now: () => Date = () => new Date(),
   ) {}
 
@@ -164,6 +164,16 @@ export class PostsRepo {
     return (
       this.db.prepare("SELECT scheduled_at FROM posts WHERE account_id = ? AND status != 'failed'").all(accountId) as { scheduled_at: string }[]
     ).map((r) => new Date(r.scheduled_at));
+  }
+
+  /** When this clip went out or is due, per account: two accounts never carry it at the same time. */
+  clipTimes(clipId: number): { accountId: string; at: Date }[] {
+    return (
+      this.db.prepare("SELECT account_id, scheduled_at FROM posts WHERE clip_id = ? AND status != 'failed'").all(clipId) as {
+        account_id: string;
+        scheduled_at: string;
+      }[]
+    ).map((r) => ({ accountId: r.account_id, at: new Date(r.scheduled_at) }));
   }
 
   /** Posts sent through the service today (UTC) on a platform. */

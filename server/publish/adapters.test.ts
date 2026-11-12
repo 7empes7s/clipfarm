@@ -56,10 +56,10 @@ describe("PostizService", () => {
     const { fn, calls } = fakeFetch([[/GET .*\/api\/public\/v1\/integrations$/, 200, fixture("postiz/integrations.json")]]);
     const service = new PostizService({ url: `${base}/`, apiKey: "secret-key", fetch: fn });
     expect(await service.listAccounts()).toEqual([
-      { id: "int-yt", platform: "youtube", name: "GTA VI Moments", disabled: false },
-      { id: "int-tt", platform: "tiktok", name: "gtavimoments", disabled: false },
-      { id: "int-ig", platform: "instagram", name: "gtavi.moments", disabled: true },
-      { id: "int-x", platform: "x", name: "GTA VI Moments", disabled: false },
+      { id: "int-yt", platform: "youtube", name: "GTA VI Moments", disabled: false, handle: "gtavimoments", avatarUrl: "https://uploads.postiz.com/a.jpg" },
+      { id: "int-tt", platform: "tiktok", name: "gtavimoments", disabled: false, handle: "gtavimoments", avatarUrl: "https://uploads.postiz.com/b.jpg" },
+      { id: "int-ig", platform: "instagram", name: "gtavi.moments", disabled: true, handle: "gtavi.moments", avatarUrl: "https://uploads.postiz.com/c.jpg" },
+      { id: "int-x", platform: "x", name: "GTA VI Moments", disabled: false, handle: "gtavimoments", avatarUrl: "https://uploads.postiz.com/d.jpg" },
     ]);
     expect(calls[0]!.headers.authorization).toBe("secret-key");
   });

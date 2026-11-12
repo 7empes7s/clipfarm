@@ -1,8 +1,22 @@
-import type { ExportPack, PlannedPost, Platform, Post, PostingAccount, PostingInfo, PostingRules, Stats, StatsRow } from "../../shared/types.js";
+import type {
+  AccountChoice,
+  ChannelAccount,
+  ExportPack,
+  PlannedPost,
+  Platform,
+  Post,
+  PostingInfo,
+  PostingRules,
+  PostOutcome,
+  SkippedAccount,
+  Stats,
+  StatsRow,
+} from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types.js";
+import { accountsAllowedFor, AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
-import { requireActivePermission } from "../sources/permission.js";
+import { isActive, requireActivePermission } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildCaption } from "./caption.js";
 import { assertCanPost } from "./gate.js";
@@ -45,33 +59,87 @@ export interface PublisherDeps {
   clips: ClipsRepo;
   posts: PostsRepo;
   service: PostingService;
+  /** Our settings per posting account; made over the posts database when left out. */
+  accounts?: AccountsRepo;
+  /** The stream a clip was cut from, to match it to an account's niche. */
+  vodTitle?: (vodId: number) => string | null;
   now?: () => Date;
+}
+
+/** Why a picked account gets no post, or null when it can take one. */
+function skipReason(a: ChannelAccount): string | null {
+  if (!a.enabled) return `${a.name} is switched off in Posting accounts, so nothing was sent to it.`;
+  if (a.health === "banned") return `${a.name} is marked banned, so it was skipped.`;
+  return null;
 }
 
 export class Publisher {
   private now: () => Date;
-  private accounts: PostingAccount[] | null = null;
+  private synced = false;
+  readonly accounts: AccountsRepo;
   lastRefreshError: string | null = null;
 
   constructor(private deps: PublisherDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.accounts = deps.accounts ?? new AccountsRepo(deps.posts, this.now);
   }
 
   get service(): PostingService {
     return this.deps.service;
   }
 
-  private async loadAccounts(): Promise<PostingAccount[]> {
-    this.accounts = await this.deps.service.listAccounts();
-    return this.accounts;
+  /** Reads the connected accounts from the posting service into our list. */
+  async syncAccounts(): Promise<ChannelAccount[]> {
+    const { service } = this.deps;
+    const accounts = this.accounts.sync(service.name, await service.listAccounts());
+    this.synced = true;
+    return accounts;
+  }
+
+  /** Our list of accounts, read from the service once per server start (and on every sync). */
+  private async knownAccounts(): Promise<ChannelAccount[]> {
+    return this.synced ? this.accounts.list() : this.syncAccounts();
+  }
+
+  /**
+   * The picker for a clip: every account, whether it can take the clip, and which are ticked to
+   * start with (main accounts whose niche fits the clip).
+   */
+  async choices(clipId: number): Promise<AccountChoice[]> {
+    const { clips, sources, service, vodTitle } = this.deps;
+    const clip = clips.get(clipId);
+    const source = sources.get(clip.sourceId);
+    const accounts = await this.knownAccounts();
+    const now = this.now();
+    const allowed = new Set(
+      source.permissions.filter((p) => isActive(p, now)).flatMap((p) => accountsAllowedFor(p, accounts).map((a) => a.id)),
+    );
+    const text = [clip.title, clip.hook, source.creatorName, clip.vodId === null ? null : vodTitle?.(clip.vodId)].join(" ");
+    return accounts.map((account) => {
+      const blocked = account.disabled
+        ? `Disconnected in ${service.label}`
+        : !account.enabled
+          ? "Switched off"
+          : account.health === "banned"
+            ? "Marked banned, so it is skipped"
+            : !allowed.has(account.id)
+              ? "Not in the brief"
+              : null;
+      return {
+        account,
+        canPost: blocked === null,
+        suggested: blocked === null && account.role === "main" && nicheMatches(account.niche, text),
+        note: blocked ?? (account.health === "limited" ? "Marked limited" : null),
+      };
+    });
   }
 
   async info(): Promise<PostingInfo> {
     const { service, posts } = this.deps;
-    let accounts: PostingAccount[] = [];
+    let accounts: ChannelAccount[] = [];
     let accountsError: string | null = null;
     try {
-      accounts = await this.loadAccounts();
+      accounts = await this.syncAccounts();
     } catch (err) {
       accountsError = (err as Error).message;
     }
@@ -92,16 +160,17 @@ export class Publisher {
   /**
    * Posts an approved clip on the chosen accounts, now or at `when`. Every check (approval,
    * permission, brief, the permission's end date, daily caps) runs before the service is asked
-   * to post; posts on a busy account are moved to its next free slot.
+   * to post; posts on a busy account are moved to its next free slot. Accounts that are switched
+   * off or marked banned are left out and named in `skipped`.
    */
-  async post(clipId: number, accountIds: string[], when: Date | null): Promise<Post[]> {
+  async post(clipId: number, accountIds: string[], when: Date | null): Promise<PostOutcome> {
     const { clips, posts, service } = this.deps;
-    const { clip, planned } = await this.plan(clipId, accountIds, when);
+    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when);
     const results = await service.publish(
       { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
       planned.map((p) => p.item),
     );
-    return planned.map(({ item, permission, at }) => {
+    const made = planned.map(({ item, permission, at }) => {
       const r = results.find((x) => x.accountId === item.account.id);
       return posts.insert({
         clipId: clip.id,
@@ -119,15 +188,16 @@ export class Publisher {
         postedAt: r?.postedAt ?? null,
       });
     });
+    return { posts: made, skipped };
   }
 
   /**
    * What post() would send, after the same checks, without asking the service to post and without
    * storing anything: the end-to-end test's proof that a clip can be queued.
    */
-  async dryRun(clipId: number, accountIds: string[], when: Date | null): Promise<PlannedPost[]> {
-    const { planned } = await this.plan(clipId, accountIds, when);
-    return planned.map(({ item, permission, at }) => ({
+  async dryRun(clipId: number, accountIds: string[], when: Date | null): Promise<{ wouldPost: PlannedPost[]; skipped: SkippedAccount[] }> {
+    const { planned, skipped } = await this.plan(clipId, accountIds, when);
+    const wouldPost = planned.map(({ item, permission, at }) => ({
       accountId: item.account.id,
       accountName: item.account.name,
       platform: item.account.platform,
@@ -135,6 +205,7 @@ export class Publisher {
       caption: item.caption,
       scheduledAt: at.toISOString(),
     }));
+    return { wouldPost, skipped };
   }
 
   private async plan(clipId: number, accountIds: string[], when: Date | null) {
@@ -149,13 +220,20 @@ export class Publisher {
     // First pass without platforms: refuses missing or expired records before any service call.
     assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, platforms: [], now });
 
-    const known = this.accounts ?? (await this.loadAccounts());
-    const chosen = accountIds.map((id) => {
+    const known = await this.knownAccounts();
+    const picked = accountIds.map((id) => {
       const account = known.find((a) => a.id === id);
       if (!account) throw new ValidationError("One of the accounts is no longer connected. Reload and pick again.");
       if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
       return account;
     });
+    const skipped: SkippedAccount[] = [];
+    const chosen = picked.filter((account) => {
+      const reason = skipReason(account);
+      if (reason) skipped.push({ accountId: account.id, accountName: account.name, reason });
+      return reason === null;
+    });
+    if (chosen.length === 0) throw new ValidationError(`${skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
     assertCanPost({
       clipStatus: clip.status,
       creatorName: source.creatorName,
@@ -176,10 +254,13 @@ export class Publisher {
       }
     }
 
-    const rules = posts.rules();
     const wantedAt = when ?? now;
+    // Where this clip already is, or is about to be: each account keeps its distance from the others.
+    const clipTimes = posts.clipTimes(clip.id);
     const planned = chosen.map((account) => {
-      const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, rules);
+      const elsewhere = clipTimes.filter((c) => c.accountId !== account.id).map((c) => c.at);
+      const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, account.pace, elsewhere);
+      clipTimes.push({ accountId: account.id, at });
       // The covering permission must still be in force when the post goes out.
       const permission = requireActivePermission(source.creatorName, source.permissions, at, account.platform);
       const item: PublishItem = {
@@ -198,7 +279,7 @@ export class Publisher {
       return { item, permission, at };
     });
 
-    return { clip, planned };
+    return { clip, planned, skipped };
   }
 
   /** Reads post status, links and views from the service. Errors are kept to show, never thrown. */

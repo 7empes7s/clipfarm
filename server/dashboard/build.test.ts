@@ -225,6 +225,9 @@ describe("vodProgress and goals", () => {
 
 describe("buildDashboard", () => {
   const card = (o: Partial<AccountCard>): AccountCard => ({
+    account: null,
+    estimatedEarningsUsd: 0,
+    claims: null,
     accountId: "yt",
     platform: "youtube",
     name: "GTA VI Moments",
