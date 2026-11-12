@@ -7,7 +7,7 @@ import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
 import type { Transcriber } from "./pipeline/transcript/types.js";
 import { FakePicker } from "./pipeline/picks/fake.js";
-import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
+import { type ChatClient, LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
 import type { Platform, PostingAccount } from "../shared/types.js";
@@ -22,6 +22,7 @@ import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 import { Settings } from "./settings/store.js";
+import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
 
 export interface Config {
   port: number;
@@ -50,6 +51,10 @@ export interface Config {
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
   watchPollMinutes: number;
+  /** Where the trend radar reads today's short videos (YouTube, with the key in use right now). */
+  trendSource: () => TrendSource;
+  /** The cloud AI model that tags trends and writes hook variants; null without a key (and in demo mode). */
+  aiChat: () => ChatClient | null;
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -110,6 +115,23 @@ function liveCloudPicker(settings: Settings): () => Picker | null {
   return () => {
     const p = cur();
     return p && { name: p.name, pick: (input, signal) => guarded(settings, () => p.pick(input, signal)) };
+  };
+}
+
+/** The cloud chat model for small writing jobs (trend tags, hook variants); null until a key is set. */
+function liveCloudChat(settings: Settings): () => ChatClient | null {
+  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  return () => {
+    const c = cur();
+    return c && { name: c.name, complete: (req, signal) => guarded(settings, () => c.complete(req, signal)) };
+  };
+}
+
+function liveTrendSource(settings: Settings): () => TrendSource {
+  const cur = live(settings, ["YOUTUBE_API_KEY"], (env) => new YouTubeTrendSource({ apiKey: env.YOUTUBE_API_KEY }));
+  return () => {
+    const s = cur();
+    return { missing: s.missing, maxUnits: (queries) => s.maxUnits(queries), fetch: (opts) => guarded(settings, () => s.fetch(opts)) };
   };
 }
 
@@ -184,7 +206,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
     renderPreset: env.RENDER_PRESET || "veryfast",
-    postingService: fakes ? new FakePostingService() : livePostingService(settings),
+    postingService: fakes ? demoPostingService() : livePostingService(settings),
+    trendSource: fakes ? () => new FakeTrendSource() : liveTrendSource(settings),
+    aiChat: fakes ? () => null : liveCloudChat(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
     watchClients: fakes
       ? [new FakePlatformClient("twitch"), new FakePlatformClient("kick"), new FakePlatformClient("youtube")]
@@ -202,19 +226,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   };
 }
 
-/** The cloud picker for these settings; null without a key. */
-function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
+/** Demo mode's posting service: scheduled posts go out when their time comes, as a real service's would. */
+function demoPostingService(): FakePostingService {
+  const service = new FakePostingService();
+  service.publishesOnTime = true;
+  return service;
+}
+
+/** The cloud chat model for these settings; null without a key. */
+function cloudChat(env: NodeJS.ProcessEnv): ChatClient | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  return new LlmPicker(
-    new OpenAiCompatibleChat({
-      apiKey,
-      baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
-      model: env.LLM_MODEL || "gpt-4o-mini",
-      usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
-      usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
-    }),
-  );
+  return new OpenAiCompatibleChat({
+    apiKey,
+    baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
+    model: env.LLM_MODEL || "gpt-4o-mini",
+    usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
+    usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
+  });
+}
+
+/** The cloud picker for these settings; null without a key. */
+function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
+  const chat = cloudChat(env);
+  return chat && new LlmPicker(chat);
 }
 
 /** Postiz or Upload-Post from the settings (POSTING_SERVICE picks when both are set); export only without keys. */

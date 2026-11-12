@@ -31,6 +31,7 @@ import type {
   WatchedCreatorInput,
   Watchlist,
 } from "../../shared/types";
+import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/trends";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -103,6 +104,12 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  trends: () => call<TrendReport>("/api/trends"),
+  refreshTrends: () => call<TrendReport>("/api/trends/refresh", { method: "POST" }),
+  saveTrendWeight: (weight: number) => call<TrendReport>("/api/trends/weight", { method: "PUT", body: JSON.stringify({ weight }) }),
+  hookLab: () => call<HookLabInfo>("/api/hooklab"),
+  saveHookLab: (change: Partial<HookLabSettings>) => call<HookLabInfo>("/api/hooklab/settings", { method: "PUT", body: JSON.stringify(change) }),
+  runHookLab: () => call<HookLabInfo>("/api/hooklab/run", { method: "POST" }),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };

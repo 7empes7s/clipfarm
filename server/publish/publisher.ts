@@ -67,6 +67,12 @@ export interface PublisherDeps {
   now?: () => Date;
 }
 
+/** Another hook on the same cut (the hook lab): its own title and its own rendered video. */
+export interface PostVariant {
+  title: string;
+  filePath: string;
+}
+
 /** Why a picked account gets no post, or null when it can take one. */
 function skipReason(a: ChannelAccount): string | null {
   if (!a.enabled && a.pausedReason) return `${a.name} is paused after a strike, so nothing was sent to it.`;
@@ -99,7 +105,7 @@ export class Publisher {
   }
 
   /** Our list of accounts, read from the service once per server start (and on every sync). */
-  private async knownAccounts(): Promise<ChannelAccount[]> {
+  async knownAccounts(): Promise<ChannelAccount[]> {
     return this.synced ? this.accounts.list() : this.syncAccounts();
   }
 
@@ -174,12 +180,13 @@ export class Publisher {
    * permission, brief, routing, the permission's end date, daily caps) runs before the service is asked
    * to post; posts on a busy account are moved to its next free slot. Accounts that are switched
    * off, marked banned or that do not take the clip's permission kind are left out and named in `skipped`.
+   * A `variant` posts the same cut under another title and hook; every check stays the same.
    */
-  async post(clipId: number, accountIds: string[], when: Date | null): Promise<PostOutcome> {
+  async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant): Promise<PostOutcome> {
     const { clips, posts, service } = this.deps;
-    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when);
+    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant?.title);
     const results = await service.publish(
-      { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
+      { path: variant?.filePath ?? clips.filePath(clip.id), fileName: `${slug(variant?.title ?? clip.title)}.mp4` },
       planned.map((p) => p.item),
     );
     const made = planned.map(({ item, permission, at }) => {
@@ -220,7 +227,7 @@ export class Publisher {
     return { wouldPost, skipped };
   }
 
-  private async plan(clipId: number, accountIds: string[], when: Date | null) {
+  private async plan(clipId: number, accountIds: string[], when: Date | null, variantTitle?: string) {
     const { clips, sources, posts, service } = this.deps;
     if (accountIds.length === 0) throw new ValidationError("Pick at least one account.");
     if (new Set(accountIds).size !== accountIds.length) throw new ValidationError("Each account can be picked once.");
@@ -228,6 +235,7 @@ export class Publisher {
     if (when && when.getTime() < now.getTime() - 60_000) throw new ValidationError("Pick a time in the future.");
 
     const clip = clips.get(clipId);
+    const title = variantTitle ?? clip.title;
     const source = sources.get(clip.sourceId);
     // First pass without platforms: refuses missing or expired records before any service call.
     assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
@@ -302,9 +310,9 @@ export class Publisher {
       if (!permission) throw new ValidationError(`${routingReason(account, at)} Nothing was posted.`);
       const item: PublishItem = {
         account,
-        title: clip.title,
+        title,
         caption: buildCaption({
-          title: clip.title,
+          title,
           creatorName: source.creatorName,
           channelUrl: source.channelUrls[0] ?? null,
           briefRules: permission.briefRules,

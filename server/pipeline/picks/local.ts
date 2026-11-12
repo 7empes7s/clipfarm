@@ -2,7 +2,7 @@ import type { PickFlags } from "../../../shared/types.js";
 import type { ChatClient } from "./llm.js";
 import { type Sentence, toSentences, wordsIn } from "./sentences.js";
 import { type Candidate, candidateWindows, isHypeWord, secondScores } from "./signals.js";
-import type { PickInput, Picker, PickerResult, RawPick } from "./types.js";
+import { type PickInput, type Picker, type PickerResult, type RawPick, trendHintLine } from "./types.js";
 
 /** How many of the best moments are ranked and (when the writer is on) get a written hook. */
 export const LOCAL_CANDIDATES = 30;
@@ -142,6 +142,7 @@ export function writerPrompt(input: PickInput, lines: Sentence[]): string {
     `VOD title: ${input.title ?? "(none)"}`,
     `Campaign brief: ${input.briefRules || "(none)"}`,
     `Off limits: ${input.bannedContent || "(none)"}`,
+    ...[trendHintLine(input)].filter((line) => line !== null),
     "Transcript of the clip (times in seconds):",
     ...transcript,
   ].join("\n");

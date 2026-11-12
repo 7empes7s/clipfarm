@@ -12,6 +12,7 @@ import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
+import type { HookLab } from "./hooklab/lab.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
@@ -26,6 +27,7 @@ import type { PicksRepo } from "./picks/repo.js";
 import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
+import type { TrendRadar } from "./trends/radar.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
@@ -44,6 +46,10 @@ export interface AppDeps {
   engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
   settings?: { store: Settings; demo: boolean };
+  /** The trend radar: what GTA clips win today. */
+  trends?: TrendRadar;
+  /** A/B tests of hooks on burner accounts. */
+  hookLab?: HookLab;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -89,6 +95,8 @@ export function createApp({
   watchlist,
   engine,
   settings,
+  trends,
+  hookLab,
   seedDemoClip,
   clientDir,
   requireAccess,
@@ -412,6 +420,47 @@ export function createApp({
         void queue.kick();
       }
       res.status(202).json(status());
+    });
+  }
+
+  if (trends) {
+    const report = () => trends.report({ clips: clips.list(), sources: sources.list() });
+
+    app.get("/api/trends", (_req, res) => {
+      res.json(report());
+    });
+
+    app.post("/api/trends/refresh", async (_req, res) => {
+      try {
+        await trends.refresh();
+      } catch (err) {
+        if (err instanceof HttpError) throw err;
+        // YouTube said no or could not be reached: say so instead of "something went wrong".
+        throw new HttpError(502, (err as Error).message);
+      }
+      res.json(report());
+    });
+
+    app.put("/api/trends/weight", (req, res) => {
+      trends.setWeight((req.body ?? {}).weight);
+      res.json(report());
+    });
+  }
+
+  if (hookLab) {
+    app.get("/api/hooklab", (_req, res) => {
+      res.json(hookLab.info());
+    });
+
+    app.put("/api/hooklab/settings", (req, res) => {
+      hookLab.saveSettings(req.body);
+      res.json(hookLab.info());
+    });
+
+    // One pass now instead of at the next timer: starts tests, sends variants, settles finished ones.
+    app.post("/api/hooklab/run", async (_req, res) => {
+      await hookLab.tick();
+      res.json(hookLab.info());
     });
   }
 

@@ -32,6 +32,7 @@ import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { Sheet } from "./Sheet";
+import { HookLabView, TrendsView } from "./Trends";
 
 export const DASH_VIEWS = [
   { id: "today", label: "Today" },
@@ -40,6 +41,8 @@ export const DASH_VIEWS = [
   { id: "accounts", label: "Accounts" },
   { id: "earnings", label: "Earnings" },
   { id: "experiment", label: "Experiment" },
+  { id: "trends", label: "Trends" },
+  { id: "hooklab", label: "Hook lab" },
 ] as const;
 export type DashView = (typeof DASH_VIEWS)[number]["id"];
 
@@ -94,6 +97,8 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
       {view === "accounts" && <Accounts sources={sources} />}
       {dash && view === "earnings" && <Earnings dash={dash} />}
       {dash && view === "experiment" && <ExperimentView report={dash.experiment} posts={posts} onChange={load} />}
+      {view === "trends" && <TrendsView />}
+      {view === "hooklab" && <HookLabView />}
     </section>
   );
 }

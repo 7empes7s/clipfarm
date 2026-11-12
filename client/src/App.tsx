@@ -36,6 +36,7 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   picks: "Picking highlights",
   render: "Cutting a clip",
   "render-clip": "New version",
+  "hook-variants": "Hook variants",
   "demo-clips": "Demo clips",
 };
 
