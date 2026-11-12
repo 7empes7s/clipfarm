@@ -77,7 +77,11 @@ async function guarded<T>(settings: Settings, call: () => Promise<T>): Promise<T
   try {
     return await call();
   } catch (err) {
-    if (err instanceof Error) err.message = settings.scrub(err.message);
+    if (err instanceof Error) {
+      err.message = settings.scrub(err.message);
+      // The stack repeats the message, and is what a log line prints.
+      if (err.stack) err.stack = settings.scrub(err.stack);
+    }
     throw err;
   }
 }

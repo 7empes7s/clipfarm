@@ -347,6 +347,16 @@ describe("Settings: who may see what", () => {
     for (const key of everyKey) expect(everything.includes(key), `a key ending in ${key.slice(-4)} leaked`).toBe(false);
   });
 
+  it("a service's error that repeats the key is cleaned, message and stack, before anyone can log it", async () => {
+    const { call, config } = setup();
+    await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openaiBad }));
+    const audio = join(dir, "a.mp3");
+    writeFileSync(audio, "small");
+    const err = await config.transcriber.transcribe(audio, { durationSec: 1, tmpDir: dir }).catch((e: Error) => e);
+    expect((err as Error).message).toContain("Incorrect API key provided: ***");
+    expect(`${(err as Error).stack}`).not.toContain(KEYS.openaiBad);
+  });
+
   it("the settings routes sit behind the same access gate as the rest; health stays open and says only yes or no", async () => {
     const { app, call } = setup({}, true);
     for (const [method, path] of [
