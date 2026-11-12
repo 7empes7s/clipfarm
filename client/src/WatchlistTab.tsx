@@ -63,11 +63,11 @@ export function WatchlistTab({ sources, onQueued }: { sources: Source[]; onQueue
       </div>
       <p className="hint">
         New GTA VI streams from creators who allow clipping are picked up on their own, newest first.
-        {list?.lastPollAt ? ` Last check ${ago(list.lastPollAt)}.` : ""}{" "}
-        <button type="button" className="link" onClick={() => void checkNow()} disabled={checking}>
-          {checking ? "Checking…" : "Check now"}
-        </button>
+        {list?.lastPollAt ? ` Last check ${ago(list.lastPollAt)}.` : ""}
       </p>
+      <button type="button" className="link check-now" onClick={() => void checkNow()} disabled={checking}>
+        {checking ? "Checking…" : "Check now"}
+      </button>
       {list?.platforms
         .filter((p) => p.note)
         .map((p) => (
@@ -203,9 +203,12 @@ function CreatorRow({
             <span>
               Last VOD ({WATCH_PLATFORM_LABELS[c.lastVod.platform]}, {ago(c.lastVod.publishedAt)}): {c.lastVod.title || "untitled"}
             </span>
-            <span className={c.lastVod.status === "queued" ? "vod-ready" : undefined}>
-              {c.lastVod.status === "queued" ? "Queued for transcript" : c.lastVod.skipReason}
-            </span>
+            {/* Without permission the line above already says why. */}
+            {(allowed || c.lastVod.status === "queued") && (
+              <span className={c.lastVod.status === "queued" ? "vod-ready" : undefined}>
+                {c.lastVod.status === "queued" ? "Queued for transcript" : c.lastVod.skipReason}
+              </span>
+            )}
           </>
         ) : (
           <span>No VOD seen yet</span>
