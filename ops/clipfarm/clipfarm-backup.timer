@@ -1,0 +1,10 @@
+# Runs clipfarm-backup.service once a day, after the nightly mimule-backup and Postiz's (RUNBOOK.md step 10).
+[Unit]
+Description=Daily clipfarm database backup
+
+[Timer]
+OnCalendar=*-*-* 04:40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
