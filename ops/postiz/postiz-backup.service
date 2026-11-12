@@ -1,0 +1,9 @@
+# Daily Postiz database dump into /opt/backups/YYYY-MM-DD/postiz.sql.gz. Install: RUNBOOK.md step 7.
+[Unit]
+Description=Back up Postiz's Postgres into /opt/backups
+Requires=postiz.service
+After=postiz.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/postiz/backup.sh
