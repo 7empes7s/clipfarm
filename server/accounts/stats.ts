@@ -129,6 +129,7 @@ export class AccountStatsStore {
   readonly refreshHours: number;
   private days: number;
   private retryAt = 0;
+  private reading: Promise<number> | null = null;
   lastError: string | null = null;
 
   constructor(
@@ -188,7 +189,15 @@ export class AccountStatsStore {
    * Reads stats for accounts that are due. Never throws: the error is kept for the dashboard.
    * Returns how many accounts were updated.
    */
-  async refresh(): Promise<number> {
+  refresh(): Promise<number> {
+    // Two dashboards opened at once share one read instead of calling the service twice.
+    this.reading ??= this.read().finally(() => {
+      this.reading = null;
+    });
+    return this.reading;
+  }
+
+  private async read(): Promise<number> {
     const { service } = this;
     if (!service.accountStats) return 0;
     const now = this.now();

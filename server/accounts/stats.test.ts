@@ -189,6 +189,12 @@ describe("AccountStatsStore", () => {
     expect(service.calls).toEqual(["listAccounts", "accountStats", "listAccounts", "accountStats"]);
   });
 
+  it("shares one read between requests that arrive together", async () => {
+    const { store, service } = setup();
+    expect(await Promise.all([store.refresh(), store.refresh(), store.refresh()])).toEqual([4, 4, 4]);
+    expect(service.calls).toEqual(["listAccounts", "accountStats"]);
+  });
+
   it("reads at most the service's per-read limit of accounts at a time", async () => {
     const service = new FakePostingService();
     Object.assign(service, { maxStatsAccountsPerRead: 3 });
