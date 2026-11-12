@@ -33,7 +33,8 @@ test("posting accounts: sync, mark one as burner with its own pace, and the pick
 
   // The picker: the burner is there to pick by hand, but not ticked for us.
   await page.getByRole("link", { name: /^Posted/ }).click();
-  const clip = page.getByTestId("clip").filter({ hasText: "He actually landed the jump" }).first();
+  // The clip posting.spec.ts posted, not the demo clip of the same title (its campaign has ended).
+  const clip = page.getByTestId("clip").filter({ hasText: "He actually landed the jump" }).filter({ hasText: "Demo Streamer · " }).first();
   await clip.getByRole("button", { name: "Post", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Post this clip" });
   const burner = picker.getByRole("checkbox", { name: /gtavi\.daily · TikTok/ });
