@@ -55,7 +55,9 @@ function teamIssuer(teamDomain: string): string | null {
  * unsigned visitor is sent to: https://<team>.cloudflareaccess.com/cdn-cgi/access/login/<host>?kid=<AUD>.
  */
 export async function discoverAccessApp(publicUrl: string, doFetch: typeof fetch = fetch): Promise<AccessApp> {
-  const res = await doFetch(publicUrl, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+  const res = await doFetch(publicUrl, { redirect: "manual", signal: AbortSignal.timeout(10_000) }).catch((err: unknown) => {
+    throw new Error(`${publicUrl} could not be reached (${err instanceof Error ? err.message : String(err)}).`);
+  });
   let login: URL | null = null;
   try {
     login = new URL(res.headers.get("location") ?? "");
