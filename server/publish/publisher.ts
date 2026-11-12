@@ -1,4 +1,4 @@
-import type { ExportPack, Platform, Post, PostingAccount, PostingInfo, PostingRules, Stats, StatsRow } from "../../shared/types.js";
+import type { ExportPack, PlannedPost, Platform, Post, PostingAccount, PostingInfo, PostingRules, Stats, StatsRow } from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
@@ -95,6 +95,49 @@ export class Publisher {
    * to post; posts on a busy account are moved to its next free slot.
    */
   async post(clipId: number, accountIds: string[], when: Date | null): Promise<Post[]> {
+    const { clips, posts, service } = this.deps;
+    const { clip, planned } = await this.plan(clipId, accountIds, when);
+    const results = await service.publish(
+      { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
+      planned.map((p) => p.item),
+    );
+    return planned.map(({ item, permission, at }) => {
+      const r = results.find((x) => x.accountId === item.account.id);
+      return posts.insert({
+        clipId: clip.id,
+        permissionId: permission.id,
+        platform: item.account.platform,
+        accountId: item.account.id,
+        accountName: item.account.name,
+        service: service.name,
+        externalId: r?.externalId ?? null,
+        status: r?.status ?? "failed",
+        url: r?.url ?? null,
+        error: r ? r.error : `${service.label} did not answer for this account.`,
+        caption: item.caption,
+        scheduledAt: at.toISOString(),
+        postedAt: r?.postedAt ?? null,
+      });
+    });
+  }
+
+  /**
+   * What post() would send, after the same checks, without asking the service to post and without
+   * storing anything: the end-to-end test's proof that a clip can be queued.
+   */
+  async dryRun(clipId: number, accountIds: string[], when: Date | null): Promise<PlannedPost[]> {
+    const { planned } = await this.plan(clipId, accountIds, when);
+    return planned.map(({ item, permission, at }) => ({
+      accountId: item.account.id,
+      accountName: item.account.name,
+      platform: item.account.platform,
+      permissionId: permission.id,
+      caption: item.caption,
+      scheduledAt: at.toISOString(),
+    }));
+  }
+
+  private async plan(clipId: number, accountIds: string[], when: Date | null) {
     const { clips, sources, posts, service } = this.deps;
     if (accountIds.length === 0) throw new ValidationError("Pick at least one account.");
     if (new Set(accountIds).size !== accountIds.length) throw new ValidationError("Each account can be picked once.");
@@ -155,28 +198,7 @@ export class Publisher {
       return { item, permission, at };
     });
 
-    const results = await service.publish(
-      { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
-      planned.map((p) => p.item),
-    );
-    return planned.map(({ item, permission, at }) => {
-      const r = results.find((x) => x.accountId === item.account.id);
-      return posts.insert({
-        clipId: clip.id,
-        permissionId: permission.id,
-        platform: item.account.platform,
-        accountId: item.account.id,
-        accountName: item.account.name,
-        service: service.name,
-        externalId: r?.externalId ?? null,
-        status: r?.status ?? "failed",
-        url: r?.url ?? null,
-        error: r ? r.error : `${service.label} did not answer for this account.`,
-        caption: item.caption,
-        scheduledAt: at.toISOString(),
-        postedAt: r?.postedAt ?? null,
-      });
-    });
+    return { clip, planned };
   }
 
   /** Reads post status, links and views from the service. Errors are kept to show, never thrown. */

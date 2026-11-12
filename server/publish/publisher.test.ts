@@ -86,6 +86,41 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
     expect(service.calls).toEqual([]);
   });
 
+  it("a dry run runs every check and says what would go out, without calling the service or storing a post", async () => {
+    const { app, service, clip, source, posts } = setup({ briefRules: "Tag #ad" });
+    const res = await request(app).post(`/api/clips/${clip.id}/posts/dry-run`).send({ accountIds: [YT, TT] });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      dryRun: true,
+      wouldPost: [
+        expect.objectContaining({ accountId: YT, platform: "youtube", permissionId: source.permissions[0]!.id, scheduledAt: "2026-11-19T12:00:00.000Z" }),
+        expect.objectContaining({ accountId: TT, platform: "tiktok", caption: expect.stringContaining("Credit: Test Streamer") }),
+      ],
+    });
+    expect(service.calls.filter((c) => c === "publish")).toEqual([]);
+    expect(posts.list()).toEqual([]);
+  });
+
+  it("a dry run is held to the same gate: no permission record, a time after it ends, a clip not approved", async () => {
+    const lapsing = setup({ expiresAt: "2026-11-20T00:00:00.000Z" });
+    const late = await request(lapsing.app)
+      .post(`/api/clips/${lapsing.clip.id}/posts/dry-run`)
+      .send({ accountIds: [YT], when: "2026-11-21T10:00:00.000Z" });
+    expect(late.status).toBe(403);
+    expect(late.body.error).toMatch(/expired on 2026-11-20/);
+
+    const none = setup();
+    none.db.prepare("DELETE FROM permissions").run();
+    const noRecord = await request(none.app).post(`/api/clips/${none.clip.id}/posts/dry-run`).send({ accountIds: [YT] });
+    expect(noRecord.status).toBe(403);
+    expect(noRecord.body.error).toMatch(/has no permission record/);
+
+    const pending = setup({}, { clipStatus: "pending" });
+    const notApproved = await request(pending.app).post(`/api/clips/${pending.clip.id}/posts/dry-run`).send({ accountIds: [YT] });
+    expect(notApproved.status).toBe(400);
+    expect(notApproved.body.error).toBe("Approve the clip before posting it.");
+  });
+
   it("posts on two accounts, storing the permission record, campaign and caption from the brief", async () => {
     const { app, service, clip, source } = setup({ briefRules: "Tag #ad, link https://whop.com/test/campaign" });
     const res = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] });

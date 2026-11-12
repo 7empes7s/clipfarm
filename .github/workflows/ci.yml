@@ -25,6 +25,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (fakes only, no network calls)
         run: npm run test:e2e
+      - name: The whole flow against the local preview (fakes, dry-run posting)
+        run: npm run e2e:live
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
