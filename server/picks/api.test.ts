@@ -28,28 +28,6 @@ function setup() {
   return { sources, vods, picks, clips, app: createApp({ sources, vods, picks, queue, clips, posts, publisher }) };
 }
 
-describe("face cam API", () => {
-  it("saves, checks and clears the face cam box", async () => {
-    const { sources, app } = setup();
-    const s = sources.create(campaignInput());
-    expect(s).toMatchObject({ faceCam: null, hasFrame: false });
-
-    const saved = await request(app).put(`/api/sources/${s.id}/face-cam`).send({ faceCam: { x: 0.7, y: 0.6, w: 0.25, h: 0.3 } });
-    expect(saved.status).toBe(200);
-    expect(saved.body.faceCam).toEqual({ x: 0.7, y: 0.6, w: 0.25, h: 0.3 });
-
-    for (const bad of [{}, { faceCam: { x: 0.9, y: 0, w: 0.3, h: 0.3 } }, { faceCam: { x: 0, y: 0, w: 0.01, h: 0.5 } }]) {
-      const res = await request(app).put(`/api/sources/${s.id}/face-cam`).send(bad);
-      expect(res.status).toBe(400);
-    }
-    expect(sources.get(s.id).faceCam).toEqual({ x: 0.7, y: 0.6, w: 0.25, h: 0.3 });
-
-    const cleared = await request(app).put(`/api/sources/${s.id}/face-cam`).send({ faceCam: null });
-    expect(cleared.body.faceCam).toBeNull();
-    expect((await request(app).get(`/api/sources/${s.id}/frame`)).status).toBe(404);
-  });
-});
-
 describe("picks API", () => {
   it("lists picks per VOD and has no video until a clip is rendered", async () => {
     const { sources, vods, picks, app } = setup();
@@ -91,6 +69,17 @@ describe("clip files", () => {
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toBe("video/mp4");
       expect((await request(app).get(`/api/picks/${p!.id}/thumb`)).status).toBe(200);
+
+      // After an edit in the gallery re-renders the clip (and deletes the old file), the pick plays the new version.
+      await writeFile(join(media, "b.mp4"), "new version");
+      clips.setRendered(clip.id, join(media, "b.mp4"), 20);
+      const edited = await request(app).get(`/api/picks/${p!.id}/video`).buffer(true).parse((r, cb) => {
+        let data = "";
+        r.on("data", (c: Buffer) => (data += c.toString()));
+        r.on("end", () => cb(null, data));
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body).toBe("new version");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

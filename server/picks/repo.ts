@@ -138,7 +138,11 @@ export class PicksRepo {
   /** Server-side paths of the clip and thumbnail; never sent to the client. */
   files(id: number): { video: string | null; thumb: string | null } {
     const r = this.row(id);
-    return { video: r.file_path, thumb: r.thumb_path };
+    // Once the clip is edited in the gallery, its re-rendered file replaces (and deletes) this one.
+    const clip = r.clip_id
+      ? (this.db.prepare("SELECT file_path FROM clips WHERE id = ?").get(r.clip_id) as { file_path: string } | undefined)
+      : undefined;
+    return { video: clip?.file_path ?? r.file_path, thumb: r.thumb_path };
   }
 
   setStatus(id: number, status: PickStatus, error: string | null = null): void {
