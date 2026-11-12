@@ -128,6 +128,20 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX clip_reviews_clip ON clip_reviews(clip_id);
   `,
+  `
+  ALTER TABLE jobs ADD COLUMN started_at TEXT;
+  ALTER TABLE jobs ADD COLUMN finished_at TEXT;
+  CREATE TABLE account_stats (
+    account_id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    name TEXT NOT NULL,
+    followers TEXT NOT NULL DEFAULT '[]',
+    views TEXT NOT NULL DEFAULT '[]',
+    manual_followers TEXT NOT NULL DEFAULT '[]',
+    fetched_at TEXT,
+    demo INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

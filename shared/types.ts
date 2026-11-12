@@ -88,6 +88,9 @@ export interface Job {
   clipId: number | null;
   createdAt: string;
   updatedAt: string;
+  /** When the current (or last) try started and when the job ended for good; null until then. */
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
 export interface Chapter {
@@ -273,4 +276,126 @@ export interface Stats {
   costPerApprovedClipUsd: number | null;
   byCampaign: StatsRow[];
   byPlatform: StatsRow[];
+}
+
+/** One value per day (YYYY-MM-DD, UTC). */
+export interface DailyPoint {
+  date: string;
+  value: number;
+}
+
+export interface Growth {
+  /** Last value minus first value of the range. */
+  change: number;
+  /** Change as a share of the first value; null when it started at 0. */
+  pct: number | null;
+}
+
+/** Where a number on a card came from: the posting service, typed in by hand, or nowhere yet. */
+export type StatSource = "service" | "manual" | "none";
+
+/** One connected account on the dashboard: stats from the posting service, posts from our records. */
+export interface AccountCard {
+  accountId: string;
+  platform: Platform;
+  name: string;
+  followers: number | null;
+  followersSeries: DailyPoint[];
+  followersGrowth: Growth | null;
+  followersSource: StatSource;
+  viewsPerDay: DailyPoint[];
+  viewsSource: StatSource;
+  posts: number;
+  avgViewsPerPost: number | null;
+  topClips: { clipId: number; title: string; views: number; url: string | null }[];
+  postsLast7Days: number;
+  /** Posts the spacing rules plan for 7 days (posts per day × 7). */
+  plannedLast7Days: number;
+  updatedAt: string | null;
+  /** Made by "Load demo data", not a real account. */
+  demo: boolean;
+}
+
+export interface AccountsInfo {
+  service: PostingServiceName;
+  label: string;
+  cards: AccountCard[];
+  /** The last error from the posting service, in plain words. */
+  error: string | null;
+  /** Hours between reads of account stats (kept inside the service's API limits). */
+  refreshHours: number;
+}
+
+export type StageName = "transcript" | "picks" | "render";
+export type StageState = "waiting" | "running" | "done" | "failed";
+
+export interface VodProgress {
+  vodId: number;
+  title: string;
+  creatorName: string;
+  durationSec: number | null;
+  stages: { stage: StageName; state: StageState; seconds: number | null; progress: number }[];
+  clips: number;
+  approved: number;
+  /** Approved share of the clips made (0..1); null with no clips. */
+  approvedShare: number | null;
+  createdAt: string;
+}
+
+export interface RunningJob {
+  jobId: number;
+  label: string;
+  progress: number;
+  message: string;
+  /** Seconds left, guessed from progress so far; null while too early to tell. */
+  etaSec: number | null;
+}
+
+export interface Goal {
+  id: string;
+  objective: "O1" | "O2";
+  label: string;
+  /** What it is now, in plain words ("8 clips per hour of stream"). */
+  now: string;
+  target: string;
+  /** 0..1 towards the target; null without data yet. */
+  value: number | null;
+}
+
+export interface EarningsRow {
+  key: string;
+  campaign: string;
+  platform: Platform;
+  posts: number;
+  views: number;
+  minViews: number | null;
+  /** Posts at or over the campaign's minimum views. */
+  overMinimum: number;
+  estimatedUsd: number;
+  weekUsd: number;
+  /** Posts marked "sent to Whop". */
+  submitted: number;
+}
+
+export interface DashboardToday {
+  waiting: number;
+  approved: number;
+  postedToday: number;
+  viewsToday: number;
+  /** "accounts": today's views from the posting service; "posts": views of posts made today. */
+  viewsTodayFrom: "accounts" | "posts";
+  earningsWeekUsd: number;
+  costWeekUsd: number;
+  costPerApprovedClipUsd: number | null;
+}
+
+export interface Dashboard {
+  /** No clips, VODs or posts yet: the app offers "Load demo data". */
+  empty: boolean;
+  demoLoaded: boolean;
+  today: DashboardToday;
+  running: RunningJob[];
+  vods: VodProgress[];
+  goals: Goal[];
+  earnings: { rows: EarningsRow[]; weekUsd: number; totalUsd: number };
 }

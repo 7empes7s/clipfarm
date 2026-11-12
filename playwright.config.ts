@@ -11,10 +11,10 @@ export default defineConfig({
   use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
   projects: [
     { name: "phone", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
-    // The gallery again on a laptop screen (grid view, keyboard shortcuts), after the phone run.
+    // The gallery and dashboard again on a laptop screen, after the phone run.
     {
       name: "desktop",
-      testMatch: /review\.spec\.ts/,
+      testMatch: /(review|stats-dashboard)\.spec\.ts/,
       dependencies: ["phone"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },

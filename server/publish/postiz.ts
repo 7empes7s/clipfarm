@@ -1,7 +1,7 @@
 import { openAsBlob } from "node:fs";
-import type { Platform, PostingAccount, PostStatus } from "../../shared/types.js";
+import type { DailyPoint, Platform, PostingAccount, PostStatus } from "../../shared/types.js";
 import { callService, type ServiceVoice } from "./errors.js";
-import type { PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
+import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
 
 /**
  * Postiz (github.com/gitroomhq/postiz-app), self-hosted. Only its public API is called over HTTP
@@ -49,6 +49,31 @@ export function viewsFromPostizAnalytics(metrics: PostizAnalytics[]): number | n
   return Math.max(...metric.data.map((d) => Number(d.total) || 0));
 }
 
+/**
+ * Followers and views per day from Postiz's platform analytics (GET /analytics/{integration}).
+ * Labels differ per platform: followers may be "Subscribers" (YouTube); views may be "Video Views"
+ * or, where a platform has no views, "Impressions".
+ */
+export function accountStatsFromPostiz(accountId: string, metrics: PostizAnalytics[]): AccountStats {
+  const pick = (...res: RegExp[]) => {
+    for (const re of res) {
+      const m = metrics.find((x) => re.test(x.label.trim()));
+      if (m) return m;
+    }
+    return undefined;
+  };
+  const points = (m: PostizAnalytics | undefined): DailyPoint[] =>
+    (m?.data ?? [])
+      .map((d) => ({ date: d.date.slice(0, 10), value: Number(d.total) }))
+      .filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.date) && Number.isFinite(p.value))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    accountId,
+    followers: points(pick(/^(page )?followers$/i, /^subscribers$/i)),
+    views: points(pick(/^(video )?views$/i, /^impressions$/i)),
+  };
+}
+
 const DAY = 24 * 3600_000;
 const PUBLIC_API_PATH = "/api/public/v1";
 
@@ -64,6 +89,8 @@ export class PostizService implements PostingService {
   readonly name = "postiz";
   readonly label = "Postiz";
   readonly dailyCaps = {};
+  // One call per account; post views already use most of the ~30 calls an hour.
+  readonly maxStatsAccountsPerRead = 4;
   private base: string;
   private site: string;
   private doFetch: typeof fetch;
@@ -207,5 +234,14 @@ export class PostizService implements PostingService {
       updates.push(update);
     }
     return updates;
+  }
+
+  async accountStats(accounts: PostingAccount[], days: number): Promise<AccountStats[]> {
+    const out: AccountStats[] = [];
+    for (const a of accounts) {
+      const metrics = await this.call<PostizAnalytics[]>(`/analytics/${encodeURIComponent(a.id)}?date=${days}`);
+      out.push(accountStatsFromPostiz(a.id, metrics));
+    }
+    return out;
   }
 }

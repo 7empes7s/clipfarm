@@ -1,4 +1,4 @@
-import type { Platform, PostingAccount, PostingServiceName, PostStatus } from "../../shared/types.js";
+import type { DailyPoint, Platform, PostingAccount, PostingServiceName, PostStatus } from "../../shared/types.js";
 
 export interface PublishItem {
   account: PostingAccount;
@@ -39,6 +39,13 @@ export interface PostUpdate {
   views?: number | null;
 }
 
+/** What the service knows about an account: followers and views, one point per day. */
+export interface AccountStats {
+  accountId: string;
+  followers: DailyPoint[];
+  views: DailyPoint[];
+}
+
 export interface VideoFile {
   path: string;
   fileName: string;
@@ -56,4 +63,8 @@ export interface PostingService {
   listAccounts(): Promise<PostingAccount[]>;
   publish(video: VideoFile, items: PublishItem[]): Promise<PublishResult[]>;
   refresh(posts: TrackedPost[]): Promise<PostUpdate[]>;
+  /** Account stats for the dashboard; left out by services that have none. */
+  accountStats?(accounts: PostingAccount[], days: number): Promise<AccountStats[]>;
+  /** Most accounts one stats read may ask about (each costs an API call on Postiz). */
+  readonly maxStatsAccountsPerRead?: number;
 }

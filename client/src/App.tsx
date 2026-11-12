@@ -4,6 +4,7 @@ import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
 import { ClipsTab } from "./ClipsTab";
+import { DASH_VIEWS, DashboardTab, type DashView } from "./DashboardTab";
 import { FaceCamSheet } from "./FaceCamSheet";
 import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
@@ -33,6 +34,7 @@ const JOB_TYPE_LABEL: Record<string, string> = {
 };
 
 const TABS = [
+  { id: "dashboard", label: "Dashboard" },
   { id: "inbox", label: "Inbox" },
   { id: "approved", label: "Approved" },
   { id: "posted", label: "Posted" },
@@ -46,13 +48,20 @@ type Tab = (typeof TABS)[number]["id"] | "rejected";
 const ALIASES: Record<string, Tab> = { campaigns: "sources", clips: "approved" };
 
 function tabFromHash(): Tab {
-  const h = window.location.hash.slice(1);
+  // "#dashboard/outputs" opens a section of the dashboard.
+  const h = window.location.hash.slice(1).split("/")[0]!;
   if (h === "rejected" || TABS.some((t) => t.id === h)) return h as Tab;
   return ALIASES[h] ?? "inbox";
 }
 
+function dashViewFromHash(): DashView {
+  const v = window.location.hash.slice(1).split("/")[1];
+  return DASH_VIEWS.find((d) => d.id === v)?.id ?? "today";
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
+  const [dashView, setDashView] = useState<DashView>(dashViewFromHash);
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -98,7 +107,10 @@ export function App() {
   const counts = tabCounts(clips, sources, jobs);
 
   useEffect(() => {
-    const onHash = () => setTab(tabFromHash());
+    const onHash = () => {
+      setTab(tabFromHash());
+      setDashView(dashViewFromHash());
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -117,7 +129,7 @@ export function App() {
         {TABS.map((t) => (
           <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
             {t.label}
-            {t.id !== "stats" && <span className="count">{counts[t.id]}</span>}
+            {t.id !== "stats" && t.id !== "dashboard" && <span className="count">{counts[t.id]}</span>}
           </a>
         ))}
       </nav>
@@ -128,6 +140,7 @@ export function App() {
         </p>
       )}
 
+      {tab === "dashboard" && <DashboardTab view={dashView} clips={clips} sources={sources} jobs={jobs} />}
       {tab === "inbox" && <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />}
       {(tab === "approved" || tab === "posted" || tab === "rejected") && (
         <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />

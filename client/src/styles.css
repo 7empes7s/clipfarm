@@ -540,17 +540,20 @@ textarea {
   background: var(--tally);
   color: var(--surface);
 }
-/* Six tabs: two rows of three on phones, one row from tablet width up. */
+/* Seven tabs: two rows of up to four on phones, one row from tablet width up. */
 @media (max-width: 639px) {
   .tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
   }
   .tabs a {
     justify-content: center;
     padding: 0 var(--s1);
-    font-size: 1rem;
+    font-size: 0.9375rem;
+  }
+  .tabs .count {
+    margin-left: var(--s1);
   }
 }
 
@@ -1089,4 +1092,340 @@ a.button {
   .bar span {
     transition: none;
   }
+}
+
+/* Dashboard */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.dash-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+.dash-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+.dash-nav a[aria-current="page"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+.dash-empty {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  margin-bottom: var(--s4);
+}
+.dash-empty p {
+  margin: 0;
+}
+
+/* Today's tiles: like the readouts on a camera's status screen. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: 0 0 var(--s3);
+}
+@media (min-width: 640px) {
+  .tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.tile {
+  min-width: 0;
+  padding: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--tally);
+  border-radius: var(--radius-small);
+}
+.tile.wide {
+  grid-column: 1 / -1;
+}
+.tile dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.tile dt a {
+  color: inherit;
+}
+.tile dd {
+  margin: 0;
+  font-family: var(--font-head);
+  font-stretch: condensed;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.meter {
+  height: 8px;
+  margin: var(--s2) 0 var(--s1);
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--work);
+  transition: width 0.4s ease;
+}
+.meter.is-met span {
+  background: var(--ok);
+}
+.goals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s4);
+}
+.goals .hint {
+  font-weight: 400;
+}
+
+/* A stream's stages: a sequence, so they read left to right with a joining line. */
+.stages {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2);
+  margin: var(--s3) 0;
+  padding: 0;
+}
+.stage {
+  display: grid;
+  gap: 2px;
+  padding: var(--s2);
+  border-radius: var(--radius-small);
+  border-top: 3px solid var(--line);
+  background: var(--paper);
+  min-width: 0;
+}
+.stage-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.stage-state {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.stage-done {
+  border-top-color: var(--ok);
+}
+.stage-running {
+  border-top-color: var(--work);
+}
+.stage-failed {
+  border-top-color: var(--bad);
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+@media (min-width: 640px) {
+  .filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.filters label {
+  display: grid;
+  gap: var(--s1);
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-width: 0;
+}
+.filters select {
+  width: 100%;
+  min-width: 0;
+}
+.outputs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.output {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+.output-play {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--well);
+  color: var(--well-ink);
+  border-color: var(--well);
+}
+.output-body {
+  min-width: 0;
+}
+.chip-state {
+  flex: none;
+  padding: 0 var(--s2);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--line);
+}
+.chip-state.state-posted,
+.chip-state.state-approved {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.chip-state.state-rejected {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.output-posts {
+  list-style: none;
+  margin: var(--s1) 0 0;
+  padding: 0;
+  font-size: 0.875rem;
+}
+.output-posts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s2);
+}
+.player {
+  display: block;
+  width: 100%;
+  max-height: 75dvh;
+  aspect-ratio: 9 / 16;
+  margin-top: var(--s3);
+  background: var(--well);
+  border-radius: var(--radius-small);
+}
+
+/* Account cards */
+.followers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+  margin: var(--s2) 0;
+}
+.followers strong {
+  font-family: var(--font-head);
+  font-stretch: condensed;
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+.followers .up {
+  color: var(--ok);
+}
+.followers .down {
+  color: var(--bad);
+}
+.hand {
+  padding: 0 var(--s2);
+  border: 1px dashed var(--muted);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.chart {
+  margin: var(--s3) 0;
+}
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--tally);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+.chart-area {
+  fill: color-mix(in srgb, var(--tally) 14%, transparent);
+}
+.chart-bar {
+  fill: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+.chart-bar.is-last {
+  fill: var(--tally);
+}
+.chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.mini {
+  margin: var(--s3) 0 var(--s1);
+  font-size: 1rem;
+}
+.top-clips {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.9375rem;
+}
+.top-clips li span {
+  float: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.top-clips a {
+  overflow-wrap: anywhere;
+}
+.inline-form {
+  margin-top: var(--s3);
+}
+.inline-form label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: var(--s1);
+}
+
+.earnings th[scope="row"],
+.earnings thead th:first-child {
+  width: 34%;
+}
+.earnings .hint {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+/* Full clip titles in Outputs: they wrap instead of being cut. */
+.output .job-name {
+  white-space: normal;
+  overflow: visible;
 }

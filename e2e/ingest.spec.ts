@@ -6,6 +6,9 @@ test("add a campaign, add a VOD link, watch the job run and read the transcript 
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "clipfarm" })).toBeVisible();
+  // An empty database: the dashboard offers demo data.
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(page.getByRole("button", { name: "Load demo data" })).toBeVisible();
   await page.getByRole("link", { name: /^Sources/ }).click();
   await expect(page.getByText("No campaigns yet.")).toBeVisible();
 

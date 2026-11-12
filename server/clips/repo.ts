@@ -245,6 +245,15 @@ export class ClipsRepo {
     return this.get(id);
   }
 
+  /** When each approve or reject still in force was made, oldest first (review speed on the dashboard). */
+  decisionTimes(): string[] {
+    return (
+      this.db
+        .prepare("SELECT created_at FROM clip_reviews WHERE undone_at IS NULL AND action IN ('approve', 'reject') ORDER BY id")
+        .all() as { created_at: string }[]
+    ).map((r) => r.created_at);
+  }
+
   countApproved(): number {
     return (this.db.prepare("SELECT COUNT(*) AS n FROM clips WHERE status = 'approved'").get() as { n: number }).n;
   }
