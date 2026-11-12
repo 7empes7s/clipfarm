@@ -84,8 +84,8 @@ Install only what is missing:
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 
-# ffmpeg and git
-apt-get install -y --no-install-recommends ffmpeg git
+# ffmpeg and git (libgomp1 is what the local engine's programs need; ffmpeg usually brings it)
+apt-get install -y --no-install-recommends ffmpeg git libgomp1
 
 # yt-dlp: the release binary (the apt one is too old for Twitch and YouTube)
 curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp

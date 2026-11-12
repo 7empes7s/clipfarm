@@ -79,11 +79,12 @@ export function EngineCard({ jobs }: { jobs: Job[] }) {
             <select value={status.settings.sttModel} disabled={busy || status.settings.cloud} onChange={(e) => save({ sttModel: e.target.value })}>
               {status.sttModels.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.id} ({size(m.bytes)}){m.note ? `: ${m.note}` : ""}
+                  {m.id} ({size(m.bytes)})
                 </option>
               ))}
             </select>
           </label>
+          <p className="hint">{status.sttModels.find((m) => m.id === status.settings.sttModel)?.note}</p>
           <label className="switch">
             <input
               type="checkbox"
