@@ -9,6 +9,11 @@ import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { JobQueue } from "./jobs/queue.js";
+import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
+import { LiveManager } from "./live/manager.js";
+import { FakeNotifier, WebPushNotifier } from "./live/notify.js";
+import { LiveRepo } from "./live/repo.js";
+import { realSystem } from "./live/system.js";
 import { PicksRepo } from "./picks/repo.js";
 import { pipelineOnFinished } from "./pipeline/chain.js";
 import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
@@ -36,6 +41,10 @@ const accountStats = new AccountStatsStore(db, config.postingService, posts, { a
 const mediaDir = config.mediaDir;
 const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
 const clipRenderFinished = onRenderFinished(clips);
+const liveRepo = new LiveRepo(db, config.live.launchAt);
+// Demo mode never reaches a push service.
+const notifier = config.fakes ? new FakeNotifier() : new WebPushNotifier(liveRepo, config.live.pushSubject);
+const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
 const queue: JobQueue = new JobQueue(db, {
   handlers: {
     [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
@@ -46,8 +55,20 @@ const queue: JobQueue = new JobQueue(db, {
       picks,
       clips,
       downloader: config.sectionDownloader,
+      liveCut: liveCutter(liveRepo, config.renderPreset),
       mediaDir,
       preset: config.renderPreset,
+    }),
+    [LIVE_SEGMENT_JOB]: liveSegmentHandler({
+      repo: liveRepo,
+      sources,
+      vods,
+      picks,
+      transcriber: config.transcriber,
+      picker: config.picker,
+      queue: () => queue,
+      maxPicks: config.live.maxPicks,
+      contextSec: config.live.segmentSec * 2,
     }),
     [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
     [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
@@ -56,12 +77,28 @@ const queue: JobQueue = new JobQueue(db, {
   onFinished: (job, payload) => {
     pipelineFinished(job, payload);
     clipRenderFinished(job);
+    liveFinished(job, payload);
   },
 });
 
 const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
-const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
+const live = new LiveManager({
+  repo: liveRepo,
+  watchlist: watchRepo,
+  sources,
+  vods,
+  queue,
+  capturer: config.live.capturer,
+  system: realSystem,
+  notifier,
+  mediaDir,
+  segmentSec: config.live.segmentSec,
+  overlapSec: config.live.overlapSec,
+  keepHours: config.live.keepHours,
+});
+const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
+const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });
 // A key saved in Settings is tried at once, not after the next wait.
 settings.onChange(() => {
   poller.retryNow();
@@ -86,6 +123,7 @@ const app = createApp({
   publisher,
   accountStats,
   watchlist: { repo: watchRepo, poller },
+  live: { manager: live, repo: liveRepo },
   settings: { store: settings, demo: config.fakes },
   seedDemoClip,
   clientDir,
@@ -100,6 +138,7 @@ const refreshTimer = setInterval(() => {
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 poller.start(config.watchPollMinutes * 60_000);
+void live.start();
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -111,8 +150,9 @@ function shutdown() {
   queue.stop();
   clearInterval(refreshTimer);
   poller.stop();
+  live.stop();
   server.close(() => {
-    void queue.idle().then(() => {
+    void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();
       process.exit(0);
     });

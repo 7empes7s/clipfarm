@@ -19,6 +19,8 @@ export interface PollerDeps {
   lookbackHours?: number;
   /** First wait after a platform error; doubles on each error in a row. */
   backoffBaseMs?: number;
+  /** Called after every check, with who is live now recorded (live mode starts and stops on it). */
+  onPolled?: () => void;
   now?: () => Date;
 }
 
@@ -117,6 +119,7 @@ export class WatchlistPoller {
     seen.sort((a, b) => b.vod.publishedAt.localeCompare(a.vod.publishedAt));
     for (const { creator, vod } of seen) this.consider(creator, vod);
     this.lastPollAt = this.now();
+    this.deps.onPolled?.();
   }
 
   private consider(creator: WatchedCreator, vod: DetectedVodRecord): void {

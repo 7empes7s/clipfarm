@@ -24,6 +24,9 @@ interface ClipRow {
   end_sec: number | null;
   version: number;
   post_count?: number;
+  live_stream_sec: number | null;
+  live_moment_at: string | null;
+  live_latency_sec: number | null;
   created_at: string;
 }
 
@@ -44,6 +47,8 @@ export interface NewClip {
   masterDurationSec?: number | null;
   startSec?: number;
   endSec?: number | null;
+  /** Cut from a stream that was still live: where in the stream, and when the moment happened. */
+  live?: { streamSec: number; momentAt: string } | null;
 }
 
 /** What the renderer needs to make a new version of a clip. */
@@ -80,6 +85,10 @@ function toClip(r: ClipRow): Clip {
     postCount: r.post_count ?? 0,
     videoUrl: `/api/clips/${r.id}/video?v=${r.version}`,
     masterUrl: `/api/clips/${r.id}/master`,
+    live:
+      r.live_moment_at === null
+        ? null
+        : { streamSec: r.live_stream_sec ?? 0, momentAt: r.live_moment_at, latencySec: r.live_latency_sec ?? 0 },
     createdAt: r.created_at,
   };
 }
@@ -93,10 +102,12 @@ export class ClipsRepo {
   ) {}
 
   create(c: NewClip): Clip {
+    const now = this.now();
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO clips (source_id, vod_id, title, file_path, duration_sec, hook, reason, score, layout, caption_words,
-           master_path, master_duration_sec, start_sec, end_sec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           master_path, master_duration_sec, start_sec, end_sec, live_stream_sec, live_moment_at, live_latency_sec, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.sourceId,
@@ -113,7 +124,11 @@ export class ClipsRepo {
         c.masterDurationSec ?? null,
         c.startSec ?? 0,
         c.endSec ?? null,
-        this.now().toISOString(),
+        c.live?.streamSec ?? null,
+        c.live?.momentAt ?? null,
+        // Moment to Inbox: the clip exists (and shows in the Inbox) from this insert on.
+        c.live ? Math.max(0, Math.round((now.getTime() - new Date(c.live.momentAt).getTime()) / 1000)) : null,
+        now.toISOString(),
       );
     return this.get(Number(lastInsertRowid));
   }
