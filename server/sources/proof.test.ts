@@ -79,6 +79,16 @@ describe("re-checking a public allowance (faked fetch)", () => {
     });
   });
 
+  it("keeps an end date set by hand (a campaign that closes) when the proof is seen again", async () => {
+    const { checker, sources } = setup({ [PROOF]: { status: 200, body: SAYS_IT } });
+    const closing = sources.create({ ...allowanceInput({ expiresAt: "2026-11-30T23:59:59.000Z" }), creatorName: "Closing" });
+    expect((await checker.check(closing.permissions[0]!.id)).ok).toBe(true);
+    expect(sources.get(closing.id).permissions[0]).toMatchObject({
+      proofCheckedAt: "2026-11-12T12:00:00.000Z",
+      expiresAt: "2026-11-30T23:59:59.000Z",
+    });
+  });
+
   it("needs review when the words are gone, which stops new links", async () => {
     const { checker, sources, source, permissionId, app } = setup({ [PROOF]: { status: 200, body: "<p>Clips are for members only now.</p>" } });
     const result = await checker.check(permissionId);

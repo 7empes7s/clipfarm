@@ -148,7 +148,8 @@ It is only as good as its proof, so the record keeps the **link** to where they 
 words** and the **day it was read**; without all three it cannot be saved. Their conditions
 ("credit me", "no TikTok") go in the brief rules and the allowed platforms, as for other kinds.
 
-- **It runs out.** With no end date of its own it ends 90 days after the proof was last seen.
+- **It runs out.** With no end date of its own it ends 90 days after the proof was last seen; an
+  end date set by hand (a campaign that closes on a day) is kept.
 - **It is read again.** Every week the server fetches the proof link (and **Check again** on the
   source does it on a tap). Page still carries the words: the allowance is good for another 90
   days. Page gone (404/410) or words missing: the record **needs review**, which stops new links,

@@ -222,11 +222,16 @@ export class SourcesRepo {
     ).map(toPermission);
   }
 
-  /** The proof was seen again: the allowance is in force for another stretch. */
+  /**
+   * The proof was seen again: the record is in force again, and its 90 days start over.
+   * An end date the manager set by hand (a campaign that closes on a day) is kept.
+   */
   confirmProof(permissionId: number, at: Date): void {
+    const p = this.permission(permissionId);
+    const hadDefaultEnd = p.proofCheckedAt !== null && p.expiresAt === allowanceExpiry(new Date(p.proofCheckedAt));
     this.db
       .prepare("UPDATE permissions SET proof_checked_at = ?, expires_at = ?, review_reason = NULL WHERE id = ?")
-      .run(at.toISOString(), allowanceExpiry(at), permissionId);
+      .run(at.toISOString(), hadDefaultEnd ? allowanceExpiry(at) : p.expiresAt, permissionId);
   }
 
   /** The proof is gone: the record is put on hold, which stops ingest and posting for its source. */
