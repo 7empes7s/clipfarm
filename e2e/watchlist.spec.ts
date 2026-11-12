@@ -35,7 +35,9 @@ test("watchlist at 390 px: seeded creators, permission gate, auto-ingest queues 
   await expect(kai.getByText("Allowed")).toBeVisible();
   await expect(kai.getByText("Auto-ingest is off")).toBeVisible();
 
-  await kai.getByRole("switch", { name: "Auto-ingest" }).check();
+  // The switch moves once the server has saved it (and checked the creator).
+  await kai.getByRole("switch", { name: "Auto-ingest" }).click();
+  await expect(kai.getByRole("switch", { name: "Auto-ingest" })).toBeChecked();
   await expect(kai.getByText("Queued for transcript")).toBeVisible();
   await expect(speed.getByText("Queued for transcript")).toHaveCount(0);
 
@@ -59,8 +61,8 @@ test("add a creator in the app, then remove them; the sheet closes with ×", asy
   await expect(sheet).toBeHidden();
 
   await page.getByRole("button", { name: "Add a creator" }).click();
-  await sheet.getByLabel("Name").fill("E2E Watcher");
-  await sheet.getByLabel("Kick").fill("https://kick.com/e2ewatcher");
+  await sheet.getByLabel("Name", { exact: true }).fill("E2E Watcher");
+  await sheet.getByLabel("Kick", { exact: true }).fill("https://kick.com/e2ewatcher");
   await sheet.getByLabel("Clipping program").selectOption("whop");
   await sheet.getByLabel(/Program link/).fill("https://whop.com/e2e/watcher");
   await sheet.getByRole("button", { name: "Save" }).click();
