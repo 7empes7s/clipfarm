@@ -3,6 +3,7 @@ import type { Clip, Job, RejectReason, Source } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, REJECT_REASON_LABELS, REJECT_REASONS } from "../../shared/types";
 import { api } from "./api";
 import { EditSheet } from "./EditSheet";
+import { LiveTag } from "./LiveTag";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
 
 /** Wide screens get the "Up next" grid beside the clip. */
@@ -356,6 +357,7 @@ function ClipHead({ clip, position }: { clip: Clip; position: string }) {
         {clip.hook && <p className="hook">{clip.hook}</p>}
         <h3>{clip.title}</h3>
         <p className="hint">score · {position}</p>
+        <LiveTag clip={clip} />
       </div>
     </div>
   );
@@ -404,7 +406,10 @@ function UpNext({ queue, currentId, onPick }: { queue: Clip[]; currentId: number
             <button type="button" aria-current={c.id === currentId ? "true" : undefined} onClick={() => onPick(c.id)}>
               <video src={c.videoUrl} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} />
               <span className="tile-score">{c.score === null ? "–" : Math.round(c.score)}</span>
-              <span className="tile-title">{c.title}</span>
+              <span className="tile-title">
+                {c.live && <span className="live-dot" role="img" aria-label="LIVE" />}
+                {c.title}
+              </span>
             </button>
           </li>
         ))}

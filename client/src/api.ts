@@ -8,6 +8,7 @@ import type {
   FaceCam,
   ExportPack,
   Job,
+  LiveInfo,
   NewSourceInput,
   Pick,
   Platform,
@@ -91,6 +92,13 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  live: () => call<LiveInfo>("/api/live"),
+  arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
+  disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),
+  setLaunchAt: (launchAt: string) => call<LiveInfo>("/api/live/launch", { method: "PUT", body: JSON.stringify({ launchAt }) }),
+  setLiveCreator: (id: number, on: boolean) => call<LiveInfo>(`/api/live/creators/${id}`, { method: "PUT", body: JSON.stringify({ on }) }),
+  subscribePush: (subscription: PushSubscriptionJSON) => call<LiveInfo>("/api/live/push", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: (endpoint: string) => call<LiveInfo>("/api/live/push", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };
