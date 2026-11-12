@@ -1,0 +1,49 @@
+# Runs the clipfarm server (gallery + pipeline) from the live release. Install: RUNBOOK.md step 4.
+[Unit]
+Description=clipfarm: stream clipping server (/opt/clipfarm-live/current)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clipfarm
+Group=clipfarm
+# "current" is a link that deploy.sh points at the live release; a restart picks up the new one.
+WorkingDirectory=/opt/clipfarm-live/current
+# Real keys live here (mode 600, never in git). Every variable: ops/clipfarm/.env.example
+EnvironmentFile=/etc/clipfarm/clipfarm.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/server/index.js
+Restart=always
+RestartSec=5
+# SIGTERM puts a running job back in the queue; ffmpeg and yt-dlp children are killed if they linger.
+KillMode=mixed
+TimeoutStopSec=30
+
+# Memory: the box is shared (7.6 GB with Postiz and KEEL). The cap covers node plus the one
+# ffmpeg or yt-dlp job that runs at a time. Above MemoryHigh the service is slowed down and
+# pushed to swap; at MemoryMax the biggest process (ffmpeg) is killed.
+MemoryHigh=1280M
+MemoryMax=1536M
+# When ffmpeg is killed for memory, only that job fails (the queue retries it); the server stays up.
+OOMPolicy=continue
+# Leave the processors to the other services when they need them.
+Nice=5
+CPUWeight=50
+
+# The service can write only its data folder and its own private /tmp (emptied when it stops).
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/clipfarm
+PrivateTmp=true
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

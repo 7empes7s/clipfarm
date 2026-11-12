@@ -1,0 +1,476 @@
+# clipfarm on Mulinux: runbook
+
+This puts clipfarm (the gallery, the pipeline and posting) on Mulinux at
+`https://clip.techinsiderbytes.com`, behind a Cloudflare sign-in, and covers updates, rollback,
+logs, backups and restore.
+
+**Who does what.** Every step is marked with its owner:
+
+- **IT**: commands on the server, as root on Mulinux, in order. Each step says what you should see.
+- **Manager**: taps in the Cloudflare dashboard (works on the phone) and the first sign-in.
+
+| Step | What | Owner |
+|---|---|---|
+| 1 | Check the box | IT |
+| 2 | Install Node 22, ffmpeg, yt-dlp | IT |
+| 3 | User, folders, code | IT |
+| 4 | Settings (keys) and the service | IT, keys from the manager |
+| 5 | First deploy | IT |
+| 6 | Caddy: route the hostname | IT |
+| 7 | Cloudflare Access: the sign-in | Manager |
+| 8 | Cloudflare tunnel: the public hostname | Manager |
+| 9 | Check it, open it on the phone | IT, then manager |
+| 10 | Backups and disk cleanup | IT |
+| 11 | Point clipfarm at the local Postiz | IT, key from the manager |
+
+Do step 7 before step 8: the sign-in exists before the address does, so the gallery is never
+open to the internet, not even for a minute.
+
+**What gets installed**
+
+| Piece | Where |
+|---|---|
+| Code | `/opt/clipfarm-live/`: `repo/` (git clone), `releases/<time>-<commit>/` (last 2 kept), `current` → the live release |
+| Settings and keys | `/etc/clipfarm/clipfarm.env` (mode 600, never in git) |
+| Data | `/var/lib/clipfarm/`: `clipfarm.db` (SQLite) and `media/` (final clips) |
+| Web app | `127.0.0.1:5310` only, published through Caddy (`:80`) and the Cloudflare tunnel |
+| systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
+| Backups | `/opt/backups/YYYY-MM-DD/clipfarm.db.gz`, newest 3 kept, database only |
+
+Memory: the service is capped at 1536 MiB (`MemoryMax`), which covers the server plus the one
+ffmpeg or yt-dlp job that runs at a time. Idle it uses about 100 MiB.
+
+---
+
+## 1. Check the box first (IT)
+
+```bash
+free -m          # "available" on the Mem: line should be 2000 or more
+df -h /          # "Avail" should be 15G or more (a 1-hour VOD needs a few GB while it is worked on)
+ss -ltnp 'sport = :5310'                      # must print only the header line (port free)
+grep -n 'clip\.techinsiderbytes' /etc/caddy/Caddyfile || echo "no clip block yet"   # expect "no clip block yet"
+systemctl is-active caddy cloudflared         # expect two lines: active
+```
+
+If RAM is short, don't start clipfarm: say so to the manager. If port 5310 is taken, pick another
+free port (check it the same way) and use it everywhere this runbook says 5310: `PORT` in
+`/etc/clipfarm/clipfarm.env` (step 4) and the Caddy block (step 6). `deploy.sh` and
+`clipfarm:check` read the port from that file.
+
+## 2. Install Node 22, ffmpeg and yt-dlp (IT)
+
+See what is already there:
+
+```bash
+command -v node && node -v      # need /usr/bin/node and v22.18 or newer
+ffmpeg -version | head -1       # need any 6.x or newer
+yt-dlp --version                # need a version from the last few months
+git --version
+```
+
+Install only what is missing:
+
+```bash
+# Node 22 (NodeSource), if node is missing or older than 22.18
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y nodejs
+
+# ffmpeg and git
+apt-get install -y --no-install-recommends ffmpeg git
+
+# yt-dlp: the release binary (the apt one is too old for Twitch and YouTube)
+curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
+chmod 755 /usr/local/bin/yt-dlp
+```
+
+Run the four checks again: each prints a version. `command -v node` must print `/usr/bin/node`.
+If it prints another path, use that path in `ExecStart=` of both `.service` files after
+installing them (steps 4 and 10).
+
+When downloads start failing months from now, update yt-dlp first: `yt-dlp -U`.
+
+## 3. User, folders and code (IT)
+
+```bash
+useradd --system --home-dir /var/lib/clipfarm --shell /usr/sbin/nologin clipfarm
+install -d -o clipfarm -g clipfarm -m 750 /var/lib/clipfarm /var/lib/clipfarm/media
+install -d -o clipfarm -g clipfarm -m 755 /opt/clipfarm-live /opt/clipfarm-live/releases
+install -d -o root -g root -m 700 /etc/clipfarm
+runuser -u clipfarm -- git clone https://github.com/7empes7s/clipfarm.git /opt/clipfarm-live/repo
+ls /opt/clipfarm-live
+```
+
+You should see: `releases repo`.
+
+(If the repository is private, the clone asks for a login: use a read-only GitHub token as the
+password.)
+
+## 4. Settings and the service (IT, keys from the manager)
+
+```bash
+install -o root -g root -m 600 /opt/clipfarm-live/repo/ops/clipfarm/.env.example /etc/clipfarm/clipfarm.env
+nano /etc/clipfarm/clipfarm.env
+```
+
+Fill in what the manager gives you. The file explains every line. The ones that matter:
+
+| Line | Value |
+|---|---|
+| `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
+| `OPENAI_API_KEY` | for transcripts (and for picking highlights, unless `LLM_API_KEY` is set) |
+| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | only if highlights are picked by another provider |
+| `POSTIZ_API_KEY` | step 11 |
+| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | watchlist; empty skips that platform |
+
+Without keys clipfarm still starts and shows the gallery; jobs that need a missing key fail and
+say which key.
+
+Save a copy of the filled file in the team password manager: the backup does not include it.
+
+Install the service (it starts in step 5, once there is a release to run):
+
+```bash
+install -m 644 /opt/clipfarm-live/repo/ops/clipfarm/clipfarm.service /etc/systemd/system/clipfarm.service
+systemctl daemon-reload
+systemctl enable clipfarm
+systemctl cat clipfarm | grep -E '^(User|ExecStart|MemoryMax)='
+```
+
+You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` and `MemoryMax=1536M`.
+
+## 5. First deploy (IT)
+
+```bash
+/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh origin/main
+```
+
+It takes 2-4 minutes: it builds the newest commit of `main` in a fresh folder under
+`/opt/clipfarm-live/releases/`, points `current` at it, starts the service and asks
+`/api/health`. The last line must be:
+
+`clipfarm deploy: <time>-<commit> is live and healthy at http://127.0.0.1:5310/api/health.`
+
+If it ends with `there is no earlier release to go back to, so clipfarm is stopped`, the server
+did not start: `journalctl -u clipfarm -n 50 --no-pager` says why (most often a typo in
+`/etc/clipfarm/clipfarm.env`). Fix it and run the command again.
+
+Check it by hand:
+
+```bash
+systemctl is-active clipfarm                                        # expect: active
+curl -sS http://127.0.0.1:5310/api/health                           # expect: {"ok":true}
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5310/    # expect: 403
+ss -ltnp 'sport = :5310'                                            # expect 127.0.0.1:5310, not 0.0.0.0 or *
+```
+
+The 403 is right: the gallery only answers requests that came through the Cloudflare sign-in.
+
+## 6. Caddy: route the hostname to clipfarm (IT)
+
+```bash
+cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%F)
+printf '\n' >> /etc/caddy/Caddyfile
+cat /opt/clipfarm-live/repo/ops/clipfarm/Caddyfile.snippet >> /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile   # expect "Valid configuration"
+systemctl reload caddy
+curl -sS -H 'Host: clip.techinsiderbytes.com' http://127.0.0.1/api/health   # expect: {"ok":true}
+```
+
+If `caddy validate` fails, put the backup back (`cp /etc/caddy/Caddyfile.bak-$(date +%F) /etc/caddy/Caddyfile`)
+and look at how the existing `keel.techinsiderbytes.com` block is written; write the clipfarm
+block the same way. If you changed the port in step 1, change `5310` in the block too.
+
+Uploads: clipfarm takes links, not files, so the block needs no large upload limit (it stops
+requests over 1 MB, which the app would refuse anyway).
+
+## 7. Cloudflare Access: the sign-in (Manager)
+
+The gallery can approve and post clips and has no password of its own. Cloudflare Access is its
+login: only the emails you allow get in. Do this before step 8.
+
+In a browser (the phone works):
+
+1. Go to <https://one.dash.cloudflare.com> and pick the account that owns `techinsiderbytes.com`.
+2. Left menu: **Access** → **Applications** (newer dashboards: **Access controls** → **Applications**)
+   → **Add an application** → **Self-hosted**.
+3. Fill in:
+   - Application name: `clipfarm`
+   - Session duration: `1 month` (so the phone does not ask every day)
+   - **Add public hostname**: Subdomain `clip`, Domain `techinsiderbytes.com`, Path: leave empty
+4. Under **Access policies** → **Create new policy** (or **Add a policy**):
+   - Policy name: `manager`
+   - Action: **Allow**
+   - Include → Selector **Emails** → your email address (add more addresses later the same way)
+   - Save the policy and select it for the application.
+5. Login methods: leave **One-time PIN** on (Cloudflare emails you a 6-digit code). Turn
+   **Instant Auth** on if only one method is listed.
+6. Leave everything else as it is → **Save** / **Add application**.
+
+Never add a policy with Include **Everyone** and Action **Allow** to this application.
+
+**Paths that skip the sign-in: none.** Leave the whole hostname behind Access:
+
+| Path | Skip Access? | Why |
+|---|---|---|
+| `/`, `/assets/*`, `/sw.js` | No | The app itself. The service worker is fetched with your sign-in cookie, so it works behind Access. |
+| `/api/*` (clips, approve, post, videos) | Never | This is what Access protects. |
+| `/api/health` | No | Only checked on the box (`deploy.sh`, `clipfarm:check`), which does not go through Cloudflare. |
+| Webhooks | None exist | clipfarm calls Postiz and the platforms; nothing calls clipfarm from outside. If a webhook is added later, it needs its own secret and its own bypass, in that issue. |
+| `/manifest.webmanifest`, `/icons/*` | No, unless installing fails (below) | The page asks for the manifest with your sign-in cookie, so it normally works behind Access. |
+
+Only if "Add to Home Screen" on the phone shows no clipfarm name or icon (step 9): add a second
+application so the phone can fetch the install files without a cookie. They hold nothing
+private (a name, colours and the icon), and the server keeps exactly these paths open too.
+
+1. **Access** → **Applications** → **Add an application** → **Self-hosted**, name `clipfarm install files`.
+2. Add two public hostnames: `clip.techinsiderbytes.com` with Path `manifest.webmanifest`, and
+   `clip.techinsiderbytes.com` with Path `icons/*`.
+3. Policy: Action **Bypass**, Include **Everyone**. Save.
+
+Don't bypass anything else. In particular not `/api/*`: the server would refuse it anyway
+(`CLIPFARM_REQUIRE_ACCESS=1` turns away every request that did not come through Access).
+
+## 8. Cloudflare tunnel: add the public hostname (Manager)
+
+The tunnel is managed in the dashboard, not in a file on the server.
+
+1. <https://one.dash.cloudflare.com> → **Networks** → **Tunnels** (newer: **Networks** → **Connectors** → **Cloudflare Tunnels**).
+2. Click the tunnel Mulinux runs (status **Healthy**; it already has `keel.techinsiderbytes.com`
+   and `postiz.techinsiderbytes.com`) → **Edit** / **Configure**.
+3. Tab **Public Hostname** (newer: **Published application routes**) → **Add a public hostname**.
+4. Fill in:
+   - Subdomain: `clip`
+   - Domain: `techinsiderbytes.com`
+   - Path: leave empty
+   - Service Type: `HTTP`
+   - URL: `localhost:80` (the same as the keel entry)
+5. **Save**. Cloudflare creates the DNS record by itself.
+
+## 9. Check it, then open it on the phone (IT, then manager)
+
+IT, on the box (allow a minute for DNS):
+
+```bash
+cd /opt/clipfarm-live/current && npm run clipfarm:check
+```
+
+You should see four `OK:` lines:
+
+```
+OK: the clipfarm service is active.
+OK: something listens on 127.0.0.1:5310.
+OK: Caddy routes clip.techinsiderbytes.com to clipfarm (/api/health answers).
+OK: https://clip.techinsiderbytes.com/ sends visitors to the Cloudflare Access login.
+```
+
+A `NOT OK:` line says what is wrong and which step fixes it. The check only reads; run it as
+often as you like. What the last line means when it is not OK:
+
+| It says | Meaning | Fix |
+|---|---|---|
+| `answers 404 from Cloudflare` | The tunnel has no public hostname for `clip` | Step 8 |
+| `answers 403 instead of the Cloudflare login` | The address works but there is no Access application on it (the server is refusing visitors itself) | Step 7 |
+| `answers 200 without a sign-in: the gallery is open to the internet` | No Access application and the server's own gate is off | Step 7 now; set `CLIPFARM_REQUIRE_ACCESS=1` (step 4) and `systemctl restart clipfarm` |
+| `answers 502` (or 530) | Cloudflare cannot reach the box | `systemctl is-active cloudflared caddy`; step 6 |
+
+Manager, on the phone:
+
+1. Open <https://clip.techinsiderbytes.com>. Cloudflare asks for your email, then for the code
+   it emails you.
+2. The clipfarm dashboard opens. Tap **Clips**: the gallery loads (empty on a new install).
+3. Add it to the home screen: iPhone Safari → Share → **Add to Home Screen**; Android Chrome →
+   menu → **Install app** / **Add to Home screen**. The icon is the clipfarm logo.
+4. In a private window, open the address again and enter an email that is not allowed: no code
+   arrives and you don't get in.
+
+When the sign-in runs out (after a month), the app opens but shows that it cannot load: close
+it, open it again and sign in.
+
+## 10. Backups and disk cleanup (IT)
+
+```bash
+systemctl list-timers mimule-backup.timer postiz-backup.timer   # note the NEXT times
+cd /opt/clipfarm-live/repo/ops/clipfarm
+install -m 644 clipfarm-backup.service clipfarm-backup.timer clipfarm-media-cleanup.service clipfarm-media-cleanup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now clipfarm-backup.timer clipfarm-media-cleanup.timer
+systemctl start clipfarm-backup.service        # take one backup now
+journalctl -u clipfarm-backup.service -n 5 --no-pager   # expect "clipfarm backup: /opt/backups/<today>/clipfarm.db.gz (...)"
+ls -l /opt/backups/$(date +%F)/clipfarm.db.gz
+```
+
+`clipfarm-backup.timer` runs at 04:40, after `mimule-backup` and Postiz's 04:30. If those run
+later on this box, edit `OnCalendar=` in `/etc/systemd/system/clipfarm-backup.timer` to 10
+minutes after the last of them, so all land in the same day folder.
+
+What is and is not backed up:
+
+- **Backed up:** the database (`/var/lib/clipfarm/clipfarm.db`): creators and their permission
+  records, VODs, transcripts, picks, clips and their reviews, posts, stats. A consistent copy
+  is taken while the server runs. The 3 newest are kept; other files in the backup folders are
+  never touched.
+- **Not backed up:** `/var/lib/clipfarm/media` (video files: clips can be rendered again from
+  their source) and `/etc/clipfarm/clipfarm.env` (keep it in the password manager).
+
+Disk cleanup: `clipfarm-media-cleanup.timer` runs at 05:00 and deletes the video files of clips
+that were **rejected more than 14 days ago** (`MEDIA_KEEP_REJECTED_DAYS` in the env file).
+Pending and approved clips are never deleted, and the clip's row stays in the database. To see
+what it would delete, without deleting:
+
+```bash
+cd /opt/clipfarm-live/current
+runuser -u clipfarm -- env $(grep -E '^(DATA_DIR|MEDIA_DIR|MEDIA_KEEP_REJECTED_DAYS)=' /etc/clipfarm/clipfarm.env) node ops/clipfarm/media-cleanup-cli.ts --dry-run
+```
+
+Downloads and working files of a job live in the service's private `/tmp`, are removed when
+the job ends, and the whole folder is emptied when the service stops.
+
+## 11. Point clipfarm at the local Postiz (IT, key from the manager)
+
+Postiz runs on the same box (`ops/postiz/RUNBOOK.md`). clipfarm talks to it on the local port,
+which skips Cloudflare and its 100 MB upload limit.
+
+1. Manager: open <https://postiz.techinsiderbytes.com> → **Settings** → **Public API** → copy
+   the API key and give it to IT.
+2. IT:
+
+```bash
+nano /etc/clipfarm/clipfarm.env      # POSTIZ_URL=http://127.0.0.1:5300 (already there), POSTIZ_API_KEY=<the key>
+systemctl restart clipfarm
+journalctl -u clipfarm -n 3 --no-pager      # the start line ends with "posting: postiz)"
+cd /opt/clipfarm-live/current
+env $(grep -E '^POSTIZ_(URL|API_KEY)=' /etc/clipfarm/clipfarm.env) npm run postiz:check
+```
+
+You should see `OK: Postiz at http://127.0.0.1:5300 answered with N connected accounts.` and one
+line per channel. `NOT OK: ...` says what is wrong (key refused, Postiz not running).
+
+3. Manager: open clipfarm → **Clips**: it says "Posting through Postiz" and lists the accounts.
+
+A clip is only ever posted when its creator has a permission record that allows that platform;
+that rule is in the app and does not depend on this setup.
+
+---
+
+## Update (IT)
+
+```bash
+systemctl start clipfarm-backup.service              # fresh backup first
+/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh origin/main
+```
+
+`origin/main` is the newest merged commit; a commit id (`deploy.sh 460bfc0`) or a tag works too.
+The script fetches from GitHub, builds in a new folder while the old release keeps running,
+then switches and restarts (a few seconds of downtime; a job that was running goes back in the
+queue and starts again).
+
+- Ends with `... is live and healthy`: done. The release before it is kept for a rollback; older ones are removed.
+- Ends with `went back to <old release>, which is live and healthy again`: the new version did
+  not start, the old one is serving again, nothing else to do on the box. Send the manager the
+  output of `journalctl -u clipfarm -n 80 --no-pager`.
+- The build fails (an `npm` error): nothing was switched or restarted. Same: send the output.
+
+To update `deploy.sh` and the other ops files themselves (when a release changed them):
+
+```bash
+runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull --ff-only
+```
+
+then install any changed `.service` / `.timer` file again as in steps 4 and 10, and
+`systemctl daemon-reload`.
+
+Changed settings only (`/etc/clipfarm/clipfarm.env`): `systemctl restart clipfarm`, no deploy.
+
+## Roll back (IT)
+
+To the release that was live before the last update (no build, a few seconds):
+
+```bash
+ls /opt/clipfarm-live/releases/            # two folders: the live one and the one before
+/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh --rollback
+```
+
+It switches `current` to the other release, restarts and checks health; if that release does
+not answer, it switches back by itself. Running `--rollback` again returns to the newer one.
+
+To any older commit: `deploy.sh <commit id>` (builds it again).
+
+If the newer version changed the database and the older one fails on it (its log says so),
+also restore the backup taken before the update ("Restore" below).
+
+## Logs and day to day (IT)
+
+```bash
+systemctl status clipfarm --no-pager
+journalctl -u clipfarm -n 100 --no-pager          # last 100 lines
+journalctl -u clipfarm -f                         # follow live (Ctrl+C to stop)
+journalctl -u clipfarm --since today | grep -i error
+journalctl -u clipfarm-backup.service -u clipfarm-media-cleanup.service -n 20 --no-pager
+systemctl show clipfarm -p MemoryCurrent -p NRestarts
+du -sh /var/lib/clipfarm/media /var/lib/clipfarm/clipfarm.db
+readlink /opt/clipfarm-live/current               # which release is live
+cd /opt/clipfarm-live/current && npm run clipfarm:check
+```
+
+The start line in the log names what the server uses, for example
+`clipfarm on http://127.0.0.1:5310 (access gate: on, downloader: yt-dlp, transcriber: openai, picker: llm, posting: postiz)`.
+
+Common problems:
+
+| You see | Do |
+|---|---|
+| Phone shows the Cloudflare login again and again | The email is not in the Access policy (step 7) |
+| Phone shows "Sign in through Cloudflare Access to use clipfarm." | The request did not come through Access: a bypass was added for a path it should not cover (step 7), or someone called the port directly |
+| `NRestarts` keeps growing | `journalctl -u clipfarm -n 50`: a bad setting in the env file, or the port is taken (step 1) |
+| A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 1536 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
+| Downloads fail for every link | `yt-dlp -U`, then retry the job in the app |
+| Disk filling up | `du -sh /var/lib/clipfarm/media`; lower `MEDIA_KEEP_REJECTED_DAYS`, `systemctl start clipfarm-media-cleanup.service` |
+
+## Stop and start (IT)
+
+```bash
+systemctl stop clipfarm       # the gallery goes offline; data stays; a running job is put back in the queue
+systemctl start clipfarm
+systemctl disable --now clipfarm clipfarm-backup.timer clipfarm-media-cleanup.timer   # stop and don't start at boot
+```
+
+## Restore from a backup (IT)
+
+```bash
+ls /opt/backups/*/clipfarm.db.gz                    # pick a date
+BACKUP=/opt/backups/YYYY-MM-DD/clipfarm.db.gz       # the one you picked
+systemctl stop clipfarm
+cd /var/lib/clipfarm
+mv clipfarm.db clipfarm.db.before-restore
+rm -f clipfarm.db-wal clipfarm.db-shm
+gunzip -c "$BACKUP" > clipfarm.db
+chown clipfarm:clipfarm clipfarm.db && chmod 640 clipfarm.db
+systemctl start clipfarm
+cd /opt/clipfarm-live/current && npm run clipfarm:check
+```
+
+Then open the gallery and check the clips and creators. Clips made after the backup are gone
+from the lists (their files are still in `media/`); posts made after it are still on the
+platforms but no longer tracked. When all is well: `rm /var/lib/clipfarm/clipfarm.db.before-restore`.
+
+On a new box: do steps 1-6 (with your saved `clipfarm.env` in step 4), the restore above, then
+steps 8-10. The Access application (step 7) stays as it is.
+
+## Remove clipfarm from the box (IT, then manager)
+
+This deletes the clips and the database on the box. Take a backup and copy it off first.
+
+```bash
+systemctl start clipfarm-backup.service
+systemctl disable --now clipfarm clipfarm-backup.timer clipfarm-media-cleanup.timer
+rm /etc/systemd/system/clipfarm.service /etc/systemd/system/clipfarm-backup.service /etc/systemd/system/clipfarm-backup.timer \
+   /etc/systemd/system/clipfarm-media-cleanup.service /etc/systemd/system/clipfarm-media-cleanup.timer
+systemctl daemon-reload
+```
+
+Then: delete the `http://clip.techinsiderbytes.com { ... }` block from `/etc/caddy/Caddyfile`,
+`caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && systemctl reload caddy`;
+`rm -rf /opt/clipfarm-live /var/lib/clipfarm /etc/clipfarm`; `userdel clipfarm`.
+
+Manager: in the Zero Trust dashboard delete the `clip` public hostname from the tunnel (step 8),
+the `clipfarm` Access application (step 7) and, under the domain's DNS records, the `clip` CNAME.

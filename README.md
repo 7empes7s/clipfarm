@@ -69,6 +69,8 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `3000` | Port for the API and, in preview, the client |
+| `HOST` | every interface | Address to listen on; the live box uses `127.0.0.1` |
+| `CLIPFARM_REQUIRE_ACCESS` | off | `1` on the live box: requests without Cloudflare Access's `Cf-Access-Jwt-Assertion` header are refused (clipfarm has no login of its own) |
 | `DATA_DIR` | `./data` | Folder for the SQLite database |
 | `OPENAI_API_KEY` | – | Key for the Whisper API. Without it, transcription jobs fail with a clear message |
 | `TRANSCRIBER` | `openai` | `openai` or `fake` |
@@ -94,6 +96,13 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
 | `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist |
 | `WATCHLIST_POLL_MINUTES` | `15` | How often the watchlist checks for live streams and new VODs (5 or more) |
+
+## Live box (clip.techinsiderbytes.com)
+
+`ops/clipfarm/RUNBOOK.md` puts clipfarm on Mulinux behind Caddy, the Cloudflare tunnel and a
+Cloudflare Access sign-in: systemd unit, `deploy.sh` (build a commit, switch, health-check, roll
+back), daily database backup and media cleanup. `npm run clipfarm:check`, on the box, says
+whether the service, its port, Caddy and the sign-in are in place; it only reads.
 
 ## Posting (Postiz or Upload-Post)
 
