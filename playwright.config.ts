@@ -9,7 +9,16 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
-  projects: [{ name: "phone", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } }],
+  projects: [
+    { name: "phone", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
+    // The gallery again on a laptop screen (grid view, keyboard shortcuts), after the phone run.
+    {
+      name: "desktop",
+      testMatch: /review\.spec\.ts/,
+      dependencies: ["phone"],
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+    },
+  ],
   webServer: {
     // The built app with fake downloader and transcriber, on a throwaway database.
     command: "rm -rf .e2e-data/run && npm run build && node dist/server/index.js",

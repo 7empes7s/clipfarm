@@ -1,9 +1,12 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-import type { Job, Source, Vod, VodDetail } from "../../shared/types";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { Clip, Job, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
 import { ClipsTab } from "./ClipsTab";
+import { FaceCamSheet } from "./FaceCamSheet";
+import { InboxTab } from "./InboxTab";
+import { tabCounts } from "./review";
 import { StatsTab } from "./StatsTab";
 import { clock, shortDate, usd } from "./format";
 
@@ -23,16 +26,29 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
   cancelled: "Cancelled",
 };
 
+const JOB_TYPE_LABEL: Record<string, string> = {
+  ingest: "Transcript",
+  "render-clip": "New version",
+  "demo-clips": "Demo clips",
+};
+
 const TABS = [
-  { id: "campaigns", label: "Campaigns" },
-  { id: "clips", label: "Clips" },
+  { id: "inbox", label: "Inbox" },
+  { id: "approved", label: "Approved" },
+  { id: "posted", label: "Posted" },
+  { id: "sources", label: "Sources" },
+  { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
 ] as const;
-type Tab = (typeof TABS)[number]["id"];
+/** "rejected" is reached from the inbox, not the tab bar. */
+type Tab = (typeof TABS)[number]["id"] | "rejected";
+// Older links keep working.
+const ALIASES: Record<string, Tab> = { campaigns: "sources", clips: "approved" };
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1);
-  return TABS.some((t) => t.id === h) ? (h as Tab) : "campaigns";
+  if (h === "rejected" || TABS.some((t) => t.id === h)) return h as Tab;
+  return ALIASES[h] ?? "inbox";
 }
 
 export function App() {
@@ -40,15 +56,26 @@ export function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
+  // Bumped on every local change to the clips, so a poll that started earlier cannot undo it.
+  const clipsEdits = useRef(0);
+
+  const updateClips = useCallback((fn: (c: Clip[]) => Clip[]) => {
+    clipsEdits.current++;
+    setClips(fn);
+  }, []);
 
   const refresh = useCallback(async () => {
+    const edits = clipsEdits.current;
     try {
-      const [s, v, j] = await Promise.all([api.sources(), api.vods(), api.jobs()]);
+      const [s, v, j, c] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.clips()]);
       setSources(s);
       setVods(v);
       setJobs(j);
+      if (edits === clipsEdits.current) setClips(c);
       setLoadError(null);
     } catch (err) {
       setLoadError((err as Error).message);
@@ -67,6 +94,8 @@ export function App() {
   }, [refresh, busy]);
 
   const closeForm = useCallback(() => setFormOpen(false), []);
+  const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
+  const counts = tabCounts(clips, sources, jobs);
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -88,6 +117,7 @@ export function App() {
         {TABS.map((t) => (
           <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
             {t.label}
+            {t.id !== "stats" && <span className="count">{counts[t.id]}</span>}
           </a>
         ))}
       </nav>
@@ -98,10 +128,13 @@ export function App() {
         </p>
       )}
 
-      {tab === "clips" && <ClipsTab sources={sources} />}
+      {tab === "inbox" && <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />}
+      {(tab === "approved" || tab === "posted" || tab === "rejected") && (
+        <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />
+      )}
       {tab === "stats" && <StatsTab />}
 
-      {tab === "campaigns" && (
+      {tab === "sources" && (
         <section aria-labelledby="campaigns-title">
           <div className="section-head">
             <h2 id="campaigns-title">Campaigns</h2>
@@ -116,23 +149,34 @@ export function App() {
           ) : (
             <ul className="stack">
               {sources.map((s) => (
-                <SourceCard key={s.id} source={s} vods={vods.filter((v) => v.sourceId === s.id)} onChange={refresh} />
+                <SourceCard
+                  key={s.id}
+                  source={s}
+                  vods={vods.filter((v) => v.sourceId === s.id)}
+                  onChange={refresh}
+                  onFaceCam={() => setFaceCamFor(s)}
+                />
               ))}
             </ul>
           )}
         </section>
       )}
 
-      {tab === "campaigns" && (
+      {tab === "jobs" && (
         <section aria-labelledby="jobs-title">
-          <h2 id="jobs-title">Work queue</h2>
+          <h2 id="jobs-title">Jobs</h2>
           <p className="hint">One job at a time, so the server stays light.</p>
           {jobs.length === 0 ? (
-            <p className="empty">Nothing running. Add a stream link to a campaign to start.</p>
+            <p className="empty">Nothing running. Add a stream link to a campaign in Sources to start.</p>
           ) : (
             <ul className="jobs">
               {jobs.map((j) => (
-                <JobRow key={j.id} job={j} vod={vods.find((v) => v.id === j.vodId)} onChange={refresh} />
+                <JobRow
+                  key={j.id}
+                  job={j}
+                  name={vods.find((v) => v.id === j.vodId)?.title ?? vods.find((v) => v.id === j.vodId)?.url ?? clips.find((c) => c.id === j.clipId)?.title}
+                  onChange={refresh}
+                />
               ))}
             </ul>
           )}
@@ -148,11 +192,22 @@ export function App() {
           }}
         />
       )}
+      {faceCamFor && (
+        <FaceCamSheet
+          source={faceCamFor}
+          clip={clips.find((c) => c.sourceId === faceCamFor.id)}
+          onClose={closeFaceCam}
+          onSaved={() => {
+            setFaceCamFor(null);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; onChange: () => void }) {
+function SourceCard({ source, vods, onChange, onFaceCam }: { source: Source; vods: Vod[]; onChange: () => void; onFaceCam: () => void }) {
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +267,12 @@ function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; o
         </dl>
       )}
       {source.bannedContent && <p className="banned">Off limits: {source.bannedContent}</p>}
+      <div className="meta">
+        <span>{source.faceCam ? "Face cam set" : "No face cam set"}</span>
+        <button type="button" className="link" onClick={onFaceCam}>
+          {source.faceCam ? "Change face cam" : "Set face cam"}
+        </button>
+      </div>
 
       {source.permissionState === "active" ? (
         <form className="add-vod" onSubmit={addVod}>
@@ -289,12 +350,13 @@ function VodRow({ vod }: { vod: Vod }) {
   );
 }
 
-function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => void }) {
+function JobRow({ job, name, onChange }: { job: Job; name?: string; onChange: () => void }) {
   const active = job.status === "queued" || job.status === "running";
+  const kind = JOB_TYPE_LABEL[job.type] ?? "Job";
   return (
     <li className={`job job-${job.status}`} data-testid="job">
       <div className="job-line">
-        <span className="job-name">{vod?.title ?? vod?.url ?? `Job ${job.id}`}</span>
+        <span className="job-name">{name ? `${kind}: ${name}` : `${kind} ${job.id}`}</span>
         <span className="job-status">{JOB_STATUS_LABEL[job.status]}</span>
       </div>
       {active && (
@@ -313,6 +375,17 @@ function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => v
             }}
           >
             Cancel
+          </button>
+        )}
+        {(job.status === "failed" || job.status === "cancelled") && (
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              void api.retryJob(job.id).then(onChange);
+            }}
+          >
+            Try again
           </button>
         )}
       </div>
