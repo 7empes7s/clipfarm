@@ -40,12 +40,14 @@ test("approve, reject with a reason, undo, edit a trim and set a face cam", asyn
   await expectFits(page);
 
   // Approve, then undo.
+  const head = page.getByTestId("current-clip");
+  const firstId = (await head.getAttribute("data-clip"))!;
   const first = (await currentTitle(page).textContent())!;
   await decide.getByRole("button", { name: /^Approve/ }).click();
-  await expect(currentTitle(page)).not.toHaveText(first);
+  await expect(head).not.toHaveAttribute("data-clip", firstId);
   await expect(decide.getByText(`Approved “${first}”.`)).toBeVisible();
   await decide.getByRole("button", { name: "Undo" }).click();
-  await expect(currentTitle(page)).toHaveText(first);
+  await expect(head).toHaveAttribute("data-clip", firstId);
 
   // Reject with a reason chip.
   await decide.getByRole("button", { name: /^Reject/ }).click();
@@ -113,7 +115,9 @@ test("ten clips are reviewed in well under 100 s, with the next clip ready each 
     await expect
       .poll(() => page.getByTestId("next-video").evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 10_000 })
       .toBeGreaterThanOrEqual(2);
-    const title = (await currentTitle(page).textContent())!;
+    // Demo sets repeat titles, so clips are told apart by id.
+    const current = page.getByTestId("current-clip");
+    const id = (await current.getAttribute("data-clip"))!;
     const started = Date.now();
     if (i % 3 === 2) {
       if (keyboard) {
@@ -128,7 +132,7 @@ test("ten clips are reviewed in well under 100 s, with the next clip ready each 
     } else {
       await page.getByRole("button", { name: /^Approve/ }).click();
     }
-    await expect(currentTitle(page)).not.toHaveText(title);
+    await expect(current).not.toHaveAttribute("data-clip", id);
     const took = Date.now() - started;
     switchTimes.push(took);
     interaction += took;

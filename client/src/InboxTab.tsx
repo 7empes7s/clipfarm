@@ -348,7 +348,7 @@ function ClipFrame({
 
 function ClipHead({ clip, position }: { clip: Clip; position: string }) {
   return (
-    <div className="clip-head" data-testid="current-clip">
+    <div className="clip-head" data-testid="current-clip" data-clip={clip.id}>
       <span className="score" aria-label={`Score ${clip.score ?? "unknown"} of 100`}>
         {clip.score === null ? "–" : Math.round(clip.score)}
       </span>
