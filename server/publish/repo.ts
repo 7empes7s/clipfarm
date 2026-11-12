@@ -1,6 +1,6 @@
 import type { Db } from "../db/index.js";
-import type { Platform, Post, PostingRules, PostingServiceName, PostStatus } from "../../shared/types.js";
-import { NotFoundError } from "../errors.js";
+import type { Platform, Post, PostFlag, PostingRules, PostingServiceName, PostStatus } from "../../shared/types.js";
+import { NotFoundError, ValidationError } from "../errors.js";
 import { estimateEarnings } from "./earnings.js";
 import type { PostUpdate, TrackedPost } from "./types.js";
 
@@ -31,10 +31,16 @@ interface PostRow {
   views_updated_at: string | null;
   views_source: "service" | "manual" | null;
   whop_submitted_at: string | null;
+  claim_at: string | null;
+  removal_at: string | null;
+  strike_at: string | null;
+  kind: string;
 }
 
+const FLAG_COLUMNS: Record<PostFlag, string> = { claim: "claim_at", removal: "removal_at", strike: "strike_at" };
+
 const SELECT = `
-  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.cpm_rate_usd, m.min_views
+  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.cpm_rate_usd, m.min_views, m.kind
   FROM posts p
   JOIN clips c ON c.id = p.clip_id
   JOIN sources s ON s.id = c.source_id
@@ -63,6 +69,8 @@ function toPost(r: PostRow): Post {
     viewsUpdatedAt: r.views_updated_at,
     viewsSource: r.views_source,
     whopSubmittedAt: r.whop_submitted_at,
+    experiment: r.kind === "experiment",
+    flags: { claim: r.claim_at, removal: r.removal_at, strike: r.strike_at },
     estimatedEarningsUsd: estimateEarnings(r.views, r.cpm_rate_usd, r.min_views),
   };
 }
@@ -151,10 +159,33 @@ export class PostsRepo {
       set("views_source", "service");
       set("views_updated_at", this.now().toISOString());
     }
-    if (sets.length === 0) return;
-    this.db
-      .prepare(`UPDATE posts SET ${sets.join(", ")} WHERE service = ? AND external_id = ? AND account_id = ?`)
-      .run(...args, service, u.externalId, u.accountId);
+    const where = "WHERE service = ? AND external_id = ? AND account_id = ?";
+    if (sets.length > 0) this.db.prepare(`UPDATE posts SET ${sets.join(", ")} ${where}`).run(...args, service, u.externalId, u.accountId);
+    if (u.flags?.length) {
+      const row = this.db.prepare(`SELECT id FROM posts ${where}`).get(service, u.externalId, u.accountId) as { id: number } | undefined;
+      if (row) for (const flag of u.flags) this.setFlag(row.id, flag, true);
+    }
+  }
+
+  /**
+   * Records (or takes back) a claim, removal or strike on a post that went out. The first time it
+   * was recorded is kept. A strike switches a burner account off, with the reason, until someone
+   * switches it on again; taking the strike back does not switch it on.
+   */
+  setFlag(id: number, flag: PostFlag, on: boolean): Post {
+    const post = this.get(id);
+    if (post.status !== "posted") throw new ValidationError("Only a post that went out can get a claim, removal or strike.");
+    if (on === (post.flags[flag] !== null)) return post;
+    const at = this.now().toISOString();
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE posts SET ${FLAG_COLUMNS[flag]} = ? WHERE id = ?`).run(on ? at : null, id);
+      if (flag === "strike" && on) {
+        this.db
+          .prepare("UPDATE posting_accounts SET enabled = 0, paused_reason = ? WHERE account_id = ? AND role = 'burner' AND enabled = 1")
+          .run(`Paused on ${at.slice(0, 10)}: a strike on "${post.clipTitle}". Switch it on again in its settings when it is safe.`, post.accountId);
+      }
+    })();
+    return this.get(id);
   }
 
   /** Times of the account's posts that went out or are still due. */
@@ -193,7 +224,7 @@ export class PostsRepo {
   }
 
   markWhopSubmitted(id: number): Post {
-    this.get(id);
+    if (this.get(id).experiment) throw new ValidationError("Experiment posts are never sent to Whop.");
     this.db.prepare("UPDATE posts SET whop_submitted_at = ? WHERE id = ?").run(this.now().toISOString(), id);
     return this.get(id);
   }

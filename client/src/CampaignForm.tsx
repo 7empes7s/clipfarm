@@ -1,9 +1,11 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { NewSourceInput, PermissionKind, Platform } from "../../shared/types";
-import { PERMISSION_KIND_LABELS, PERMISSION_KINDS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
+import type { NewSourceInput, PermissionKind, Platform, Source } from "../../shared/types";
+import { EXPERIMENT_DAYS, PERMISSION_KIND_LABELS, PERMISSION_KINDS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
 import { api } from "./api";
 
 interface Props {
+  /** Set to add a permission to a creator we already have; left out, the form adds a new creator. */
+  source?: Source;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -12,8 +14,8 @@ function numberOrNull(s: string): number | null {
   return s.trim() === "" ? null : Number(s);
 }
 
-/** "Add a campaign": a sheet over the page, closed with × or Escape. */
-export function CampaignForm({ onClose, onSaved }: Props) {
+/** "Add a campaign" (or a permission for one creator): a sheet over the page, closed with × or Escape. */
+export function CampaignForm({ source, onClose, onSaved }: Props) {
   const [kind, setKind] = useState<PermissionKind>("whop-campaign");
   const [platforms, setPlatforms] = useState<Platform[]>(["tiktok", "youtube", "instagram"]);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export function CampaignForm({ onClose, onSaved }: Props) {
         kind,
         campaignUrl: text("campaignUrl") || null,
         briefRules: text("briefRules"),
+        note: text("note"),
         cpmRateUsd: numberOrNull(text("cpmRateUsd")),
         minViews: numberOrNull(text("minViews")),
         allowedPlatforms: platforms,
@@ -50,7 +53,8 @@ export function CampaignForm({ onClose, onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await api.addSource(input);
+      if (source) await api.addPermission(source.id, input.permission);
+      else await api.addSource(input);
       onSaved();
     } catch (err) {
       setError((err as Error).message);
@@ -59,6 +63,7 @@ export function CampaignForm({ onClose, onSaved }: Props) {
     }
   }
 
+  const experiment = kind === "experiment";
   const togglePlatform = (p: Platform) =>
     setPlatforms((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
 
@@ -72,7 +77,7 @@ export function CampaignForm({ onClose, onSaved }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="sheet-head">
-          <h2 id="campaign-form-title">Add a campaign</h2>
+          <h2 id="campaign-form-title">{source ? `Add a permission for ${source.creatorName}` : "Add a campaign"}</h2>
           <button type="button" className="close" aria-label="Close" onClick={onClose}>
             ×
           </button>
@@ -88,30 +93,49 @@ export function CampaignForm({ onClose, onSaved }: Props) {
               ))}
             </select>
           </label>
-          {kind !== "own-content" && (
+          {experiment && (
+            <>
+              <p className="hint">
+                A test of what the platforms do to clips posted without the creator's permission. These clips go to burner
+                accounts only: never to a main account, an export or Whop. Leaks, isolated cutscenes and ending spoilers stay
+                off limits.
+              </p>
+              <label>
+                What this tests
+                <textarea name="note" rows={2} required maxLength={280} placeholder="Does TikTok remove a 20 s reaction clip?" />
+              </label>
+            </>
+          )}
+          {kind !== "own-content" && !experiment && (
             <label>
               {kind === "whop-campaign" ? "Whop campaign link" : "Link to the permission (email, doc…)"}
               <input name="campaignUrl" type="url" inputMode="url" placeholder="https://whop.com/…" required={kind === "whop-campaign"} />
             </label>
           )}
-          <label>
-            Creator
-            <input name="creatorName" required autoComplete="off" placeholder="Their streamer name" />
-          </label>
-          <label>
-            Channel links <span className="hint">one per line</span>
-            <textarea name="channelUrls" rows={2} placeholder="https://www.twitch.tv/…" />
-          </label>
-          <div className="row">
-            <label>
-              Pay per 1,000 views ($)
-              <input name="cpmRateUsd" type="number" min="0" step="0.01" inputMode="decimal" />
-            </label>
-            <label>
-              Minimum views
-              <input name="minViews" type="number" min="0" step="1" inputMode="numeric" />
-            </label>
-          </div>
+          {!source && (
+            <>
+              <label>
+                Creator
+                <input name="creatorName" required autoComplete="off" placeholder="Their streamer name" />
+              </label>
+              <label>
+                Channel links <span className="hint">one per line</span>
+                <textarea name="channelUrls" rows={2} placeholder="https://www.twitch.tv/…" />
+              </label>
+            </>
+          )}
+          {!experiment && (
+            <div className="row">
+              <label>
+                Pay per 1,000 views ($)
+                <input name="cpmRateUsd" type="number" min="0" step="0.01" inputMode="decimal" />
+              </label>
+              <label>
+                Minimum views
+                <input name="minViews" type="number" min="0" step="1" inputMode="numeric" />
+              </label>
+            </div>
+          )}
           <fieldset>
             <legend>Where clips may be posted</legend>
             <div className="chips">
@@ -124,24 +148,29 @@ export function CampaignForm({ onClose, onSaved }: Props) {
             </div>
           </fieldset>
           <label>
-            Ends on <span className="hint">leave empty if it does not end</span>
+            Ends on{" "}
+            <span className="hint">{experiment ? `leave empty to end in ${EXPERIMENT_DAYS} days` : "leave empty if it does not end"}</span>
             <input name="expiresAt" type="date" />
           </label>
-          <label>
-            Brief rules
-            <textarea name="briefRules" rows={4} placeholder="Paste the campaign brief: length, credit, hashtags…" />
-          </label>
-          <label>
-            Off limits
-            <textarea name="bannedContent" rows={2} placeholder="Topics or moments never to clip" />
-          </label>
+          {!experiment && (
+            <label>
+              Brief rules
+              <textarea name="briefRules" rows={4} placeholder="Paste the campaign brief: length, credit, hashtags…" />
+            </label>
+          )}
+          {!source && (
+            <label>
+              Off limits
+              <textarea name="bannedContent" rows={2} placeholder="Topics or moments never to clip" />
+            </label>
+          )}
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
           <button type="submit" className="primary" disabled={saving}>
-            {saving ? "Saving…" : "Save campaign"}
+            {saving ? "Saving…" : source ? "Save permission" : "Save campaign"}
           </button>
         </form>
       </div>

@@ -3,6 +3,8 @@ import type {
   Clip,
   Dashboard,
   EarningsRow,
+  ExperimentReport,
+  ExperimentRow,
   Goal,
   Job,
   Post,
@@ -13,7 +15,7 @@ import type {
   Vod,
   VodProgress,
 } from "../../shared/types.js";
-import { PERMISSION_KIND_LABELS } from "../../shared/types.js";
+import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types.js";
 import { average, costPerApprovedClip, dayOf, etaSeconds, round2, secondsPerReview, towards, weekStart } from "../../shared/metrics.js";
 
 export interface DashboardInput {
@@ -150,7 +152,8 @@ export function earningsRows(posts: Post[], sources: Source[], now: Date): Earni
   const perms = new Map(sources.flatMap((s) => s.permissions.map((p) => [p.id, p] as const)));
   const rows = new Map<string, EarningsRow>();
   for (const p of posts) {
-    if (p.status === "failed") continue;
+    // Experiment posts earn nothing and are never sent to Whop.
+    if (p.status === "failed" || p.experiment) continue;
     const perm = perms.get(p.permissionId);
     const key = `${p.permissionId}:${p.platform}`;
     const campaign = p.campaignUrl
@@ -178,6 +181,54 @@ export function earningsRows(posts: Post[], sources: Source[], now: Date): Earni
     rows.set(key, row);
   }
   return [...rows.values()].sort((a, b) => b.estimatedUsd - a.estimatedUsd || a.campaign.localeCompare(b.campaign));
+}
+
+/**
+ * What the platforms did to the experiment posts: totals, then per burner account and per creator.
+ * Time to first claim is how long the earliest-claimed post was out before its claim.
+ */
+export function experimentReport(posts: Post[], accounts: AccountCard[]): ExperimentReport {
+  const blank = (key: string, label: string): ExperimentRow => ({
+    key,
+    label,
+    posts: 0,
+    views: 0,
+    claims: 0,
+    removals: 0,
+    strikes: 0,
+    firstClaimSec: null,
+    pausedReason: null,
+  });
+  const total = blank("all", "All experiment posts");
+  const byAccount = new Map<string, ExperimentRow>();
+  const byCreator = new Map<string, ExperimentRow>();
+  const firstClaimAt = new Map<ExperimentRow, string>();
+  const row = (rows: Map<string, ExperimentRow>, key: string, label: string) => {
+    if (!rows.has(key)) rows.set(key, blank(key, label));
+    return rows.get(key)!;
+  };
+  for (const p of posts) {
+    if (!p.experiment || p.status === "failed") continue;
+    const groups = [
+      total,
+      row(byAccount, p.accountId, `${p.accountName} · ${PLATFORM_LABELS[p.platform]}`),
+      row(byCreator, String(p.sourceId), p.creatorName),
+    ];
+    for (const r of groups) {
+      r.posts++;
+      r.views += p.views ?? 0;
+      if (p.flags.claim) r.claims++;
+      if (p.flags.removal) r.removals++;
+      if (p.flags.strike) r.strikes++;
+      if (p.flags.claim && (!firstClaimAt.has(r) || p.flags.claim < firstClaimAt.get(r)!)) {
+        firstClaimAt.set(r, p.flags.claim);
+        r.firstClaimSec = secondsBetween(postTime(p), p.flags.claim);
+      }
+    }
+  }
+  for (const r of byAccount.values()) r.pausedReason = accounts.find((a) => a.accountId === r.key)?.account?.pausedReason ?? null;
+  const sorted = (rows: Map<string, ExperimentRow>) => [...rows.values()].sort((a, b) => b.posts - a.posts || a.label.localeCompare(b.label));
+  return { total, byAccount: sorted(byAccount), byCreator: sorted(byCreator) };
 }
 
 export function buildDashboard(input: DashboardInput): Dashboard {
@@ -242,5 +293,6 @@ export function buildDashboard(input: DashboardInput): Dashboard {
       weekUsd: round2(rows.reduce((s, r) => s + r.weekUsd, 0)),
       totalUsd: round2(rows.reduce((s, r) => s + r.estimatedUsd, 0)),
     },
+    experiment: experimentReport(posts, accounts),
   };
 }
