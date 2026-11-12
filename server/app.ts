@@ -39,6 +39,13 @@ export interface AppDeps {
   clientDir?: string;
 }
 
+/** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
+export function clientBuildProblem(clientDir: string): string | null {
+  return existsSync(join(clientDir, "index.html"))
+    ? null
+    : `The clipfarm app is not built (${join(clientDir, "index.html")} is missing). Run "npm run build", then reload.`;
+}
+
 function idParam(raw: string | string[] | undefined): number {
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0) throw new ValidationError("Invalid id.");
@@ -333,10 +340,18 @@ export function createApp({
     res.status(404).json({ error: "Not found." });
   });
 
-  if (clientDir && existsSync(clientDir)) {
+  if (clientDir) {
+    // Checked per request, not once at startup: a build that finishes (or reruns) after the server
+    // started is picked up, and a missing one is said out loud instead of Express's "Cannot GET /".
     app.use(express.static(clientDir));
     app.get("/{*splat}", (_req, res) => {
-      res.sendFile(join(clientDir, "index.html"));
+      if (clientBuildProblem(clientDir)) {
+        // The server's paths stay in its log (see index.ts), not in the answer.
+        res.status(503).type("text/plain").send('The clipfarm app is not built. Run "npm run build", then reload.');
+        return;
+      }
+      // `root` keeps the dotfile check on "index.html" only: the checkout may sit under a dot-folder.
+      res.sendFile("index.html", { root: clientDir });
     });
   }
 
