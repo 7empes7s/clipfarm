@@ -28,6 +28,7 @@ import {
 } from "../../shared/types";
 import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
+import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { Sheet } from "./Sheet";
 
@@ -37,6 +38,7 @@ export const DASH_VIEWS = [
   { id: "outputs", label: "Outputs" },
   { id: "accounts", label: "Accounts" },
   { id: "earnings", label: "Earnings" },
+  { id: "experiment", label: "Experiment" },
 ] as const;
 export type DashView = (typeof DASH_VIEWS)[number]["id"];
 
@@ -90,6 +92,7 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
       {view === "accounts" && <Accounts sources={sources} />}
       {dash && view === "earnings" && <Earnings dash={dash} />}
+      {dash && view === "experiment" && <ExperimentView report={dash.experiment} posts={posts} onChange={load} />}
     </section>
   );
 }
@@ -348,6 +351,7 @@ function clipState(c: Clip): ClipState {
 }
 
 function campaignLabel(p: Post): string {
+  if (p.experiment) return `${p.creatorName} (experiment)`;
   return p.campaignUrl ? new URL(p.campaignUrl).pathname.replace(/^\/+|\/+$/g, "") || p.creatorName : `${p.creatorName} (direct)`;
 }
 
@@ -452,6 +456,7 @@ function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sour
                   <div className="meta">
                     <span>{sources.find((s) => s.id === c.sourceId)?.creatorName ?? "Unknown creator"}</span>
                     <span>{shortDate(c.createdAt)}</span>
+                    {c.experiment && <ExperimentBadge />}
                     {mine.length > 0 && <span>{compact(views)} views</span>}
                   </div>
                   {mine.length > 0 && (
@@ -819,6 +824,7 @@ function AccountCardView({
           </button>
         </div>
       )}
+      {a?.pausedReason && <p className="blocked">{a.pausedReason}</p>}
       <div className="followers">
         <strong>{card.followers === null ? "–" : card.followers.toLocaleString()}</strong>
         <span>

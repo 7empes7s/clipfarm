@@ -1943,3 +1943,59 @@ button.danger {
   grid-column: 2;
   justify-self: start;
 }
+
+/* Experiment: dashed like the Burner tag, in the "work in progress" colour, so a test never reads as cleared. */
+.experiment {
+  border: 1px dashed var(--work);
+}
+.exp-line {
+  margin: var(--s1) 0 0;
+}
+.exp-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2) var(--s3);
+  margin: 0 0 var(--s3);
+}
+.exp-facts dt {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.exp-facts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.exp-row h4 {
+  margin: 0 0 var(--s2);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.exp-row .exp-facts {
+  margin-bottom: 0;
+}
+.exp-row .blocked {
+  margin: 0 0 var(--s2);
+}
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  border-radius: 999px;
+}
+.flag[aria-pressed="true"] {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.flag .hint {
+  color: inherit;
+}

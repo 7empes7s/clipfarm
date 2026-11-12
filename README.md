@@ -43,6 +43,10 @@ app shell, so it opens without a network; numbers load once it is back.
 - **Progress**: the goals (O1: clips per hour of stream, minutes per hour of stream, share
   approved; O2: review time per clip) and each stream's stages (transcript, picks, render) with
   the time each took.
+- **Experiment**: what happened to experiment posts, in total, per burner account and per creator:
+  posts, views, claims, removals, strikes and the time to the first claim. The posting service
+  reports these where it can; otherwise tap Claim, Removed or Strike on a post. A strike switches
+  the burner off and says why, until you switch it on again in its settings.
 - **Outputs**: every clip with its status, where it was posted, links and views; filters by
   creator, campaign, platform and date; tap ▶ to play.
 - **Accounts** (Posting accounts): several accounts per platform, each linked once in the posting
@@ -210,6 +214,12 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   `direct-permission` or `own-content`, with campaign link, brief rules, pay per 1,000 views,
   minimum views, allowed platforms and end date). The server refuses to ingest from a source
   without an active record, both when the link is added and again when the job runs.
+  A fifth kind, `experiment`, tests what the platforms do to clips posted without the creator's
+  permission: it needs no proof, only a note, and ends after 30 days unless a date is given. Its
+  clips carry an "Experiment" badge and go to **burner accounts only**: main accounts are not in
+  the picker, and exports and Whop refuse them (`requireActivePermission`, `accountsAllowedFor`).
+  With no burner switched on, posting is refused with the reason. The content rules stay: no
+  leaks, isolated cutscenes or ending spoilers.
 - `server/jobs/`: a SQLite-backed queue. One job at a time (the box is shared), automatic retries,
   cancel, progress, and a temp folder per job that is always removed.
 - `server/pipeline/ingest/`: yt-dlp downloads **audio only** (`-f bestaudio`, ~60 MB per hour)
