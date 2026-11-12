@@ -7,7 +7,7 @@ import type { ClipsRepo } from "./clips/repo.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
-import { parseRules, type Publisher } from "./publish/publisher.js";
+import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import type { PostsRepo } from "./publish/repo.js";
 import { parseNewSource, type SourcesRepo } from "./sources/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
@@ -104,7 +104,7 @@ export function createApp({ sources, vods, queue, clips, posts, publisher, seedD
     const id = idParam(req.params.id);
     const file = clips.filePath(id);
     if (!existsSync(file)) throw new NotFoundError("The video file for this clip is missing on the server.");
-    if (req.query.download) res.download(file, `clip-${id}.mp4`, (err) => err && next(err));
+    if (req.query.download) res.download(file, `${slug(clips.get(id).title)}.mp4`, (err) => err && next(err));
     else res.sendFile(file, (err) => err && next(err));
   });
 
