@@ -6,6 +6,8 @@ import type {
   Clip,
   Dashboard,
   ClipEditInput,
+  EngineSettings,
+  EngineStatus,
   FaceCam,
   ExportPack,
   Job,
@@ -92,6 +94,10 @@ export const api = {
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}`, { method: "PUT", body: JSON.stringify(settings) }),
   setFollowers: (accountId: string, followers: number) =>
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
+  engine: () => call<EngineStatus>("/api/engine"),
+  setupEngine: () => call<EngineStatus>("/api/engine/setup", { method: "POST" }),
+  saveEngineSettings: (change: Partial<EngineSettings>) =>
+    call<EngineStatus>("/api/engine/settings", { method: "PUT", body: JSON.stringify(change) }),
   loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),
   watchlist: () => call<Watchlist>("/api/watchlist"),
   checkWatchlist: () => call<Watchlist>("/api/watchlist/poll", { method: "POST" }),

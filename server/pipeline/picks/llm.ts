@@ -30,6 +30,8 @@ export interface OpenAiCompatibleChatOptions {
   /** List prices in USD per million tokens, for the cost per clip. */
   usdPerMTokIn?: number;
   usdPerMTokOut?: number;
+  /** A cap on the answer's length (local models: a schema alone does not stop a runaway string). */
+  maxTokens?: number;
   /** Injected in tests so no real API is called. */
   fetchImpl?: typeof fetch;
 }
@@ -56,6 +58,7 @@ export class OpenAiCompatibleChat implements ChatClient {
       body: JSON.stringify({
         model: this.opts.model,
         temperature: 0.2,
+        ...(this.opts.maxTokens ? { max_tokens: this.opts.maxTokens } : {}),
         messages: [
           { role: "system", content: req.system },
           { role: "user", content: req.user },

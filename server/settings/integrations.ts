@@ -45,7 +45,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
   {
     id: "openai",
     label: "OpenAI",
-    purpose: "Turns speech into text and picks the highlights.",
+    purpose: "Optional speed-up. clipfarm transcribes and picks on its own server; with this key you can switch on \"Use cloud AI for speed\" on the Dashboard.",
     fields: [
       key("OPENAI_API_KEY", "API key", "sk-…"),
       plain("LLM_BASE_URL", "Picking model address (optional)", "https://api.openai.com/v1", false, true),

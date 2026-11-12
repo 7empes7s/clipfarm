@@ -33,6 +33,7 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
 
 const JOB_TYPE_LABEL: Record<string, string> = {
   ingest: "Transcript",
+  "engine-setup": "Engine setup",
   picks: "Picking highlights",
   render: "Cutting a clip",
   "render-clip": "New version",
