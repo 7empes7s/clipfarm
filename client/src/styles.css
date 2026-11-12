@@ -15,6 +15,10 @@
   /* The dark well a clip plays in, like a viewfinder; the same in both themes. */
   --well: #0b1118;
   --well-ink: #f2f5f8;
+  /* Platform badge edges, the platforms' own colours; the same in both themes. */
+  --twitch: #9146ff;
+  --kick: #3bb83b;
+  --youtube: #e62117;
 
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-head: "Roboto Condensed", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
@@ -540,11 +544,11 @@ textarea {
   background: var(--tally);
   color: var(--surface);
 }
-/* Six tabs: two rows of three on phones, one row from tablet width up. */
+/* Seven tabs: two rows of four on phones, one row from tablet width up. */
 @media (max-width: 639px) {
   .tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
   }
   .tabs a {
@@ -1089,4 +1093,194 @@ a.button {
   .bar span {
     transition: none;
   }
+}
+
+/* Watchlist: creator rows, the live strip and the auto-ingest switch. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.platform-note {
+  margin: 0 0 var(--s2);
+}
+.live-strip {
+  margin: 0 0 var(--s4);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--radius);
+  background: var(--well);
+  color: var(--well-ink);
+}
+.live-strip h3 {
+  font-size: 1.1rem;
+  margin-bottom: var(--s2);
+}
+.live-strip .hint {
+  margin: 0;
+  color: inherit;
+  opacity: 0.8;
+}
+.live-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.live-strip a {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border: 1px solid color-mix(in srgb, var(--well-ink) 30%, transparent);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.live-dot {
+  display: inline-block;
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: var(--s2);
+  border-radius: 50%;
+  background: var(--tally);
+  box-shadow: 0 0 0 0.18em color-mix(in srgb, var(--tally) 30%, transparent);
+  vertical-align: 0.15em;
+}
+.live-strip .live-dot {
+  margin-right: 0;
+}
+.find {
+  display: block;
+  margin-bottom: var(--s4);
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+}
+a.badge {
+  color: var(--ink);
+}
+.badge-twitch {
+  border-color: var(--twitch);
+}
+.badge-kick {
+  border-color: var(--kick);
+}
+.badge-youtube {
+  border-color: var(--youtube);
+}
+.program {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: var(--s3) 0 0;
+  font-size: 0.9375rem;
+}
+.program a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+.program-chip {
+  font-weight: 600;
+}
+.program-none {
+  color: var(--muted);
+  font-weight: 400;
+}
+.watch .blocked {
+  margin-top: var(--s2);
+  font-size: 0.9375rem;
+}
+.watch .meta {
+  margin: var(--s2) 0 0;
+}
+.last-vod span {
+  overflow-wrap: anywhere;
+}
+.watch-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 44px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 3rem;
+  height: 1.75rem;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch input::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.75rem - 6px);
+  height: calc(1.75rem - 6px);
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 0.15s;
+}
+.switch input:checked {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.switch input:checked::after {
+  transform: translateX(1.25rem);
+}
+.switch input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.watch .note {
+  margin: var(--s2) 0 0;
+  font-size: 0.8125rem;
+}
+button.danger {
+  color: var(--bad);
+  border-color: var(--bad);
 }

@@ -128,6 +128,39 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX clip_reviews_clip ON clip_reviews(clip_id);
   `,
+  `
+  CREATE TABLE watchlist (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    channels TEXT NOT NULL DEFAULT '[]',
+    language TEXT NOT NULL DEFAULT '',
+    games TEXT NOT NULL DEFAULT '[]',
+    program TEXT NOT NULL DEFAULT 'none',
+    program_url TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+    auto_ingest INTEGER NOT NULL DEFAULT 0,
+    live TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE detected_vods (
+    id INTEGER PRIMARY KEY,
+    creator_id INTEGER NOT NULL REFERENCES watchlist(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT,
+    published_at TEXT NOT NULL,
+    duration_sec REAL,
+    status TEXT NOT NULL,
+    skip_reason TEXT,
+    vod_id INTEGER REFERENCES vods(id),
+    created_at TEXT NOT NULL,
+    UNIQUE (platform, external_id)
+  );
+  CREATE INDEX detected_vods_creator ON detected_vods(creator_id, published_at);
+  `,
 ];
 
 export function migrate(db: Db): void {
