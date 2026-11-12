@@ -25,6 +25,35 @@ On an empty gallery, the Inbox has a **Load demo clips** button: a queued job ma
 creators and ten clips from generated test patterns (about 20 s), so the review can be tried right
 away. Demo campaigns allow no platform, so demo clips can be exported but never posted.
 
+The **Dashboard** has a **Load demo data** button on an empty database: the same ten demo clips
+plus two finished demo streams with stage times, review decisions, posts with views on three demo
+accounts and 30 days of account stats, so every dashboard section can be tried. The demo posts are
+records only (nothing is sent), and their demo campaign has already ended, so nothing demo can be
+posted.
+
+## The dashboard (installable on the phone)
+
+Open the app and tap **Dashboard** (or the installed app, which opens on it). On iPhone: Safari >
+Share > Add to Home Screen; on Android: Chrome's menu > Install app. A service worker keeps the
+app shell, so it opens without a network; numbers load once it is back.
+
+- **Today**: clips waiting for review, approved but not posted, posted today, views today, estimated
+  earnings and cost this week, cost per approved clip, and the job running now with its progress
+  and time left.
+- **Progress**: the goals (O1: clips per hour of stream, minutes per hour of stream, share
+  approved; O2: review time per clip) and each stream's stages (transcript, picks, render) with
+  the time each took.
+- **Outputs**: every clip with its status, where it was posted, links and views; filters by
+  creator, campaign, platform and date; tap ▶ to play.
+- **Accounts**: one card per account connected in the posting service: followers and growth,
+  views per day, average views per post, top 5 clips and posts in the last 7 days against the
+  spacing plan. Stats are read from Postiz (`/analytics/{integration}`, at most 4 accounts per
+  read) or Upload-Post (`/analytics/{profile}`, one call) at most every 6 hours and cached, so
+  opening the dashboard never spends the service's API limit. Where the service has no follower
+  numbers, type them in by hand; the card says "Entered by hand".
+- **Earnings**: per campaign and platform: views, posts over the minimum, estimated payout, how
+  many were sent to Whop, this week and in all.
+
 Try it without network or API keys (fake downloader makes a 10 s test clip, fake transcriber
 returns fixed words):
 
@@ -130,8 +159,12 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   muted, tap for sound; swipe right or Approve, swipe left or Reject + a reason; Edit; Undo; on
   desktop an "Up next" grid and keys A / R then 1-5 / E / arrows / Z), Approved and Posted
   (posting, export, views, Whop), Sources (campaigns, face cam), Jobs (progress, cancel, try again)
-  and Stats. Rejected clips are one tap away from the Inbox.
-- `shared/`: types used by both.
+  and Stats, plus the Dashboard. Rejected clips are one tap away from the Inbox.
+- `server/accounts/`: account stats from the posting service, cached in SQLite behind a guard
+  (how often, how many accounts per read), plus followers typed in by hand.
+- `server/dashboard/`: builds the dashboard from our records and the cached account stats.
+- `shared/`: types used by both, and `metrics.ts` (growth, averages, cost per approved clip, time
+  left, review speed).
 
 ## Manual check with a real link (not run in CI)
 
