@@ -16,6 +16,8 @@ export function engineSetupHandler(engine: Engine): JobHandler {
       let before = 0;
       for (const part of parts) {
         tried.add(part.id);
+        // Switched off in the app since this round began (the hook writer, another model): leave it.
+        if (!engine.missing().some((p) => p.id === part.id)) continue;
         let lastShown = -1;
         await engine.install(part, {
           signal,

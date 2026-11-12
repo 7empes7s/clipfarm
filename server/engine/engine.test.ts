@@ -197,6 +197,32 @@ describe("engine memory guard", () => {
   });
 });
 
+describe("engine status: the hook writer and memory", () => {
+  it("says when the writer would be refused for memory, and nothing when it fits or is off", () => {
+    const tight = setup({ availableMb: 2000 }).engine;
+    expect(tight.status([]).writerNote).toContain("Not enough free memory to start the hook writer (qwen2.5-1.5b): it needs 1.6 GB plus 1.0 GB spare, and 2.0 GB is free.");
+    expect(tight.status([]).memory.ok).toBe(true);
+    tight.saveSettings({ writer: false });
+    expect(tight.status([]).writerNote).toBeNull();
+    expect(setup({ availableMb: 4000 }).engine.status([]).writerNote).toBeNull();
+  });
+});
+
+describe("engine setup job: settings changed while it runs", () => {
+  it("leaves out the hook writer when it is switched off before its download starts", async () => {
+    const { engine, queue } = setup();
+    const install = engine.install.bind(engine);
+    engine.install = async (spec, o) => {
+      if (spec.id === "whisper-cpp") engine.saveSettings({ writer: false });
+      await install(spec, o);
+    };
+    queue.enqueue(ENGINE_SETUP_JOB, {});
+    await queue.idle();
+    expect(downloads).toEqual(["/whisper.tar.gz", "/vad.bin", "/ggml-base.en.bin"]);
+    expect(engine.status(queue.list()).ready).toBe(true);
+  });
+});
+
 describe("engine memory guard under the service's own cap", () => {
   it("refuses the speech model when the cap leaves less than it needs, even on a box with free memory", async () => {
     const { engine, queue } = setup({ availableMb: 6000, capRoomMb: 300 });

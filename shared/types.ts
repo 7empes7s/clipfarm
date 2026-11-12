@@ -778,6 +778,8 @@ export interface EngineStatus {
   /** The download job, while it waits, runs or after it failed. */
   setupJob: { id: number; status: JobStatus; progress: number; message: string; error: string | null } | null;
   memory: { availableMb: number; needMb: number; ok: boolean };
+  /** Why the hook writer would be refused right now (memory), so hooks would come from the transcript; null when it can run or is off. */
+  writerNote: string | null;
   settings: EngineSettings;
   sttModels: EngineModelChoice[];
   /** Whether an OpenAI key is on the server, so "Use cloud AI for speed" can be switched on. */

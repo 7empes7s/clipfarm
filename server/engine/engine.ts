@@ -232,7 +232,9 @@ export class Engine {
       .map((p) => ({ id: p.id, label: p.label, note: p.note ?? "", bytes: p.bytes, needMb: p.needMb ?? 0, present: this.present(p) }));
     const cloudAvailable = this.cloudAvailable();
     const short = stt ? memoryProblem(`the speech model (${stt.id})`, needMb, memory) : null;
-    const base = { settings, sttModels, cloudAvailable, memory: { availableMb: memory.freeMb, needMb, ok: short === null } };
+    const llm = settings.writer && !settings.cloud ? this.find("llm", DEFAULT_LLM_MODEL) : undefined;
+    const writerNote = llm ? memoryProblem(`the hook writer (${llm.id})`, llm.needMb ?? 0, memory) : null;
+    const base = { settings, sttModels, cloudAvailable, writerNote, memory: { availableMb: memory.freeMb, needMb, ok: short === null } };
     if (mode === "test") {
       return { ...base, mode, ready: true, headline: "Test engine: no real transcription (demo mode)", problems: [], downloads: [], setupJob: null };
     }

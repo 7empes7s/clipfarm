@@ -96,6 +96,7 @@ export function EngineCard({ jobs }: { jobs: Job[] }) {
             Write hooks with the local writer
           </label>
           <p className="hint">Off: hooks are the line said at the peak. On: a small model on this server writes them (1.1 GB download, about 8 more minutes per stream).</p>
+          {status.writerNote && <p className="hint">Right now hooks would come from the transcript. {status.writerNote}</p>}
           <label className="switch">
             <input
               type="checkbox"
