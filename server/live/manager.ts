@@ -47,6 +47,8 @@ export interface LiveManagerDeps {
   keepHours?: number;
   /** Most live segments that may wait for the one heavy job; beyond it the oldest is skipped. */
   maxBacklog?: number;
+  /** Most streams recorded at once (each is two light recorders during an overlap); the biggest creators go first. */
+  maxStreams?: number;
   guard?: GuardLimits;
   now?: () => Date;
 }
@@ -66,6 +68,7 @@ export class LiveManager {
   private readonly overlapSec: number;
   private readonly keepHours: number;
   private readonly maxBacklog: number;
+  private readonly maxStreams: number;
   private readonly limits: GuardLimits;
   /** Why each creator is not being recorded, from the last look. */
   private reasons = new Map<number, string>();
@@ -82,6 +85,7 @@ export class LiveManager {
     this.overlapSec = deps.overlapSec ?? 60;
     this.keepHours = deps.keepHours ?? 3;
     this.maxBacklog = deps.maxBacklog ?? 2;
+    this.maxStreams = deps.maxStreams ?? 4;
     this.limits = deps.guard ?? DEFAULT_GUARD;
   }
 
@@ -180,7 +184,10 @@ export class LiveManager {
       if (!decision.capture) this.reasons.set(creator.id, decision.reason);
       else if (this.guard) this.reasons.set(creator.id, this.guard);
       else if (backoff && !backoff.ready(this.now())) this.reasons.set(creator.id, `${backoff.lastError} Trying again soon.`);
-      else this.begin(creator, rank);
+      else if (this.deps.repo.activeCaptures().length >= this.maxStreams) {
+        // The watchlist is in order of size, so the biggest creators got the places.
+        this.reasons.set(creator.id, `Waiting: ${this.maxStreams} streams are being recorded, the most this server takes at once`);
+      } else this.begin(creator, rank);
     }
     await this.cleanup();
     this.roll();

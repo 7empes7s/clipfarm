@@ -36,7 +36,7 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-function setup(opts: { maxSegments?: number; maxBacklog?: number } = {}) {
+function setup(opts: { maxSegments?: number; maxBacklog?: number; maxStreams?: number } = {}) {
   let now = BEFORE;
   const clock = () => now;
   const db = openDb(":memory:");
@@ -69,6 +69,7 @@ function setup(opts: { maxSegments?: number; maxBacklog?: number } = {}) {
     segmentSec: 1,
     overlapSec: 1,
     maxBacklog: opts.maxBacklog,
+    maxStreams: opts.maxStreams,
     now: clock,
   });
   const look = async () => {
@@ -199,6 +200,19 @@ describe("memory and disk guard", () => {
 });
 
 describe("rolling and falling behind", () => {
+  it("records only so many streams at once, the biggest creators first", async () => {
+    const t = setup({ maxStreams: 2 });
+    t.at(AFTER);
+    const ids = ["Big", "Middle", "Small"].map((name) => t.watch(name));
+    await t.look();
+    expect(t.repo.activeCaptures().map((c) => c.creatorId)).toEqual(ids.slice(0, 2));
+    expect(t.status(ids[2]!)).toMatchObject({ recording: false, reason: "Waiting: 2 streams are being recorded, the most this server takes at once" });
+    // A place opens: the next creator is recorded.
+    await t.manager.setCreator(ids[0]!, false);
+    await t.manager.settled();
+    expect(t.repo.activeCaptures().map((c) => c.creatorId)).toEqual(ids.slice(1));
+  });
+
   it("rolls a new segment every step, the biggest creator's work first in the queue", async () => {
     const t = setup({ maxBacklog: 10 });
     t.at(AFTER);

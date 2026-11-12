@@ -96,6 +96,7 @@ const live = new LiveManager({
   segmentSec: config.live.segmentSec,
   overlapSec: config.live.overlapSec,
   keepHours: config.live.keepHours,
+  maxStreams: config.live.maxStreams,
 });
 const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
 const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });

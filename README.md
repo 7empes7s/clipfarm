@@ -116,6 +116,7 @@ env-only.
 | `LIVE_OVERLAP_SEC` | `60` | Each segment runs this much longer, so a moment across a boundary is whole in one (keep it at the longest clip) |
 | `LIVE_KEEP_HOURS` | `3` | Hours a segment's video is kept (about 3 GB per creator per hour at 1080p) |
 | `LIVE_MAX_PICKS` | `3` | Clips cut from each live segment |
+| `LIVE_MAX_STREAMS` | `4` | Most streams recorded at once; the creators highest on the watchlist go first |
 | `LAUNCH_AT` | `2026-11-19T05:00:00Z` | The launch time until it is changed on the Launch day card |
 | `PUBLIC_URL` | `https://clip.techinsiderbytes.com` | The app's web address, named to the phones' push services as the sender of notifications |
 
@@ -209,8 +210,8 @@ the switch of live mode: clipping a stream while it is still on, instead of wait
 - **One heavy job.** Live segments and their clips run before stream/VOD jobs, the biggest
   creator (highest on the watchlist) first. When more than two segments wait, the oldest is
   skipped, and Jobs says so.
-- **Guard.** No recording starts with under 10 GB of free disk or 1 GB of free memory; the card
-  says which.
+- **Guard.** No recording starts with under 10 GB of free disk or 1 GB of free memory, and at
+  most 4 streams are recorded at once; the card says which.
 - **Notifications.** "Turn on notifications" on the card (in the installed app) subscribes the
   phone: it is told when live mode starts on a creator and when the first LIVE clip lands. The
   server makes its own push keys on first start; there is nothing to set up.

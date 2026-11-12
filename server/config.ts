@@ -56,6 +56,8 @@ export interface Config {
     keepHours: number;
     /** Clips cut per segment. */
     maxPicks: number;
+    /** Most streams recorded at once. */
+    maxStreams: number;
     /** The launch time until the manager changes it on the Launch day card. */
     launchAt: string;
     /** The app's web address, named to the push services as the sender of notifications. */
@@ -202,6 +204,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       overlapSec: Math.max(0, Number(env.LIVE_OVERLAP_SEC || (fakeDownloads ? 30 : 60))),
       keepHours: Math.max(0, Number(env.LIVE_KEEP_HOURS || 3)),
       maxPicks: Math.max(1, Number(env.LIVE_MAX_PICKS) || 3),
+      maxStreams: Math.max(1, Number(env.LIVE_MAX_STREAMS) || 4),
       launchAt: env.LAUNCH_AT && !Number.isNaN(new Date(env.LAUNCH_AT).getTime()) ? new Date(env.LAUNCH_AT).toISOString() : DEFAULT_LAUNCH_AT,
       pushSubject: env.PUBLIC_URL || "https://clip.techinsiderbytes.com",
     },
