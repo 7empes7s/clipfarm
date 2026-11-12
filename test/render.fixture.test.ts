@@ -147,7 +147,7 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect(review).toMatchObject({ hook: "Wait for it", reason: "Loud", score: 80, layout: "center", startSec: 3 });
     expect(review.endSec).toBeCloseTo(23.9, 6);
     expect(review.masterDurationSec).toBeCloseTo(26.9, 6);
-    expect(review.captionWords[0]).toEqual({ word: "no", startSec: 0, endSec: 0.4 });
+    expect(review.captionWords[0]).toEqual({ word: "at", startSec: 0, endSec: 0.4 });
     expect(clips.renderInput(review.id).masterPath).toBe(join(mediaDir, "clips", `pick-${good!.id}-master.mp4`));
     // Section downloads, audio and captions lived only in the jobs' temp folders.
     expect(await readdir(jobsDir)).toEqual([]);
