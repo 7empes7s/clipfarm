@@ -226,6 +226,11 @@ const MIGRATIONS: string[] = [
   ALTER TABLE account_stats ADD COLUMN claims INTEGER;
   `,
   `
+  -- Routing: the permission kinds an account takes (NULL: every kind) and the Whop campaigns pinned to it.
+  ALTER TABLE posting_accounts ADD COLUMN takes TEXT;
+  ALTER TABLE posting_accounts ADD COLUMN pinned_campaigns TEXT NOT NULL DEFAULT '[]';
+  `,
+  `
   ALTER TABLE permissions ADD COLUMN proof_url TEXT;
   ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
   ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
