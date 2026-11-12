@@ -38,7 +38,7 @@ export function ExperimentView({ report, posts, onChange }: { report: Experiment
           <Rows title="By creator" rows={report.byCreator} testId="experiment-creators" />
           <h3 className="sub">Posts</h3>
           <p className="hint">Tap what you saw on the platform. Tap again to take it back. A strike pauses the account.</p>
-          <ul className="stack posts">
+          <ul className="posts">
             {mine.map((p) => (
               <FlagRow key={p.id} post={p} onChange={onChange} />
             ))}
