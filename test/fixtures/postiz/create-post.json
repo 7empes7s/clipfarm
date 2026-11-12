@@ -1,0 +1,4 @@
+[
+  { "postId": "post-yt-1", "integration": "int-yt" },
+  { "postId": "post-tt-1", "integration": "int-tt" }
+]
