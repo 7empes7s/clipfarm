@@ -159,7 +159,8 @@ describe('ops/clipfarm/deploy.sh', () => {
     const third = commit({ 'app.txt': 'v3' });
     for (const sha of [first, second, third]) expect(deploy(sha).status).toBe(0);
 
-    expect(releases().map((r) => r.split('-').at(-1))).toEqual([second.slice(0, 12), third.slice(0, 12)]);
+    // Release names are <UTC second>-<commit>: two made in the same second sort by commit, so compare without order.
+    expect(releases().map((r) => r.split('-').at(-1)).sort()).toEqual([second.slice(0, 12), third.slice(0, 12)].sort());
     expect(current()).toContain(third.slice(0, 12));
   });
 

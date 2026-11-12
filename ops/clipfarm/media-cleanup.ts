@@ -25,6 +25,8 @@ export interface MediaCleanupResult {
 interface ClipFiles {
   file_path: string;
   master_path: string | null;
+  /** The pick's thumbnail; it keeps its first name when the clip is re-rendered. */
+  thumb_path: string | null;
 }
 
 export function cleanupMedia(options: MediaCleanupOptions): MediaCleanupResult {
@@ -41,14 +43,16 @@ export function cleanupMedia(options: MediaCleanupOptions): MediaCleanupResult {
       SELECT MAX(created_at) FROM clip_reviews r
       WHERE r.clip_id = clips.id AND r.action = 'reject' AND r.undone_at IS NULL
     ) < ?`;
-    stale = db.prepare(`SELECT file_path, master_path FROM clips WHERE ${staleWhere}`).all(cutoff) as ClipFiles[];
-    inUse = db.prepare(`SELECT file_path, master_path FROM clips WHERE NOT (${staleWhere})`).all(cutoff) as ClipFiles[];
+    const files = `SELECT file_path, master_path,
+      (SELECT thumb_path FROM picks WHERE picks.clip_id = clips.id) AS thumb_path FROM clips`;
+    stale = db.prepare(`${files} WHERE ${staleWhere}`).all(cutoff) as ClipFiles[];
+    inUse = db.prepare(`${files} WHERE NOT (${staleWhere})`).all(cutoff) as ClipFiles[];
   } finally {
     db.close();
   }
 
   const paths = (rows: ClipFiles[]) =>
-    rows.flatMap((r) => [r.file_path, r.master_path, r.file_path.replace(/\.mp4$/, '.jpg')]).filter((p): p is string => !!p);
+    rows.flatMap((r) => [r.file_path, r.master_path, r.thumb_path, r.file_path.replace(/\.mp4$/, '.jpg')]).filter((p): p is string => !!p);
   const keep = new Set(paths(inUse).map((p) => resolve(p)));
 
   const result: MediaCleanupResult = { removed: [], bytes: 0 };

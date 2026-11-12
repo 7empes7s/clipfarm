@@ -93,6 +93,30 @@ describe('ops/clipfarm/media-cleanup.ts', () => {
     expect(existsSync(shared)).toBe(true);
   });
 
+  it('finds the files the render job really writes: absolute paths under MEDIA_DIR, and the thumbnail of a clip that was re-rendered', () => {
+    // render/job.ts saves pick-<id>.mp4, pick-<id>-master.mp4 and pick-<id>.jpg (kept in picks.thumb_path);
+    // an edit then swaps the clip's file for clip-<id>-<time>.mp4 (rerender/render.ts), so the
+    // thumbnail no longer shares the clip file's name. Paths are absolute (server/config.test.ts).
+    const master = file('pick-7-master.mp4');
+    const thumb = file('pick-7.jpg');
+    const rerendered = file(join(media, 'clip-1-1794000000000.mp4'));
+    db.prepare("INSERT INTO vods (id, source_id, url, status, created_at) VALUES (1, 1, 'https://example.com/v', 'transcribed', ?)").run(daysAgo(40));
+    db.prepare(
+      `INSERT INTO clips (id, source_id, vod_id, title, file_path, duration_sec, status, master_path, created_at)
+       VALUES (1, 1, 1, 'Good one', ?, 5, 'rejected', ?, ?)`,
+    ).run(rerendered, master, daysAgo(40));
+    db.prepare(
+      `INSERT INTO picks (id, vod_id, source_id, rank, start_sec, end_sec, title, hook, score, reason, flags, layout, status,
+         cost_usd, steps, file_path, thumb_path, clip_id, created_at)
+       VALUES (7, 1, 1, 1, 0, 5, 'Good one', 'WAIT', 90, 'r', '{}', 'center', 'rendered', 0, '[]', ?, ?, 1, ?)`,
+    ).run(join(media, 'clips', 'pick-7.mp4'), thumb, daysAgo(40));
+    db.prepare(
+      "INSERT INTO clip_reviews (clip_id, action, reason, prev_status, created_at) VALUES (1, 'reject', NULL, 'pending', ?)",
+    ).run(daysAgo(20));
+
+    expect(run().removed.sort()).toEqual([rerendered, master, thumb].sort());
+  });
+
   it('never deletes outside the media folder, whatever the database says', () => {
     const outside = file(join(root, 'not-media.mp4'));
     const sneaky = join(media, 'clips', '..', '..', 'sneaky.mp4');

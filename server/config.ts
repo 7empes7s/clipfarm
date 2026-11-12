@@ -111,7 +111,8 @@ function postingService(env: NodeJS.ProcessEnv): PostingService {
           ),
         }
       : null;
-  const choice = env.POSTING_SERVICE ?? (postiz ? "postiz" : uploadPost ? "upload-post" : "none");
+  // || not ??: an env file's empty "POSTING_SERVICE=" line means unset.
+  const choice = env.POSTING_SERVICE || (postiz ? "postiz" : uploadPost ? "upload-post" : "none");
   if (choice === "fake") return new FakePostingService();
   if (choice === "postiz" && postiz) return new PostizService(postiz);
   if (choice === "upload-post" && uploadPost) return new UploadPostService(uploadPost);
