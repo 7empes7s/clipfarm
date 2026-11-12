@@ -1782,7 +1782,6 @@ button.danger {
   background: var(--ok-bg);
 }
 .health-limited {
-  color: var(--work);
   border: 1px solid var(--work);
 }
 .health-banned {
