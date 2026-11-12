@@ -5,6 +5,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SettingsInfo, SetupChecklist, Watchlist } from "../shared/types.js";
+import type { AccessVerifier } from "../server/access.js";
 import { createApp } from "../server/app.js";
 import { ClipsRepo } from "../server/clips/repo.js";
 import { loadConfig, openSettings } from "../server/config.js";
@@ -18,6 +19,7 @@ import { SourcesRepo } from "../server/sources/repo.js";
 import { WatchlistPoller } from "../server/sources/watchlist/poller.js";
 import { WatchlistRepo } from "../server/sources/watchlist/repo.js";
 import { VodsRepo } from "../server/vods/repo.js";
+import { fakeAccess } from "./accessToken.js";
 import { campaignInput } from "./helpers.js";
 
 // Made-up keys, shaped like the real ones. None of them may ever show up in an answer or a log line.
@@ -30,7 +32,6 @@ const KEYS = {
   youtube: "AIzaSyClipfarmTestKey00000000000k1l2",
   postiz: "postizpublicapikey000000000000m3n4",
 };
-const JWT = "header.payload.signature";
 
 /** Stands in for OpenAI, Twitch, YouTube and Postiz. Refusals repeat the key, as some real APIs do. */
 function fakeOutside() {
@@ -91,7 +92,7 @@ afterEach(async () => {
 });
 
 /** The app as index.ts wires it, with real adapters (no fakes mode) on the stand-in network. */
-function setup(extraEnv: NodeJS.ProcessEnv = {}, requireAccess = false) {
+function setup(extraEnv: NodeJS.ProcessEnv = {}, access?: AccessVerifier) {
   const env: NodeJS.ProcessEnv = { DATA_DIR: dir, MEDIA_DIR: join(dir, "media"), DOWNLOADER: "fake", FAKE_VOD_SEC: "10", ...extraEnv };
   const settings = openSettings(env);
   const config = loadConfig(env, settings);
@@ -118,7 +119,7 @@ function setup(extraEnv: NodeJS.ProcessEnv = {}, requireAccess = false) {
     publisher: new Publisher({ sources, clips, posts, service: config.postingService }),
     watchlist: { repo, poller },
     settings: { store: settings, demo: config.fakes },
-    requireAccess,
+    access,
   });
   const call = async (method: "get" | "put" | "post" | "delete", path: string, body?: object) => {
     const res = await request(app)[method](path).send(body);
@@ -358,7 +359,8 @@ describe("Settings: who may see what", () => {
   });
 
   it("the settings routes sit behind the same access gate as the rest; health stays open and says only yes or no", async () => {
-    const { app, call } = setup({}, true);
+    const signIn = fakeAccess();
+    const { app, call } = setup({}, signIn.verifier);
     for (const [method, path] of [
       ["get", "/api/settings"],
       ["put", "/api/settings/openai"],
@@ -370,7 +372,7 @@ describe("Settings: who may see what", () => {
     }
     expect(outside.calls).toEqual([]);
 
-    const saved = await request(app).put("/api/settings/openai").set("Cf-Access-Jwt-Assertion", JWT).send({ values: { OPENAI_API_KEY: KEYS.openai } });
+    const saved = await request(app).put("/api/settings/openai").set("Cf-Access-Jwt-Assertion", signIn.token()).send({ values: { OPENAI_API_KEY: KEYS.openai } });
     expect(saved.status).toBe(200);
     const health = await call("get", "/api/health");
     expect(health.body).toEqual({ ok: true, configured: { openai: true, twitch: false, youtube: false, postiz: false, "upload-post": false } });
