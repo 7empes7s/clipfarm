@@ -125,8 +125,8 @@ function livePostingService(settings: Settings): PostingService {
   };
 }
 
-function liveWatchClient(settings: Settings, names: string[], build: (env: NodeJS.ProcessEnv) => PlatformClient): PlatformClient {
-  const cur = live(settings, names, build);
+function liveWatchClient(settings: Settings, names: string[], build: (now: { env: NodeJS.ProcessEnv }) => PlatformClient): PlatformClient {
+  const cur = live(settings, names, (env) => build({ env }));
   return {
     platform: cur().platform,
     get missing() {
@@ -168,10 +168,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
           liveWatchClient(
             settings,
             ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
-            (e) => new TwitchClient({ clientId: e.TWITCH_CLIENT_ID, clientSecret: e.TWITCH_CLIENT_SECRET }),
+            (now) => new TwitchClient({ clientId: now.env.TWITCH_CLIENT_ID, clientSecret: now.env.TWITCH_CLIENT_SECRET }),
           ),
           new KickClient(),
-          liveWatchClient(settings, ["YOUTUBE_API_KEY"], (e) => new YouTubeClient({ apiKey: e.YOUTUBE_API_KEY })),
+          liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
