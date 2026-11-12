@@ -14,5 +14,6 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["server", "shared", "test", "*.config.ts"]
+  "include": ["server", "shared", "test", "*.config.ts"],
+  "exclude": ["test/ops"]
 }
