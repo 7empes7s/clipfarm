@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AccountStatsStore } from "./accounts/stats.js";
-import { createApp } from "./app.js";
+import { clientBuildProblem, createApp } from "./app.js";
 import { ClipsRepo } from "./clips/repo.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
@@ -65,6 +65,8 @@ const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clie
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
 const here = fileURLToPath(import.meta.url);
 const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : undefined;
+const clientProblem = clientDir ? clientBuildProblem(clientDir) : null;
+if (clientProblem) console.error(`ERROR: ${clientProblem}`);
 const seedDemoClip =
   process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
 const app = createApp({
