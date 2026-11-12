@@ -122,7 +122,7 @@ export function createApp({
     app.post("/api/permissions/:id/check", async (req, res) => {
       const id = idParam(req.params.id);
       const result = await allowance.check(id);
-      res.json({ ...result, source: sources.get(sources.permission(id).permission.sourceId) });
+      res.json({ ...result, source: sources.get(sources.permission(id).sourceId) });
     });
 
     // "Look for a clipping allowance" in Add a creator: reads the creator's own channel pages.

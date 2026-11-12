@@ -18,12 +18,13 @@ const QUOTE = "You can clip my streams and post them anywhere";
 const SAYS_IT = `<html><body><h2>Clips</h2><p>You can <b>clip</b> my streams &amp; VODs.\n   You can clip my   streams and post them anywhere, just credit me.</p></body></html>`;
 
 /** A fetch that answers from a table and counts the calls: no network. */
-function fakeFetch(pages: Record<string, { status: number; body: string } | Error>) {
+function fakeFetch(pages: Record<string, { status: number; body: string; location?: string } | Error>) {
   const calls: string[] = [];
   const doFetch = ((url: string) => {
     calls.push(url);
     const page = pages[url] ?? { status: 404, body: "Not found" };
-    return page instanceof Error ? Promise.reject(page) : Promise.resolve(new Response(page.body, { status: page.status }));
+    if (page instanceof Error) return Promise.reject(page);
+    return Promise.resolve(new Response(page.body || null, { status: page.status, headers: page.location ? { location: page.location } : {} }));
   }) as typeof fetch;
   return { doFetch, calls };
 }
@@ -151,6 +152,27 @@ describe("re-checking a public allowance (faked fetch)", () => {
     const result = await checker.check(local.permissions[0]!.id);
     expect(result).toEqual({ ok: false, message: "The proof link is not a public web page, so it cannot be checked." });
     expect(calls).toEqual([]);
+    expect(sources.get(source.id).permissionState).toBe("active");
+  });
+});
+
+describe("redirects", () => {
+  it("follows a redirect to another public page, never one into the server's own network", async () => {
+    const moved = "https://openstreamer.example/clipping-rules";
+    const { checker, sources, source, permissionId, calls } = setup({
+      [PROOF]: { status: 301, body: "", location: "/clipping-rules" },
+      [moved]: { status: 200, body: SAYS_IT },
+      "https://sneaky.example/panel": { status: 302, body: "", location: "http://127.0.0.1:3600/admin" },
+    });
+    expect((await checker.check(permissionId)).ok).toBe(true);
+    expect(calls).toEqual([PROOF, moved]);
+
+    const sneaky = sources.create({ ...allowanceInput({ proofUrl: "https://sneaky.example/panel" }), creatorName: "Sneaky" });
+    const result = await checker.check(sneaky.permissions[0]!.id);
+    expect(result.message).toBe(
+      "The page could not be reached (it redirects to an address that is not a public web page). Nothing was changed; try again later.",
+    );
+    expect(calls).toEqual([PROOF, moved, "https://sneaky.example/panel"]);
     expect(sources.get(source.id).permissionState).toBe("active");
   });
 });

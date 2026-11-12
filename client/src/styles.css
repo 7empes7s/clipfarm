@@ -456,6 +456,10 @@ textarea {
   font-size: 0.9375rem;
   font-weight: 600;
 }
+.form .field {
+  display: grid;
+  gap: var(--s1);
+}
 .form .hint,
 .form input,
 .form select,

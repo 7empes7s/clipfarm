@@ -43,11 +43,20 @@ export class HttpProofFetcher implements ProofFetcher {
   constructor(private doFetch: typeof fetch = fetch) {}
 
   async fetchPage(url: string, signal?: AbortSignal): Promise<ProofPage> {
-    const res = await this.doFetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; clip-permission-check)", Accept: "text/html,application/json;q=0.9,*/*;q=0.8" },
-      signal: signal ?? AbortSignal.timeout(20_000),
-    });
-    return { status: res.status, text: (await res.text()).slice(0, MAX_PAGE_CHARS) };
+    let target = url;
+    // Redirects are followed by hand, so none can lead into the server's own network.
+    for (let hop = 0; hop < 5; hop++) {
+      const res = await this.doFetch(target, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; clip-permission-check)", Accept: "text/html,application/json;q=0.9,*/*;q=0.8" },
+        redirect: "manual",
+        signal: signal ?? AbortSignal.timeout(20_000),
+      });
+      const next = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+      if (!next) return { status: res.status, text: (await res.text()).slice(0, MAX_PAGE_CHARS) };
+      target = new URL(next, target).toString();
+      if (!isPublicWebUrl(target)) throw new Error("it redirects to an address that is not a public web page");
+    }
+    throw new Error("too many redirects");
   }
 }
 
@@ -164,7 +173,7 @@ export class AllowanceChecker {
 
   /** Checks one permission record now and stores the outcome. */
   async check(permissionId: number): Promise<CheckResult> {
-    const { permission } = this.deps.sources.permission(permissionId);
+    const permission = this.deps.sources.permission(permissionId);
     if (permission.kind !== "public-allowance" || !permission.proofUrl || !permission.proofQuote) {
       throw new ValidationError("Only a public clipping allowance has a proof page to check.");
     }

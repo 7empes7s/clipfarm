@@ -81,16 +81,17 @@ export function CampaignForm({ onClose, onSaved }: Props) {
           </button>
         </header>
         <form onSubmit={submit} className="form">
-          <label>
-            Permission
-            <select ref={firstField} value={kind} onChange={(e) => setKind(e.target.value as PermissionKind)}>
+          {/* The select sits beside its label, not inside it: an option's words ("Creator publicly…") are not the label. */}
+          <div className="field">
+            <label htmlFor="campaign-kind">Permission</label>
+            <select id="campaign-kind" ref={firstField} value={kind} onChange={(e) => setKind(e.target.value as PermissionKind)}>
               {PERMISSION_KINDS.map((k) => (
                 <option key={k} value={k}>
                   {PERMISSION_KIND_LABELS[k]}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           {kind === "public-allowance" && (
             <>
               <label>

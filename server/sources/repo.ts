@@ -204,13 +204,10 @@ export class SourcesRepo {
       );
   }
 
-  /** One permission record with its creator's name. */
-  permission(id: number): { permission: Permission; creatorName: string } {
-    const row = this.db
-      .prepare("SELECT m.*, s.creator_name FROM permissions m JOIN sources s ON s.id = m.source_id WHERE m.id = ?")
-      .get(id) as (PermissionRow & { creator_name: string }) | undefined;
+  permission(id: number): Permission {
+    const row = this.db.prepare("SELECT * FROM permissions WHERE id = ?").get(id) as PermissionRow | undefined;
     if (!row) throw new NotFoundError("That permission record was not found.");
-    return { permission: toPermission(row), creatorName: row.creator_name };
+    return toPermission(row);
   }
 
   /** Public allowances in good standing whose proof was last seen on or before `before`. */
