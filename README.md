@@ -53,7 +53,7 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `LLM_MODEL` | `gpt-4o-mini` | Model name at that API (must support JSON-schema answers) |
 | `LLM_USD_PER_MTOK_IN` / `_OUT` | `0` | Model list prices per million tokens, for the cost per clip |
 | `MAX_PICKS` | `15` | Most clips kept per VOD |
-| `MEDIA_DIR` | `./media` | Where final clips, thumbnails and creator frames are kept (never committed) |
+| `MEDIA_DIR` | `./media` | Where clips, thumbnails and their masters are kept (never committed) |
 | `RENDER_PRESET` | `veryfast` | x264 preset for clips |
 | `POSTIZ_URL` | – | Address you open Postiz at, e.g. `https://postiz.techinsiderbytes.com` |
 | `POSTIZ_API_KEY` | – | From Postiz > Settings > Public API |
@@ -136,12 +136,13 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   cut to 15-60 s on sentence boundaries. Dropped picks are stored with the reason and never render.
 - `server/pipeline/render/`: one job per kept pick. yt-dlp downloads only that section (±3 s,
   ≤1080p30). Layouts: *stacked* (the creator's face cam box on top, gameplay below; the box is
-  drawn once per creator in the gallery), *center* (9:16 gameplay crop), *full* (whole frame over a
+  drawn once per creator in Sources), *center* (9:16 gameplay crop), *full* (whole frame over a
   blurred copy). Karaoke captions (ASS, 2-4 words a line, the spoken word highlighted, clear of the
   bottom 20% and right 15%) and the hook for the first 2 s are burned in. Output: H.264 + AAC MP4,
-  1080×1920, 30 fps, -14 LUFS, plus a thumbnail, in `media/clips/`. The section and captions are
-  deleted with the job's temp folder. The server log prints time per step and cost per clip, and
-  the gallery shows them on each clip.
+  1080×1920, 30 fps, -14 LUFS, plus a thumbnail, in `media/clips/`. The padded section is kept
+  next to it as the clip's master (for edits and re-renders in the gallery); other temp files go
+  with the job's temp folder. Each render becomes a clip in the Inbox. The server log prints time
+  per step and cost per clip, and the gallery shows them on each clip.
 - `server/publish/`: a `PostingService` interface with Postiz, Upload-Post and fake adapters,
   plus pure planners for the permission/brief gate, spacing, captions and earnings.
 - `server/clips/`: clips (each rendered pick becomes one, with its padded section kept as the
