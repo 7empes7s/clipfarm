@@ -17,7 +17,10 @@ import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
+import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import { SourcesRepo } from "./sources/repo.js";
+import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
+import { parseSuggested } from "./sources/suggested.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
@@ -60,6 +63,12 @@ const queue: JobQueue = new JobQueue(db, {
 
 const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
+const suggested = parseSuggested(allowanceSeed.creators);
+// With fakes on, the starter list's proof pages say what the list quotes (no network).
+if (config.proofFetcher instanceof FakeProofFetcher) {
+  for (const c of suggested) config.proofFetcher.set(c.proofUrl, { status: 200, text: `<p>${c.proofQuote}</p>` });
+}
+const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
 const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
 
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
@@ -78,6 +87,8 @@ const app = createApp({
   posts,
   publisher,
   accountStats,
+  allowance,
+  suggested,
   watchlist: { repo: watchRepo, poller },
   seedDemoClip,
   clientDir,
@@ -92,6 +103,8 @@ const refreshTimer = setInterval(() => {
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 poller.start(config.watchPollMinutes * 60_000);
+// Looks every 6 hours for public allowances whose proof was last read a week or more ago.
+allowance.start(6 * 3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -103,6 +116,7 @@ function shutdown() {
   queue.stop();
   clearInterval(refreshTimer);
   poller.stop();
+  allowance.stop();
   server.close(() => {
     void queue.idle().then(() => {
       db.close();

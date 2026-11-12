@@ -1,5 +1,6 @@
 import type {
   AccountsInfo,
+  AllowanceFind,
   Clip,
   Dashboard,
   ClipEditInput,
@@ -15,8 +16,10 @@ import type {
   PostingRules,
   Source,
   Stats,
+  SuggestedCreator,
   Vod,
   VodDetail,
+  WatchChannel,
   WatchedCreator,
   WatchedCreatorInput,
   Watchlist,
@@ -35,6 +38,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   sources: () => call<Source[]>("/api/sources"),
   addSource: (input: NewSourceInput) => call<Source>("/api/sources", { method: "POST", body: JSON.stringify(input) }),
+  suggested: () => call<SuggestedCreator[]>("/api/sources/suggested"),
+  addSuggested: (names: string[]) =>
+    call<{ added: Source[]; suggested: SuggestedCreator[] }>("/api/sources/suggested", { method: "POST", body: JSON.stringify({ names }) }),
+  checkPermission: (id: number) => call<{ ok: boolean; message: string; source: Source }>(`/api/permissions/${id}/check`, { method: "POST" }),
+  findAllowance: (channels: WatchChannel[]) =>
+    call<AllowanceFind>("/api/allowance/find", { method: "POST", body: JSON.stringify({ channels }) }),
   vods: () => call<Vod[]>("/api/vods"),
   vod: (id: number) => call<VodDetail>(`/api/vods/${id}`),
   addVod: (sourceId: number, url: string) =>

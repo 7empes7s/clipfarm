@@ -53,6 +53,7 @@ const post = (o: Partial<Post>): Post => ({
   postedAt: "2026-11-18T12:00:00.000Z",
   permissionId: 1,
   campaignUrl: null,
+  proofUrl: null,
   views: null,
   viewsUpdatedAt: null,
   viewsSource: null,

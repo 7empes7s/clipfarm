@@ -17,3 +17,20 @@ export function campaignInput(overrides: Partial<NewSourceInput["permission"]> =
     },
   };
 }
+
+/** A creator who says in public that clipping is allowed, with the proof (read on 2026-11-10). */
+export function allowanceInput(overrides: Partial<NewSourceInput["permission"]> = {}): NewSourceInput {
+  return {
+    creatorName: "Open Streamer",
+    channelUrls: ["https://kick.com/openstreamer"],
+    permission: {
+      kind: "public-allowance",
+      allowedPlatforms: ["tiktok", "youtube"],
+      briefRules: "Credit the channel.",
+      proofUrl: "https://openstreamer.example/clips",
+      proofQuote: "You can clip my streams and post them anywhere",
+      proofCheckedAt: "2026-11-10",
+      ...overrides,
+    },
+  };
+}

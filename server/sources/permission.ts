@@ -9,13 +9,19 @@ export class PermissionError extends HttpError {
   }
 }
 
-export function isActive(p: Permission, now: Date): boolean {
+function notExpired(p: Permission, now: Date): boolean {
   return p.expiresAt === null || new Date(p.expiresAt).getTime() > now.getTime();
+}
+
+/** In force: not past its end date and not on hold after a failed proof check. */
+export function isActive(p: Permission, now: Date): boolean {
+  return notExpired(p, now) && p.reviewReason === null;
 }
 
 export function permissionState(perms: Permission[], now: Date): PermissionState {
   if (perms.length === 0) return "none";
-  return perms.some((p) => isActive(p, now)) ? "active" : "expired";
+  if (perms.some((p) => isActive(p, now))) return "active";
+  return perms.some((p) => notExpired(p, now)) ? "needs-review" : "expired";
 }
 
 /**
@@ -36,6 +42,12 @@ export function requireActivePermission(
   }
   const active = perms.filter((p) => isActive(p, now));
   if (active.length === 0) {
+    const onHold = perms.find((p) => notExpired(p, now));
+    if (onHold) {
+      throw new PermissionError(
+        `The clipping allowance for ${creatorName} needs review: ${onHold.reviewReason} Check it again in Sources.`,
+      );
+    }
     const latest = perms
       .map((p) => p.expiresAt!)
       .sort()

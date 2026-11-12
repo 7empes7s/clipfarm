@@ -1,0 +1,56 @@
+{
+  "about": "Starter list for \"Add suggested creators\": streamers who say in public that their streams may be clipped. Every proofUrl was fetched and every proofQuote found on it on the checkedOn date, with the same check the weekly job runs. Edit freely: an entry needs name, channels, proofUrl, proofQuote and checkedOn. Names, links and short quotes only, no media.",
+  "compiledOn": "2026-11-12",
+  "creators": [
+    {
+      "name": "Lacy",
+      "channels": [{ "platform": "twitch", "handle": "lacy" }],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/Lacy",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring Lacy",
+      "checkedOn": "2026-11-12",
+      "rules": "From his open clipping campaign (\"A Reach Campaign · Powered by Lacy\"). Lacy must be the main focus. Name Lacy in the caption or on-screen text and use #Lacy. Never show him in a bad light, no hate farming, no logos. Post only on TikTok, Instagram Reels, YouTube Shorts and X. Join the campaign on the page to be paid.",
+      "allowedPlatforms": ["tiktok", "youtube", "instagram", "x"]
+    },
+    {
+      "name": "JasonTheWeen",
+      "channels": [{ "platform": "twitch", "handle": "jasontheween" }],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/JasonTheWeen",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring JasonTheWeen",
+      "checkedOn": "2026-11-12",
+      "rules": "From his open clipping campaign (\"A Reach Campaign · Powered by JasonTheWeen\"). He must be the main focus. Name JasonTheWeen in the caption or on-screen text and use #JasonTheWeen. Never show him in a bad light, no hate farming, no logos. Post only on TikTok, Instagram Reels, YouTube Shorts and X. Join the campaign on the page to be paid.",
+      "allowedPlatforms": ["tiktok", "youtube", "instagram", "x"]
+    },
+    {
+      "name": "Clix",
+      "channels": [{ "platform": "twitch", "handle": "clix" }],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/Clix",
+      "proofQuote": "Content may be sourced from any video/stream/clip featuring Clix",
+      "checkedOn": "2026-11-12",
+      "rules": "From his open clipping campaign for November 2026 (\"A Reach Campaign · Powered by Clix\"). Footage from 2026 onwards only, Clix as the main focus. Name Clix in the caption or on-screen text and use #Clix. Never show him in a bad light, no hate farming, no logos, no AI-made video. Post only on TikTok, Instagram Reels and YouTube Shorts. Join the campaign on the page to be paid.",
+      "allowedPlatforms": ["tiktok", "youtube", "instagram"]
+    },
+    {
+      "name": "HasanAbi",
+      "channels": [{ "platform": "twitch", "handle": "hasanabi" }],
+      "language": "en",
+      "proofUrl": "https://www.thegamer.com/hasan-given-up-intellectual-property/",
+      "proofQuote": "I have basically given up my intellectual property completely",
+      "checkedOn": "2026-11-12",
+      "rules": "His own words on stream, reported by TheGamer in August 2022: fan channels may use and monetize his content (\"I want them to be able to keep monetizing\"). He asks for a link back to his Twitch and socials.",
+      "allowedPlatforms": ["tiktok", "youtube", "instagram", "x"]
+    },
+    {
+      "name": "Asmongold",
+      "channels": [{ "platform": "twitch", "handle": "asmongold" }],
+      "language": "en",
+      "proofUrl": "https://web.archive.org/web/20210218234439/https://kotaku.com/popular-wow-streamer-hires-youtubers-who-leeched-off-hi-1840377137",
+      "proofQuote": "Asmongold said that other reuploaders are free to keep doing their thing",
+      "checkedOn": "2026-11-12",
+      "rules": "Reported by Kotaku in December 2019 (archived copy), followed by his own words: \"I'm not gonna DMCA your channel\". An old statement about channels that re-upload his streams: read it before relying on it.",
+      "allowedPlatforms": ["tiktok", "youtube", "instagram", "x"]
+    }
+  ]
+}

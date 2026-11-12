@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { NewSourceInput, PermissionKind, Platform } from "../../shared/types";
-import { PERMISSION_KIND_LABELS, PERMISSION_KINDS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
+import { ALLOWANCE_VALID_DAYS, PERMISSION_KIND_LABELS, PERMISSION_KINDS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
 import { api } from "./api";
 
 interface Props {
@@ -45,6 +45,9 @@ export function CampaignForm({ onClose, onSaved }: Props) {
         allowedPlatforms: platforms,
         // The campaign runs through the end of the chosen day.
         expiresAt: expires ? new Date(`${expires}T23:59:59`).toISOString() : null,
+        proofUrl: text("proofUrl") || null,
+        proofQuote: text("proofQuote") || null,
+        proofCheckedAt: text("proofCheckedAt") || null,
       },
     };
     setSaving(true);
@@ -88,7 +91,23 @@ export function CampaignForm({ onClose, onSaved }: Props) {
               ))}
             </select>
           </label>
-          {kind !== "own-content" && (
+          {kind === "public-allowance" && (
+            <>
+              <label>
+                Link to where they say it <span className="hint">channel panel, about page, post, Discord rule…</span>
+                <input name="proofUrl" type="url" inputMode="url" placeholder="https://…" required />
+              </label>
+              <label>
+                Their words <span className="hint">copy the sentence that allows clipping</span>
+                <textarea name="proofQuote" rows={2} maxLength={300} required />
+              </label>
+              <label>
+                Checked on <span className="hint">the day you read it</span>
+                <input name="proofCheckedAt" type="date" required defaultValue={new Date().toLocaleDateString("en-CA")} />
+              </label>
+            </>
+          )}
+          {kind !== "own-content" && kind !== "public-allowance" && (
             <label>
               {kind === "whop-campaign" ? "Whop campaign link" : "Link to the permission (email, doc…)"}
               <input name="campaignUrl" type="url" inputMode="url" placeholder="https://whop.com/…" required={kind === "whop-campaign"} />
@@ -102,16 +121,18 @@ export function CampaignForm({ onClose, onSaved }: Props) {
             Channel links <span className="hint">one per line</span>
             <textarea name="channelUrls" rows={2} placeholder="https://www.twitch.tv/…" />
           </label>
-          <div className="row">
-            <label>
-              Pay per 1,000 views ($)
-              <input name="cpmRateUsd" type="number" min="0" step="0.01" inputMode="decimal" />
-            </label>
-            <label>
-              Minimum views
-              <input name="minViews" type="number" min="0" step="1" inputMode="numeric" />
-            </label>
-          </div>
+          {kind !== "public-allowance" && (
+            <div className="row">
+              <label>
+                Pay per 1,000 views ($)
+                <input name="cpmRateUsd" type="number" min="0" step="0.01" inputMode="decimal" />
+              </label>
+              <label>
+                Minimum views
+                <input name="minViews" type="number" min="0" step="1" inputMode="numeric" />
+              </label>
+            </div>
+          )}
           <fieldset>
             <legend>Where clips may be posted</legend>
             <div className="chips">
@@ -124,12 +145,21 @@ export function CampaignForm({ onClose, onSaved }: Props) {
             </div>
           </fieldset>
           <label>
-            Ends on <span className="hint">leave empty if it does not end</span>
+            Ends on{" "}
+            <span className="hint">
+              {kind === "public-allowance"
+                ? `leave empty: it ends ${ALLOWANCE_VALID_DAYS} days after the last check and is checked again every week`
+                : "leave empty if it does not end"}
+            </span>
             <input name="expiresAt" type="date" />
           </label>
           <label>
             Brief rules
-            <textarea name="briefRules" rows={4} placeholder="Paste the campaign brief: length, credit, hashtags…" />
+            <textarea
+              name="briefRules"
+              rows={4}
+              placeholder={kind === "public-allowance" ? "Their conditions: credit me, no TikTok…" : "Paste the campaign brief: length, credit, hashtags…"}
+            />
           </label>
           <label>
             Off limits

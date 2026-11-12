@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import type { Db } from "../db/index.js";
 import type { FaceCam, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
-import { PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
+import { ALLOWANCE_VALID_DAYS, PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { permissionState, requireActivePermission } from "./permission.js";
 
@@ -15,6 +15,10 @@ interface PermissionRow {
   min_views: number | null;
   allowed_platforms: string;
   expires_at: string | null;
+  proof_url: string | null;
+  proof_quote: string | null;
+  proof_checked_at: string | null;
+  review_reason: string | null;
   created_at: string;
 }
 
@@ -38,8 +42,17 @@ function toPermission(r: PermissionRow): Permission {
     minViews: r.min_views,
     allowedPlatforms: JSON.parse(r.allowed_platforms) as Platform[],
     expiresAt: r.expires_at,
+    proofUrl: r.proof_url,
+    proofQuote: r.proof_quote,
+    proofCheckedAt: r.proof_checked_at,
+    reviewReason: r.review_reason,
     createdAt: r.created_at,
   };
+}
+
+/** When a public allowance last seen on `checkedAt` runs out unless it is checked again. */
+export function allowanceExpiry(checkedAt: Date): string {
+  return new Date(checkedAt.getTime() + ALLOWANCE_VALID_DAYS * 86_400_000).toISOString();
 }
 
 function isHttpUrl(s: string): boolean {
@@ -60,7 +73,7 @@ function optionalNumber(v: unknown, label: string): number | null {
 }
 
 /** Checks a request body and returns a clean NewSourceInput, or throws a plain ValidationError. */
-export function parseNewSource(body: unknown): NewSourceInput {
+export function parseNewSource(body: unknown, now: Date = new Date()): NewSourceInput {
   const b = (body ?? {}) as Record<string, unknown>;
   const creatorName = typeof b.creatorName === "string" ? b.creatorName.trim() : "";
   if (!creatorName) throw new ValidationError("Enter the creator's name.");
@@ -91,6 +104,21 @@ export function parseNewSource(body: unknown): NewSourceInput {
     expiresAt = t.toISOString();
   }
 
+  // A public allowance is only as good as its proof: where they say it, their words, and when we read them.
+  let proof: { proofUrl: string; proofQuote: string; proofCheckedAt: string } | null = null;
+  if (kind === "public-allowance") {
+    const proofUrl = typeof p.proofUrl === "string" ? p.proofUrl.trim() : "";
+    if (!proofUrl) throw new ValidationError("Paste the link to where the creator says clipping is allowed.");
+    if (!isHttpUrl(proofUrl)) throw new ValidationError("The proof link is not a web link.");
+    const proofQuote = typeof p.proofQuote === "string" ? p.proofQuote.trim().replace(/\s+/g, " ") : "";
+    if (!proofQuote) throw new ValidationError("Copy the creator's words that allow clipping from that page.");
+    if (proofQuote.length > 300) throw new ValidationError("Keep the quote short: 300 letters at most.");
+    const checked = typeof p.proofCheckedAt === "string" && p.proofCheckedAt ? new Date(p.proofCheckedAt) : null;
+    if (!checked || Number.isNaN(checked.getTime())) throw new ValidationError("Enter the date you checked the proof.");
+    if (checked.getTime() > now.getTime() + 86_400_000) throw new ValidationError("The check date cannot be in the future.");
+    proof = { proofUrl, proofQuote, proofCheckedAt: checked.toISOString() };
+  }
+
   return {
     creatorName,
     channelUrls,
@@ -103,6 +131,9 @@ export function parseNewSource(body: unknown): NewSourceInput {
       minViews: optionalNumber(p.minViews, "Minimum views"),
       allowedPlatforms,
       expiresAt,
+      proofUrl: proof?.proofUrl ?? null,
+      proofQuote: proof?.proofQuote ?? null,
+      proofCheckedAt: proof?.proofCheckedAt ?? null,
     },
   };
 }
@@ -144,10 +175,18 @@ export class SourcesRepo {
   }
 
   addPermission(sourceId: number, p: NewSourceInput["permission"], createdAt = this.now().toISOString()): void {
+    const isAllowance = p.kind === "public-allowance";
+    if (isAllowance && !(p.proofUrl && p.proofQuote && p.proofCheckedAt)) {
+      throw new ValidationError("A public clipping allowance needs its proof: the link, their words and the date it was checked.");
+    }
+    const proofCheckedAt = isAllowance ? new Date(p.proofCheckedAt!).toISOString() : null;
+    // Without an end date of its own, a public allowance runs out unless its proof is seen again.
+    const expiresAt = p.expiresAt ?? (isAllowance ? allowanceExpiry(new Date(proofCheckedAt!)) : null);
     this.db
       .prepare(
         `INSERT INTO permissions (source_id, kind, campaign_url, brief_rules, cpm_rate_usd, min_views,
-           allowed_platforms, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           allowed_platforms, expires_at, proof_url, proof_quote, proof_checked_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sourceId,
@@ -157,9 +196,45 @@ export class SourcesRepo {
         p.cpmRateUsd ?? null,
         p.minViews ?? null,
         JSON.stringify(p.allowedPlatforms),
-        p.expiresAt ?? null,
+        expiresAt,
+        isAllowance ? p.proofUrl! : null,
+        isAllowance ? p.proofQuote! : null,
+        proofCheckedAt,
         createdAt,
       );
+  }
+
+  /** One permission record with its creator's name. */
+  permission(id: number): { permission: Permission; creatorName: string } {
+    const row = this.db
+      .prepare("SELECT m.*, s.creator_name FROM permissions m JOIN sources s ON s.id = m.source_id WHERE m.id = ?")
+      .get(id) as (PermissionRow & { creator_name: string }) | undefined;
+    if (!row) throw new NotFoundError("That permission record was not found.");
+    return { permission: toPermission(row), creatorName: row.creator_name };
+  }
+
+  /** Public allowances in good standing whose proof was last seen on or before `before`. */
+  allowancesCheckedBefore(before: Date): Permission[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM permissions WHERE kind = 'public-allowance' AND review_reason IS NULL
+             AND proof_checked_at <= ? ORDER BY proof_checked_at, id`,
+        )
+        .all(before.toISOString()) as PermissionRow[]
+    ).map(toPermission);
+  }
+
+  /** The proof was seen again: the allowance is in force for another stretch. */
+  confirmProof(permissionId: number, at: Date): void {
+    this.db
+      .prepare("UPDATE permissions SET proof_checked_at = ?, expires_at = ?, review_reason = NULL WHERE id = ?")
+      .run(at.toISOString(), allowanceExpiry(at), permissionId);
+  }
+
+  /** The proof is gone: the record is put on hold, which stops ingest and posting for its source. */
+  flagForReview(permissionId: number, reason: string): void {
+    this.db.prepare("UPDATE permissions SET review_reason = ? WHERE id = ?").run(reason, permissionId);
   }
 
   list(): Source[] {

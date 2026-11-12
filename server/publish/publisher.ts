@@ -229,6 +229,7 @@ export class Publisher {
       platforms: [platform],
       now: this.now(),
     });
+    const permission = covering[platform]!;
     return {
       clipId: clip.id,
       platform,
@@ -238,9 +239,15 @@ export class Publisher {
         title: clip.title,
         creatorName: source.creatorName,
         channelUrl: source.channelUrls[0] ?? null,
-        briefRules: covering[platform]!.briefRules,
+        briefRules: permission.briefRules,
         platform,
       }),
+      permission: {
+        kind: permission.kind,
+        campaignUrl: permission.campaignUrl,
+        proofUrl: permission.proofUrl,
+        proofQuote: permission.proofQuote,
+      },
     };
   }
 

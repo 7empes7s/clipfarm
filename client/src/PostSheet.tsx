@@ -7,7 +7,7 @@ import { Sheet } from "./Sheet";
 /** Platforms the source's active permissions allow (the server checks again). */
 export function allowedPlatforms(source: Source | undefined): Platform[] {
   const now = Date.now();
-  const active = source?.permissions.filter((p) => !p.expiresAt || new Date(p.expiresAt).getTime() > now) ?? [];
+  const active = source?.permissions.filter((p) => !p.reviewReason && (!p.expiresAt || new Date(p.expiresAt).getTime() > now)) ?? [];
   return [...new Set(active.flatMap((p) => p.allowedPlatforms))];
 }
 

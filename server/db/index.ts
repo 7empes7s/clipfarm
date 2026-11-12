@@ -205,6 +205,12 @@ const MIGRATIONS: string[] = [
     demo INTEGER NOT NULL DEFAULT 0
   );
   `,
+  `
+  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
+  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

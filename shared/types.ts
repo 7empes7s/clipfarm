@@ -1,6 +1,6 @@
 // Types and constants shared by the server and the gallery client.
 
-export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content"] as const;
+export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content", "public-allowance"] as const;
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
 export const PLATFORMS = ["tiktok", "youtube", "instagram", "x"] as const;
@@ -17,7 +17,12 @@ export const PERMISSION_KIND_LABELS: Record<PermissionKind, string> = {
   "whop-campaign": "Whop campaign",
   "direct-permission": "Direct permission",
   "own-content": "Our own content",
+  "public-allowance": "Creator publicly allows clipping",
 };
+
+/** A public allowance is checked again this often, and ends this long after its last good check. */
+export const ALLOWANCE_RECHECK_DAYS = 7;
+export const ALLOWANCE_VALID_DAYS = 90;
 
 export interface Permission {
   id: number;
@@ -30,10 +35,16 @@ export interface Permission {
   allowedPlatforms: Platform[];
   /** ISO timestamp; null means it does not expire. */
   expiresAt: string | null;
+  /** "public-allowance" only: where the creator says clipping is allowed, their words, and when we last saw them there. */
+  proofUrl: string | null;
+  proofQuote: string | null;
+  proofCheckedAt: string | null;
+  /** Set when a check found the proof gone: why, in plain words. The record is on hold until it is checked again. */
+  reviewReason: string | null;
   createdAt: string;
 }
 
-export type PermissionState = "active" | "expired" | "none";
+export type PermissionState = "active" | "needs-review" | "expired" | "none";
 
 /** Where the face cam sits in the stream's frame, as fractions (0..1) of its width and height. */
 export interface FaceCam {
@@ -68,7 +79,34 @@ export interface NewSourceInput {
     minViews?: number | null;
     allowedPlatforms: Platform[];
     expiresAt?: string | null;
+    proofUrl?: string | null;
+    proofQuote?: string | null;
+    /** ISO date or timestamp of the day the proof was read. */
+    proofCheckedAt?: string | null;
   };
+}
+
+/** A creator from the starter list who publicly allows clipping, shown with the proof before adding. */
+export interface SuggestedCreator {
+  name: string;
+  channels: WatchChannel[];
+  language: string;
+  proofUrl: string;
+  proofQuote: string;
+  /** YYYY-MM-DD: the day the proof was read. */
+  checkedOn: string;
+  /** Their conditions (credit, platforms…), in plain words. */
+  rules: string;
+  allowedPlatforms: Platform[];
+  /** Already in Sources with this kind of permission. */
+  added: boolean;
+}
+
+/** What "Look for a clipping allowance" found on a creator's pages. */
+export interface AllowanceFind {
+  found: { proofUrl: string; proofQuote: string; checkedAt: string } | null;
+  /** What was looked at and what came of it, in plain words. */
+  note: string;
 }
 
 export const JOB_STATUSES = ["queued", "running", "done", "failed", "cancelled"] as const;
@@ -292,6 +330,8 @@ export interface Post {
   postedAt: string | null;
   permissionId: number;
   campaignUrl: string | null;
+  /** Where the creator publicly allows clipping, when the post went out under such a record. */
+  proofUrl: string | null;
   views: number | null;
   viewsUpdatedAt: string | null;
   viewsSource: "service" | "manual" | null;
@@ -306,6 +346,8 @@ export interface ExportPack {
   fileName: string;
   platform: Platform;
   caption: string;
+  /** The permission the clip goes out under, with the proof for a public allowance. */
+  permission: { kind: PermissionKind; campaignUrl: string | null; proofUrl: string | null; proofQuote: string | null };
 }
 
 /** One post a dry run says would go out: every check passed, nothing was sent or stored. */
@@ -469,13 +511,14 @@ export const WATCH_PLATFORM_LABELS: Record<WatchPlatform, string> = {
 };
 
 /** How clippers get a creator's permission. "none" means we know of no program yet. */
-export const CLIP_PROGRAMS = ["whop", "own", "kick", "none"] as const;
+export const CLIP_PROGRAMS = ["whop", "own", "kick", "public", "none"] as const;
 export type ClipProgram = (typeof CLIP_PROGRAMS)[number];
 
 export const CLIP_PROGRAM_LABELS: Record<ClipProgram, string> = {
   whop: "Whop Content Rewards",
   own: "Their own program",
   kick: "Kick clipping program",
+  public: "Says clipping is allowed",
   none: "No program known",
 };
 
