@@ -2,14 +2,16 @@ import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { JobQueue } from "./jobs/queue.js";
-import { HttpError, ValidationError } from "./errors.js";
+import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
-import { parseNewSource, type SourcesRepo } from "./sources/repo.js";
+import type { PicksRepo } from "./picks/repo.js";
+import { parseCropRect, parseNewSource, type SourcesRepo } from "./sources/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
   sources: SourcesRepo;
   vods: VodsRepo;
+  picks: PicksRepo;
   queue: JobQueue;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
   clientDir?: string;
@@ -21,7 +23,12 @@ function idParam(raw: string | string[] | undefined): number {
   return id;
 }
 
-export function createApp({ sources, vods, queue, clientDir }: AppDeps): express.Express {
+function sendMedia(res: express.Response, file: string | null): void {
+  if (!file || !existsSync(file)) throw new NotFoundError("That file is not there (yet).");
+  res.sendFile(file);
+}
+
+export function createApp({ sources, vods, picks, queue, clientDir }: AppDeps): express.Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
@@ -35,6 +42,34 @@ export function createApp({ sources, vods, queue, clientDir }: AppDeps): express
 
   app.post("/api/sources", (req, res) => {
     res.status(201).json(sources.create(parseNewSource(req.body)));
+  });
+
+  // Where the creator's face cam sits, for the stacked layout. Send null to clear it.
+  app.put("/api/sources/:id/face-cam", (req, res) => {
+    const body = (req.body ?? {}) as { faceCam?: unknown };
+    res.json(sources.setFaceCam(idParam(req.params.id), parseCropRect(body.faceCam)));
+  });
+
+  app.get("/api/sources/:id/frame", (req, res) => {
+    sendMedia(res, sources.framePath(idParam(req.params.id)));
+  });
+
+  app.get("/api/vods/:id/picks", (req, res) => {
+    const id = idParam(req.params.id);
+    vods.get(id);
+    res.json(picks.listForVod(id));
+  });
+
+  app.get("/api/picks", (_req, res) => {
+    res.json(picks.list());
+  });
+
+  app.get("/api/picks/:id/video", (req, res) => {
+    sendMedia(res, picks.files(idParam(req.params.id)).video);
+  });
+
+  app.get("/api/picks/:id/thumb", (req, res) => {
+    sendMedia(res, picks.files(idParam(req.params.id)).thumb);
   });
 
   app.get("/api/vods", (_req, res) => {

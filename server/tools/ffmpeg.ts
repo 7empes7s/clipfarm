@@ -14,6 +14,34 @@ export async function probeDuration(file: string, signal?: AbortSignal): Promise
   return d;
 }
 
+export interface VideoInfo {
+  width: number;
+  height: number;
+  durationSec: number;
+  hasAudio: boolean;
+}
+
+/** Size, length and whether there is an audio track, from ffprobe. */
+export async function probeVideo(file: string, signal?: AbortSignal): Promise<VideoInfo> {
+  const { stdout } = await run(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file],
+    { signal },
+  );
+  const info = JSON.parse(stdout) as {
+    streams?: { codec_type?: string; width?: number; height?: number }[];
+    format?: { duration?: string };
+  };
+  const video = info.streams?.find((s) => s.codec_type === "video");
+  if (!video?.width || !video.height) throw new Error(`No video track in ${file}`);
+  return {
+    width: video.width,
+    height: video.height,
+    durationSec: Number.parseFloat(info.format?.duration ?? "NaN"),
+    hasAudio: info.streams?.some((s) => s.codec_type === "audio") ?? false,
+  };
+}
+
 /**
  * Extracts (a slice of) the audio track as small mono MP3 (16 kHz, 48 kbps: ~21 MB per hour),
  * which is all speech-to-text needs.
@@ -32,12 +60,17 @@ export async function extractAudio(
 }
 
 /** Generates a sample clip (ffmpeg test pattern + sine tone). Used by tests and the fake downloader. */
-export async function generateSample(output: string, durationSec = 10, signal?: AbortSignal): Promise<void> {
+export async function generateSample(
+  output: string,
+  durationSec = 10,
+  signal?: AbortSignal,
+  size = "640x360",
+): Promise<void> {
   await run(
     "ffmpeg",
     [
       ...QUIET,
-      "-f", "lavfi", "-i", `testsrc=duration=${durationSec}:size=640x360:rate=30`,
+      "-f", "lavfi", "-i", `testsrc=duration=${durationSec}:size=${size}:rate=30`,
       "-f", "lavfi", "-i", `sine=frequency=440:duration=${durationSec}`,
       "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-shortest", output,

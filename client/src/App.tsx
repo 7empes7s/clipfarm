@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import type { Job, Source, Vod, VodDetail } from "../../shared/types";
+import type { Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
+import { Clips } from "./Clips";
+import { FaceCamEditor } from "./FaceCamEditor";
 import { clock, shortDate, usd } from "./format";
 
 const STATE_LABEL = { active: "Allowed", expired: "Expired", none: "No permission" } as const;
@@ -12,6 +14,11 @@ const VOD_STATUS_LABEL: Record<Vod["status"], string> = {
   transcribing: "Transcribing",
   ready: "Transcript ready",
   failed: "Failed",
+};
+const JOB_TYPE_LABEL: Record<string, string> = {
+  ingest: "Transcript",
+  picks: "Picking highlights",
+  render: "Cutting a clip",
 };
 const JOB_STATUS_LABEL: Record<Job["status"], string> = {
   queued: "Waiting",
@@ -25,15 +32,17 @@ export function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [picks, setPicks] = useState<Pick[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, v, j] = await Promise.all([api.sources(), api.vods(), api.jobs()]);
+      const [s, v, j, p] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.picks()]);
       setSources(s);
       setVods(v);
       setJobs(j);
+      setPicks(p);
       setLoadError(null);
     } catch (err) {
       setLoadError((err as Error).message);
@@ -83,7 +92,13 @@ export function App() {
         ) : (
           <ul className="stack">
             {sources.map((s) => (
-              <SourceCard key={s.id} source={s} vods={vods.filter((v) => v.sourceId === s.id)} onChange={refresh} />
+              <SourceCard
+                key={s.id}
+                source={s}
+                vods={vods.filter((v) => v.sourceId === s.id)}
+                picks={picks}
+                onChange={refresh}
+              />
             ))}
           </ul>
         )}
@@ -116,9 +131,20 @@ export function App() {
   );
 }
 
-function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; onChange: () => void }) {
+function SourceCard({
+  source,
+  vods,
+  picks,
+  onChange,
+}: {
+  source: Source;
+  vods: Vod[];
+  picks: Pick[];
+  onChange: () => void;
+}) {
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
+  const [faceCamOpen, setFaceCamOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function addVod(e: FormEvent) {
@@ -176,6 +202,20 @@ function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; o
         </dl>
       )}
       {source.bannedContent && <p className="banned">Off limits: {source.bannedContent}</p>}
+      <div className="facecam-line">
+        <span className="hint">
+          {source.faceCam
+            ? "Face cam set: clips show it on top."
+            : source.hasFrame
+              ? "No face cam set: clips show the game only."
+              : "You can mark their face cam once the first clip is cut."}
+        </span>
+        {source.hasFrame && (
+          <button type="button" className="link" onClick={() => setFaceCamOpen(true)}>
+            {source.faceCam ? "Change face cam" : "Mark face cam"}
+          </button>
+        )}
+      </div>
 
       {source.permissionState === "active" ? (
         <form className="add-vod" onSubmit={addVod}>
@@ -208,15 +248,25 @@ function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; o
       {vods.length > 0 && (
         <ul className="vods">
           {vods.map((v) => (
-            <VodRow key={v.id} vod={v} />
+            <VodRow key={v.id} vod={v} picks={picks.filter((p) => p.vodId === v.id)} />
           ))}
         </ul>
+      )}
+      {faceCamOpen && (
+        <FaceCamEditor
+          source={source}
+          onClose={() => setFaceCamOpen(false)}
+          onSaved={() => {
+            setFaceCamOpen(false);
+            onChange();
+          }}
+        />
       )}
     </li>
   );
 }
 
-function VodRow({ vod }: { vod: Vod }) {
+function VodRow({ vod, picks }: { vod: Vod; picks: Pick[] }) {
   const [detail, setDetail] = useState<VodDetail | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -249,6 +299,7 @@ function VodRow({ vod }: { vod: Vod }) {
           ))}
         </p>
       )}
+      <Clips picks={picks} />
     </li>
   );
 }
@@ -258,7 +309,9 @@ function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => v
   return (
     <li className={`job job-${job.status}`} data-testid="job">
       <div className="job-line">
-        <span className="job-name">{vod?.title ?? vod?.url ?? `Job ${job.id}`}</span>
+        <span className="job-name">
+          {JOB_TYPE_LABEL[job.type] ?? job.type}: {vod?.title ?? vod?.url ?? `job ${job.id}`}
+        </span>
         <span className="job-status">{JOB_STATUS_LABEL[job.status]}</span>
       </div>
       {active && (

@@ -40,6 +40,10 @@ export interface Source {
   creatorName: string;
   channelUrls: string[];
   bannedContent: string;
+  /** Where the creator's face cam sits in their stream, for the stacked layout; null if none. */
+  faceCam: CropRect | null;
+  /** Whether a frame of their stream is saved to draw the face cam on. */
+  hasFrame: boolean;
   createdAt: string;
   permissions: Permission[];
   /** Whether the source has a permission record that is in force right now. */
@@ -109,4 +113,65 @@ export interface Word {
 
 export interface VodDetail extends Vod {
   words: Word[];
+}
+
+/** A rectangle as fractions (0..1) of the source frame, so it fits any resolution. */
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * How a clip is laid out on the 1080×1920 canvas: face cam over gameplay, a center crop of the
+ * gameplay, or the whole frame over a blurred copy of itself.
+ */
+export const LAYOUTS = ["stacked", "center", "full"] as const;
+export type Layout = (typeof LAYOUTS)[number];
+
+/** Why the picker may refuse a moment. Any of these drops the pick before it can render. */
+export interface PickFlags {
+  spoiler: boolean;
+  cutscene: boolean;
+  ending: boolean;
+  leak: boolean;
+  breaksBrief: boolean;
+}
+
+export type PickStatus = "picked" | "dropped" | "rendering" | "rendered" | "failed";
+
+export interface StepTime {
+  step: string;
+  ms: number;
+}
+
+/** A highlight chosen from a VOD's transcript, and (once rendered) its vertical clip. */
+export interface Pick {
+  id: number;
+  vodId: number;
+  sourceId: number;
+  rank: number;
+  startSec: number;
+  endSec: number;
+  title: string;
+  hook: string;
+  score: number;
+  /** Why it was chosen. */
+  reason: string;
+  flags: PickFlags;
+  /** Set when the pick was left out (spoiler, brief ban, bad length…); it never renders. */
+  dropReason: string | null;
+  layout: Layout;
+  status: PickStatus;
+  error: string | null;
+  /** Share of the transcript and picking cost, in USD. */
+  costUsd: number;
+  /** Time per step of the run (picks share, download, render). */
+  steps: StepTime[];
+  sizeBytes: number | null;
+  durationSec: number | null;
+  videoUrl: string | null;
+  thumbUrl: string | null;
+  createdAt: string;
 }

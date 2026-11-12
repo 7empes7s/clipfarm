@@ -1,7 +1,7 @@
 import type { Word } from "../../../shared/types.js";
 import type { TranscribeOptions, Transcriber, Transcript } from "./types.js";
 
-const SCRIPT = "no way he actually did that chat look at this clip it right now".split(" ");
+const SCRIPT = "no way he actually did that chat look at this clip it right now.".split(" ");
 
 /** A deterministic transcriber for tests and demos: one word every half second, no API calls. */
 export class FakeTranscriber implements Transcriber {

@@ -1,4 +1,4 @@
-import type { Job, NewSourceInput, Source, Vod, VodDetail } from "../../shared/types";
+import type { CropRect, Job, NewSourceInput, Pick, Source, Vod, VodDetail } from "../../shared/types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -18,5 +18,8 @@ export const api = {
   addVod: (sourceId: number, url: string) =>
     call<{ vod: Vod; job: Job }>("/api/vods", { method: "POST", body: JSON.stringify({ sourceId, url }) }),
   jobs: () => call<Job[]>("/api/jobs"),
+  picks: () => call<Pick[]>("/api/picks"),
+  setFaceCam: (sourceId: number, faceCam: CropRect | null) =>
+    call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify({ faceCam }) }),
   cancelJob: (id: number) => call<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
 };

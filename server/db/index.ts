@@ -64,6 +64,36 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX jobs_status ON jobs(status, id);
   `,
+  `
+  ALTER TABLE sources ADD COLUMN face_cam TEXT;
+  ALTER TABLE sources ADD COLUMN frame_path TEXT;
+  ALTER TABLE vods ADD COLUMN loudness TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE picks (
+    id INTEGER PRIMARY KEY,
+    vod_id INTEGER NOT NULL REFERENCES vods(id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    rank INTEGER NOT NULL,
+    start_sec REAL NOT NULL,
+    end_sec REAL NOT NULL,
+    title TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason TEXT NOT NULL,
+    flags TEXT NOT NULL,
+    drop_reason TEXT,
+    layout TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    steps TEXT NOT NULL DEFAULT '[]',
+    file_path TEXT,
+    thumb_path TEXT,
+    size_bytes INTEGER,
+    duration_sec REAL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX picks_vod ON picks(vod_id, rank);
+  `,
 ];
 
 export function migrate(db: Db): void {

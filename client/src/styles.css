@@ -500,3 +500,149 @@ textarea {
     transition: none;
   }
 }
+
+/* Face cam */
+.facecam-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s3);
+}
+.facecam-line .hint {
+  margin: 0;
+}
+.frame-area {
+  position: relative;
+  margin-top: var(--s3);
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+  border-radius: var(--radius-small);
+  overflow: hidden;
+  background: var(--paper);
+}
+.frame-area img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+.facecam-box {
+  position: absolute;
+  border: 3px solid var(--tally);
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--ink) 40%, transparent);
+  pointer-events: none;
+}
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* Clips */
+.clips {
+  margin-top: var(--s3);
+}
+.clips h4 {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-head);
+  font-size: 1.1rem;
+}
+.clip-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4) var(--s3);
+}
+@media (min-width: 640px) {
+  .clip-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.clip {
+  min-width: 0;
+}
+.clip-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.clip-frame:disabled {
+  opacity: 1;
+}
+.clip-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.clip-score {
+  position: absolute;
+  top: var(--s2);
+  left: var(--s2);
+  min-width: 2.25rem;
+  padding: 0.05rem var(--s2);
+  border-radius: 999px;
+  background: var(--tally);
+  color: var(--surface);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.clip-rendering .clip-frame,
+.clip-picked .clip-frame {
+  color: var(--work);
+}
+.clip-failed .clip-frame {
+  color: var(--bad);
+}
+.clip-title {
+  margin-top: var(--s1);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.left-out {
+  margin-top: var(--s3);
+  font-size: 0.9375rem;
+}
+.left-out summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--muted);
+}
+.left-out ul {
+  margin: 0;
+  padding-left: var(--s4);
+}
+.left-out .hint {
+  margin: 0;
+}
+.player {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 70dvh;
+  aspect-ratio: 9 / 16;
+  margin: var(--s3) auto 0;
+  border-radius: var(--radius-small);
+  background: var(--ink);
+}
+.clip-facts {
+  margin-top: var(--s3);
+}

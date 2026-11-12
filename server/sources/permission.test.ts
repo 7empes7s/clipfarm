@@ -5,6 +5,7 @@ import { campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { VodsRepo } from "../vods/repo.js";
 import { PermissionError, permissionState, requireActivePermission } from "./permission.js";
 import { parseNewSource, SourcesRepo } from "./repo.js";
@@ -81,7 +82,7 @@ describe("POST /api/vods (server-side permission gate)", () => {
     // No handler runs: the queue is never started, we only check what gets enqueued.
     const queue = new JobQueue(db, { handlers: { ingest: async () => {} } });
     queue.stop();
-    return { db, sources, app: createApp({ sources, vods, queue }) };
+    return { db, sources, app: createApp({ sources, vods, picks: new PicksRepo(db), queue }) };
   }
 
   it("refuses a source without any permission record, with a plain error", async () => {
