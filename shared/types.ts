@@ -308,6 +308,16 @@ export interface ExportPack {
   caption: string;
 }
 
+/** One post a dry run says would go out: every check passed, nothing was sent or stored. */
+export interface PlannedPost {
+  accountId: string;
+  accountName: string;
+  platform: Platform;
+  permissionId: number;
+  caption: string;
+  scheduledAt: string;
+}
+
 export interface StatsRow {
   key: string;
   label: string;

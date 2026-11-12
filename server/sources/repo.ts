@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import type { Db } from "../db/index.js";
 import type { FaceCam, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
 import { PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
@@ -176,6 +177,47 @@ export class SourcesRepo {
     this.get(id);
     this.db.prepare("UPDATE sources SET face_cam = ? WHERE id = ?").run(faceCam ? JSON.stringify(faceCam) : null, id);
     return this.get(id);
+  }
+
+  /**
+   * Removes a source with its permission records, videos, transcripts, picks, clips, reviews, finished
+   * jobs and media files. Refused while a job is working on it, and for good once one of its clips
+   * went out through a real posting service.
+   */
+  remove(id: number): { videos: number; clips: number } {
+    const { creatorName } = this.get(id);
+    const ofSource = "(SELECT id FROM clips WHERE source_id = @id)";
+    const jobsOfSource = `(vod_id IN (SELECT id FROM vods WHERE source_id = @id) OR clip_id IN ${ofSource})`;
+    const count = (sql: string) => (this.db.prepare(`SELECT COUNT(*) AS n FROM ${sql}`).get({ id }) as { n: number }).n;
+    if (count(`posts WHERE service != 'fake' AND clip_id IN ${ofSource}`) > 0) {
+      throw new ValidationError(`${creatorName} has clips that were posted, so it stays: the posts are the record of what went out.`);
+    }
+    if (count(`jobs WHERE status IN ('queued', 'running') AND ${jobsOfSource}`) > 0) {
+      throw new ValidationError(`A job is still working on ${creatorName}. Cancel it in Jobs or wait for it, then try again.`);
+    }
+    const files = (
+      this.db
+        .prepare(
+          `SELECT file_path AS f FROM clips WHERE source_id = @id UNION SELECT master_path FROM clips WHERE source_id = @id
+           UNION SELECT file_path FROM picks WHERE source_id = @id UNION SELECT thumb_path FROM picks WHERE source_id = @id`,
+        )
+        .all({ id }) as { f: string | null }[]
+    ).flatMap((r) => (r.f ? [r.f] : []));
+    const removed = this.db.transaction(() => {
+      const run = (sql: string) => this.db.prepare(sql).run({ id }).changes;
+      run(`DELETE FROM posts WHERE clip_id IN ${ofSource}`);
+      run(`DELETE FROM clip_reviews WHERE clip_id IN ${ofSource}`);
+      run(`DELETE FROM jobs WHERE ${jobsOfSource}`);
+      run("DELETE FROM picks WHERE source_id = @id");
+      // The watchlist keeps what it detected, so the same video is not queued again.
+      run("UPDATE detected_vods SET vod_id = NULL WHERE vod_id IN (SELECT id FROM vods WHERE source_id = @id)");
+      const clips = run("DELETE FROM clips WHERE source_id = @id");
+      const videos = run("DELETE FROM vods WHERE source_id = @id");
+      run("DELETE FROM sources WHERE id = @id");
+      return { videos, clips };
+    })();
+    for (const f of files) rmSync(f, { force: true });
+    return removed;
   }
 
   /** Throws a PermissionError unless the source may be used right now (optionally on one platform). */

@@ -97,6 +97,11 @@ export function createApp({
     res.status(201).json(sources.create(parseNewSource(req.body)));
   });
 
+  // Clears a source and everything made from it (the end-to-end test tidies up with this).
+  app.delete("/api/sources/:id", (req, res) => {
+    res.json({ removed: sources.remove(idParam(req.params.id)) });
+  });
+
   app.put("/api/sources/:id/face-cam", (req, res) => {
     const id = idParam(req.params.id);
     res.json(sources.setFaceCam(id, req.body === null || req.body?.clear ? null : parseFaceCam(req.body)));
@@ -211,15 +216,26 @@ export function createApp({
     res.json(publisher.exportPack(idParam(req.params.id), platformParam(req.query.platform)));
   });
 
-  app.post("/api/clips/:id/posts", async (req, res) => {
-    const body = (req.body ?? {}) as { accountIds?: unknown; when?: unknown };
+  function postRequest(rawBody: unknown): { accountIds: string[]; when: Date | null } {
+    const body = (rawBody ?? {}) as { accountIds?: unknown; when?: unknown };
     const accountIds = Array.isArray(body.accountIds) ? body.accountIds.filter((a): a is string => typeof a === "string") : [];
     let when: Date | null = null;
     if (typeof body.when === "string" && body.when) {
       when = new Date(body.when);
       if (Number.isNaN(when.getTime())) throw new ValidationError("The time is not a valid date.");
     }
+    return { accountIds, when };
+  }
+
+  app.post("/api/clips/:id/posts", async (req, res) => {
+    const { accountIds, when } = postRequest(req.body);
     res.status(201).json(await publisher.post(idParam(req.params.id), accountIds, when));
+  });
+
+  // Its own path, so a server too old to know dry runs answers 404 instead of posting.
+  app.post("/api/clips/:id/posts/dry-run", async (req, res) => {
+    const { accountIds, when } = postRequest(req.body);
+    res.json({ dryRun: true, wouldPost: await publisher.dryRun(idParam(req.params.id), accountIds, when) });
   });
 
   app.get("/api/posting", async (_req, res) => {
