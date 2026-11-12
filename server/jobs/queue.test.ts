@@ -198,4 +198,65 @@ describe("JobQueue", () => {
     await queue.idle();
     expect(queue.get(job.id).status).toBe("done");
   });
+
+  describe("two processes on one database (the server and clipfarm-ops)", () => {
+    function twoQueues(leaseMs = 30_000) {
+      const file = join(tmpRoot, "shared.db");
+      const ran: string[] = [];
+      const make = (name: string) => {
+        const db = openDb(file);
+        const handlers: Record<string, JobHandler> = {
+          work: async () => {
+            ran.push(name);
+            await new Promise((r) => setTimeout(r, 30));
+          },
+        };
+        return { db, queue: new JobQueue(db, { handlers, tmpRoot, pollMs: 10, leaseMs }) };
+      };
+      return { server: make("server"), ops: make("ops"), ran };
+    }
+    const done = async (queue: JobQueue, id: number) => {
+      for (let i = 0; i < 200 && queue.get(id).status !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+      return queue.get(id).status;
+    };
+
+    it("a job queued by the second process is run by the one that is already working, never by both", async () => {
+      const { server, ops, ran } = twoQueues();
+      server.queue.start();
+      ops.queue.start();
+      expect(server.queue.working).toBe(true);
+      expect(ops.queue.working).toBe(false);
+      expect(ops.queue.workerSeenAt()).not.toBeNull();
+
+      const a = ops.queue.enqueue("work", {});
+      const b = ops.queue.enqueue("work", {});
+      expect(await done(ops.queue, a.id)).toBe("done");
+      expect(await done(ops.queue, b.id)).toBe("done");
+      expect(ran).toEqual(["server", "server"]);
+      server.queue.stop();
+      ops.queue.stop();
+    });
+
+    it("takes the queue over when the worker stops, and when it has gone silent", async () => {
+      const { server, ops, ran } = twoQueues(60);
+      server.queue.start();
+      ops.queue.start();
+      server.queue.stop();
+      const a = ops.queue.enqueue("work", {});
+      expect(await done(ops.queue, a.id)).toBe("done");
+      expect(ran).toEqual(["ops"]);
+      ops.queue.stop();
+      expect(ops.queue.workerSeenAt()).toBeNull();
+
+      // A worker that died without saying so: its lease and its "running" job are still there.
+      const stuck = ops.queue.enqueue("work", {});
+      server.db.prepare("INSERT INTO queue_worker (id, owner, beat_at) VALUES (1, 'dead', ?)").run(new Date().toISOString());
+      server.db.prepare("UPDATE jobs SET status = 'running' WHERE id = ?").run(stuck.id);
+      ops.queue.start();
+      expect(ops.queue.working).toBe(false);
+      expect(await done(ops.queue, stuck.id)).toBe("done");
+      expect(ran).toEqual(["ops", "ops"]);
+      ops.queue.stop();
+    });
+  });
 });
