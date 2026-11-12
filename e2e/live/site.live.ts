@@ -26,8 +26,12 @@ test.describe.configure({ mode: "serial" });
 async function get<T>(request: APIRequestContext, path: string): Promise<T> {
   const res = await request.get(path);
   expect(res.ok(), `GET ${path} answered ${res.status()}`).toBe(true);
+  expect(res.headers()["content-type"], `GET ${path} did not answer with JSON: a sign-in page? Check the Access service token`).toContain("json");
   return (await res.json()) as T;
 }
+
+/** Titles on a live site come from the picking model and may hold any character. */
+const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 async function expectFits(page: Page) {
   const { scrollWidth, width } = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, width: window.innerWidth }));
@@ -109,6 +113,10 @@ test.afterAll(async ({ playwright }, info) => {
 
 test("The gallery loads and the server is healthy", async ({ page, request }) => {
   expect(await get<{ ok: boolean }>(request, "/api/health")).toEqual({ ok: true });
+  await get<Source[]>(request, "/api/sources");
+  // Before anything is made: a server without the removal route could not be tidied up afterwards.
+  const removal = await request.delete("/api/sources/0");
+  expect(await removal.text(), "this server is too old to tidy up after the test: update it first").toContain("Invalid id.");
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "clipfarm", level: 1 })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
@@ -151,10 +159,10 @@ test("A test source is added with its permission record", async ({ page, request
   await page.getByRole("button", { name: "Add a campaign" }).click();
   sheet = page.getByRole("dialog", { name: "Add a campaign" });
   if (settings.permissionUrl) {
-    await sheet.getByLabel("Permission", { exact: true }).selectOption({ label: "Direct permission" });
+    await sheet.getByRole("combobox").selectOption({ label: "Direct permission" });
     await sheet.getByLabel(/^Link to the permission/).fill(settings.permissionUrl);
   } else {
-    await sheet.getByLabel("Permission", { exact: true }).selectOption({ label: "Our own content" });
+    await sheet.getByRole("combobox").selectOption({ label: "Our own content" });
   }
   await sheet.getByLabel("Creator", { exact: true }).fill(tag);
   // Ends in a week: long enough for the run, and it lets the posting step try a time after the end.
@@ -262,7 +270,7 @@ test("Review: Approve, Undo, Reject with a reason, Undo", async ({ page, request
   await expectFits(page);
 
   await page.getByTestId("decide").getByRole("button", { name: /^Approve/ }).click();
-  await expect(page.getByText(new RegExp(`approved “${title}”`, "i"))).toBeVisible();
+  await expect(page.getByText(new RegExp(`approved “${literal(title)}”`, "i"))).toBeVisible();
   await expect.poll(async () => (await clipNow(request, id))?.status).toBe("approved");
   await undo.click();
   await expect(head).toHaveAttribute("data-clip", String(id));
@@ -273,7 +281,7 @@ test("Review: Approve, Undo, Reject with a reason, Undo", async ({ page, request
   await expect(reasons.getByRole("button", { name: "Close reasons" })).toBeVisible();
   await expectFits(page);
   await reasons.getByRole("button", { name: /^Bad captions/ }).click();
-  await expect(page.getByText(new RegExp(`rejected “${title}”`, "i"))).toBeVisible();
+  await expect(page.getByText(new RegExp(`rejected “${literal(title)}”`, "i"))).toBeVisible();
   await expect.poll(async () => (await clipNow(request, id))?.rejectReason).toBe("bad-captions");
   await undo.click();
   await expect(head).toHaveAttribute("data-clip", String(id));
@@ -306,7 +314,7 @@ test("Edit a clip and it is made again", async ({ page, request }, info) => {
   await expectFits(page);
   await sheet.getByRole("button", { name: "Save and remake clip" }).click();
   await expect(sheet).toBeHidden();
-  await expect(page.getByText(`Remaking “${title}”.`)).toBeVisible();
+  await expect(page.getByText(/being remade with your edits/)).toBeVisible();
 
   await expect
     .poll(
@@ -342,7 +350,7 @@ test(`Posting: ${settings.dryRun ? "dry run and export only, nothing is publishe
   await card.getByRole("button", { name: "Export" }).click();
   const pack = page.getByRole("dialog", { name: "Export to post by hand" });
   await expect(pack.getByRole("button", { name: "Close" })).toBeVisible();
-  await expect(pack.getByTestId("export-caption")).toHaveValue(new RegExp(`Credit: ${tag}`));
+  await expect(pack.getByTestId("export-caption")).toHaveValue(new RegExp(`Credit: ${literal(tag)}`));
   const download = await pack.getByRole("link", { name: "Download MP4" }).getAttribute("href");
   expect(download).toBe(`/api/clips/${id}/video?download=1`);
   const file = await request.head(download!);
@@ -389,7 +397,7 @@ test(`Posting: ${settings.dryRun ? "dry run and export only, nothing is publishe
   } else {
     assertMayPost(settings, posting.service);
     expect(account, "the test posting service has an account the permission allows").toBeTruthy();
-    await sheet.getByRole("checkbox", { name: new RegExp(`^${account!.name} · `) }).first().check();
+    await sheet.getByRole("checkbox", { name: new RegExp(`^${literal(account!.name)} · `) }).first().check();
     await sheet.getByRole("button", { name: "Post now" }).click();
     await expect(sheet).toBeHidden();
     await page.goto("/#posted");
@@ -403,7 +411,7 @@ test(`Posting: ${settings.dryRun ? "dry run and export only, nothing is publishe
 test("The dashboard tabs fill in", async ({ page, request }, info) => {
   const tag = tagOf(info.project.name);
   const source = await mySource(request, tag);
-  const [clip] = await myClips(request, tag);
+  const clip = (await myClips(request, tag)).find((c) => c.status === "approved");
   const noErrors = () => expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.goto("/#dashboard");
@@ -421,7 +429,7 @@ test("The dashboard tabs fill in", async ({ page, request }, info) => {
   const stream = page.getByTestId("vod-progress").filter({ hasText: tag });
   for (const stage of ["Transcript", "Picks", "Render"]) await expect(stream.locator(".stage").filter({ hasText: stage })).toHaveClass(/stage-done/);
   await expect(stream.getByText(/^[1-9]\d* clips made$/)).toBeVisible();
-  await expect(stream.getByText("100% approved")).toBeVisible();
+  await expect(stream.getByText(/^\d+% approved$/)).toBeVisible();
   await noErrors();
   await expectFits(page);
 

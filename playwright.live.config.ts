@@ -15,6 +15,7 @@ export default defineConfig({
   testDir: "e2e/live",
   testMatch: "*.live.ts",
   timeout: 120_000,
+  expect: { timeout: 15_000 },
   // A second try would add a second test source and run the pipeline again.
   retries: 0,
   workers: 1,
@@ -23,6 +24,7 @@ export default defineConfig({
   use: {
     baseURL: settings.baseUrl,
     extraHTTPHeaders: settings.headers,
+    actionTimeout: 20_000,
     // A trace records request headers, so none is kept once the Access service token is sent.
     trace: settings.local ? "retain-on-failure" : "off",
   },

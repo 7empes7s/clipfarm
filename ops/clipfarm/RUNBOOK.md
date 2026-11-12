@@ -22,6 +22,7 @@ logs, backups and restore.
 | 9 | Check it, open it on the phone | IT, then manager |
 | 10 | Backups and disk cleanup | IT |
 | 11 | Point clipfarm at the local Postiz | IT, key from the manager |
+| 12 | Test the live site end to end | Manager makes the token, then runs it (or IT does) |
 
 Do step 7 before step 8: the sign-in exists before the address does, so the gallery is never
 open to the internet, not even for a minute.
@@ -356,6 +357,95 @@ A clip is only ever posted when its creator has a permission record that allows 
 that rule is in the app and does not depend on this setup.
 
 ---
+
+## 12. Test the live site end to end (Manager makes the token, then runs it)
+
+`npm run e2e:live` drives the real site in a browser, at phone width and on desktop: it adds a
+test campaign with a permission record, submits one video link, waits for the clips, plays one,
+approves, rejects, undoes, edits, checks the export pack and the posting queue, reads the
+dashboard, and removes everything it made. It ends with a pass/fail table and how long the link
+took to become clips (the goal is under 30 minutes).
+
+**It never posts.** Against any address that is not this machine it only runs as a dry run: the
+server checks that the clip could be posted and sends nothing to Postiz or any platform. Asking
+for real posting (`E2E_DRY_RUN=0`) against the live site is refused before a browser starts.
+
+What it does cost: one download, one transcription and one picking call for the test video (a few
+cents), and the job queue is busy for those minutes. Run it when no stream is being cut.
+
+**12a. Make the service token (Manager, once).** The site sits behind the Cloudflare sign-in
+(step 7), and a test cannot read your email. A service token is a second key, for this test only.
+
+1. <https://one.dash.cloudflare.com> → **Access** → **Service auth** (newer dashboards:
+   **Access controls** → **Service credentials**) → **Service Tokens** → **Create Service Token**.
+2. Name: `clipfarm-e2e`. Duration: the shortest offered. **Generate token**.
+3. Copy the **Client ID** and the **Client Secret** now: the secret is shown once. Keep them in
+   your password manager, never in the repo, a chat or a ticket.
+4. **Access** → **Applications** → `clipfarm` → **Policies** → **Add a policy**:
+   - Policy name: `e2e test`
+   - Action: **Service Auth** (not Allow: Allow would ask the token for an email code)
+   - Include: **Service Token** → `clipfarm-e2e`
+5. **Save**. The email policy from step 7 stays as it is.
+
+When the test is done with, delete the token (**Service Tokens** → `clipfarm-e2e` → **Delete**)
+or let it run out. A leaked token opens the gallery until then.
+
+**12b. Pick the test video.** A short video (20 s to 2 min) with clear speech that we made
+ourselves, or one whose owner said yes in writing. Never a real creator's stream. The suite
+refuses to run against the live site without one.
+
+**12c. Run it.** On any machine with this repo (`npm ci`, then once `npx playwright install
+chromium`). The live site must already run the release that has this test (see Update below).
+`read -s` keeps the secret out of the shell history:
+
+```bash
+read -rs -p "Client ID: " CF_ACCESS_CLIENT_ID && echo
+read -rs -p "Client Secret: " CF_ACCESS_CLIENT_SECRET && echo
+export CF_ACCESS_CLIENT_ID CF_ACCESS_CLIENT_SECRET
+BASE_URL=https://clip.techinsiderbytes.com \
+E2E_VIDEO_URL=https://www.youtube.com/watch?v=OUR_OWN_TEST_VIDEO \
+npm run e2e:live
+```
+
+| Setting | Needed | What it is |
+|---|---|---|
+| `BASE_URL` | Yes | The site to test |
+| `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | Behind the sign-in | The service token from 12a; both or neither, and only sent over https |
+| `E2E_VIDEO_URL` | On any live site | The test video from 12b |
+| `E2E_PERMISSION_URL` | If the video is not ours | Link to the written permission; the test campaign is then saved as "Direct permission" instead of "Our own content" |
+| `E2E_PIPELINE_MINUTES` | No | How long to wait for clips before failing: 30 on a live site |
+| `E2E_DRY_RUN` | No | Leave it alone. `0` posts through the test posting service and only works on a local preview |
+
+You should see one line per step and a table like this at the end:
+
+```
+clipfarm end to end: https://clip.techinsiderbytes.com (dry run: nothing is posted)
+
+| Step                                                    | phone      | desktop     |
+|---------------------------------------------------------|------------|-------------|
+| The gallery loads and the server is healthy             | pass 1.4 s | pass 1.1 s  |
+| A link becomes clips: ingest, transcript, picks, render | pass 2m 8s | pass 1m 57s |
+...
+Link to clips (goal: under 30 min): phone 2m 8s, within the goal; desktop 1m 57s, within the goal
+Result: PASS
+```
+
+`npm run e2e:live -- --project=phone` runs the phone column only (half the time and cost).
+
+| It says | Meaning | Fix |
+|---|---|---|
+| `Refusing to run against … without the dry run` | `E2E_DRY_RUN=0` is set | Unset it |
+| `Set E2E_VIDEO_URL …` | No test video named | 12b |
+| `GET /api/sources answered 403` or `did not answer with JSON: a sign-in page?` | The token is missing, wrong, run out, or its policy is not **Service Auth** | 12a |
+| `this server is too old to tidy up after the test` | The live release does not have this test's server side yet | Update, below |
+| `picking kept no moment from this video` | The test video has too little speech | A video with 20 s or more of talking |
+| A step says `FAIL` | The table names the step; the lines above it say what was expected | Fix, then run again: each run uses its own test campaign |
+
+Whatever happens, the run removes its test campaigns ("E2E test …") and their clips at the end.
+If the machine dies mid-run, they stay: open **Sources**, note the "E2E test …" names, and run
+`curl -X DELETE` on `http://127.0.0.1:5310/api/sources/<id>` on the box for each (ids from
+`curl -s http://127.0.0.1:5310/api/sources`; both need `-H "Cf-Access-Jwt-Assertion: x"` while
+`CLIPFARM_REQUIRE_ACCESS=1`). A campaign whose clips were really posted is never removed this way.
 
 ## Update (IT)
 
