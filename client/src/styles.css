@@ -1804,3 +1804,6 @@ button.danger {
 .allowance-find p {
   margin: 0;
 }
+.tick-all {
+  justify-self: start;
+}

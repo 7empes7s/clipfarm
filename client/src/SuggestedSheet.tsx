@@ -49,7 +49,7 @@ export function SuggestedSheet({ onClose, onAdded }: { onClose: () => void; onAd
         </p>
         {list && list.length === 0 && <p className="empty">The suggested list is empty.</p>}
         {open.length > 1 && (
-          <button type="button" className="link" onClick={() => setPicked(picked.length === open.length ? [] : open.map((c) => c.name))}>
+          <button type="button" className="link tick-all" onClick={() => setPicked(picked.length === open.length ? [] : open.map((c) => c.name))}>
             {picked.length === open.length ? "Untick all" : "Tick all"}
           </button>
         )}
@@ -68,6 +68,7 @@ export function SuggestedSheet({ onClose, onAdded }: { onClose: () => void; onAd
                   </a>
                 ))}
               </div>
+              {c.note && <p className="hint">{c.note}</p>}
               <blockquote className="proof">“{c.proofQuote}”</blockquote>
               <p className="meta">
                 <a href={c.proofUrl} target="_blank" rel="noreferrer">

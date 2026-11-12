@@ -98,6 +98,8 @@ export interface SuggestedCreator {
   /** Their conditions (credit, platforms…), in plain words. */
   rules: string;
   allowedPlatforms: Platform[];
+  /** Who they are and what kind of page the proof is. */
+  note: string;
   /** Already in Sources with this kind of permission. */
   added: boolean;
 }

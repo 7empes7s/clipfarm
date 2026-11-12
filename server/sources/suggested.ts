@@ -22,6 +22,7 @@ export function parseSuggested(seed: unknown[]): SeedCreator[] {
       checkedOn: permission.proofCheckedAt!.slice(0, 10),
       rules: permission.briefRules ?? "",
       allowedPlatforms: permission.allowedPlatforms,
+      note: typeof e.note === "string" ? e.note.trim() : "",
     };
   });
 }
@@ -84,7 +85,7 @@ export function addSuggested(
         games: ["GTA VI"],
         program: "public",
         programUrl: c.proofUrl,
-        note: `Says clipping is allowed (proof read on ${c.checkedOn}).`,
+        note: c.note || `Says clipping is allowed (proof read on ${c.checkedOn}).`,
         sourceId: source.id,
       });
     if (source.permissionState === "active") deps.watchlist.setAutoIngest(watched.id, true);

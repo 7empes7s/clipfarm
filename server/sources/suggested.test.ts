@@ -91,6 +91,7 @@ describe("Add suggested creators", () => {
       checkedOn: "2026-11-12",
       rules: "Credit the channel.",
       allowedPlatforms: ["tiktok", "youtube"],
+      note: "",
       added: false,
     });
     expect(sources.list()).toEqual([]);

@@ -386,7 +386,7 @@ function SourceCard({
       ) : (
         <p className="blocked">
           {source.permissionState === "needs-review"
-            ? `Needs review: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until the proof is found again: fix it, then tap Check again, or add a current campaign.`
+            ? `Needs review: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until then: tap Check again once the page says it again, or add a current campaign.`
             : `${source.permissionState === "expired" ? "This permission has expired." : "There is no permission yet."} ${
                 perm?.proofUrl ? "Tap Check again to read the proof once more, or add" : "Add"
               } a current campaign before adding streams.`}
