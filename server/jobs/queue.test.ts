@@ -246,6 +246,7 @@ describe("JobQueue", () => {
       expect(await done(ops.queue, a.id)).toBe("done");
       expect(ran).toEqual(["ops"]);
       ops.queue.stop();
+      await ops.queue.idle();
       expect(ops.queue.workerSeenAt()).toBeNull();
 
       // A worker that died without saying so: its lease and its "running" job are still there.

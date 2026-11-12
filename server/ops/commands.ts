@@ -314,7 +314,7 @@ function folderBytes(dir: string): number {
 
 function status(rt: Runtime, io: OpsIo): number {
   const seenAt = rt.queue.workerSeenAt();
-  io.out(seenAt ? "Worker: the clipfarm service is running jobs." : "Worker: not running. Queued jobs wait until the clipfarm service is back.");
+  io.out(seenAt ? "Worker: running. Queued jobs are picked up within seconds." : "Worker: not running. Queued jobs wait until the clipfarm service is back.");
   const jobs = rt.queue.list(1000);
   const by = (s: Job["status"]) => jobs.filter((j) => j.status === s);
   io.out(`Queue: ${by("running").length} running, ${by("queued").length} waiting, ${by("failed").length} failed.`);
