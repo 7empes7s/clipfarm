@@ -117,10 +117,6 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
 
       <LiveNow />
 
-      <p className="hint settings-link">
-        <a href="#settings">Keys and connections</a>
-      </p>
-
       <h3 className="sub">Running now</h3>
       {dash.running.length === 0 ? (
         <p className="hint">No job is running. One runs at a time, so the server stays light.</p>
@@ -138,6 +134,10 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
           ))}
         </ul>
       )}
+
+      <p className="hint settings-link">
+        <a href="#settings">Keys and connections</a>
+      </p>
     </>
   );
 }
