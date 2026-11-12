@@ -1,0 +1,8 @@
+# Daily copy of clipfarm's database into /opt/backups/YYYY-MM-DD/clipfarm.db.gz. Install: RUNBOOK.md step 10.
+[Unit]
+Description=Back up clipfarm's SQLite database into /opt/backups
+
+[Service]
+Type=oneshot
+# A root-owned copy of ops/clipfarm/backup.sh (RUNBOOK.md step 3): root never runs a file the app's user can change.
+ExecStart=/usr/local/sbin/clipfarm-backup

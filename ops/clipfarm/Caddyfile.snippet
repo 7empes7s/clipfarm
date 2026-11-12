@@ -1,0 +1,12 @@
+# clipfarm behind Caddy (Caddy listens on :80 behind the cloudflared tunnel, which does TLS).
+# Append to /etc/caddy/Caddyfile (RUNBOOK.md step 6). The port matches PORT in /etc/clipfarm/clipfarm.env.
+#
+# Uploads: clipfarm takes links, not files. Its biggest request is a few KB of JSON (the server
+# stops at 1 MB), so no upload limit is raised here; request_body keeps anything larger away
+# from the app. Videos only go out (downloads), and those have no limit.
+http://clip.techinsiderbytes.com {
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy 127.0.0.1:5310
+}

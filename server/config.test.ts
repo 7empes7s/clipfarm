@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 
@@ -18,6 +19,11 @@ describe("loadConfig: posting service", () => {
     expect(loadConfig({ ...env, POSTING_SERVICE: "upload-post" }).postingService.name).toBe("upload-post");
   });
 
+  it("treats an empty POSTING_SERVICE as unset (an env file's POSTING_SERVICE= line)", () => {
+    const c = loadConfig({ POSTIZ_URL: "http://127.0.0.1:5300", POSTIZ_API_KEY: "k", POSTING_SERVICE: "" });
+    expect(c.postingService.name).toBe("postiz");
+  });
+
   it("falls back to export only without keys, and to the fake in demo mode", () => {
     expect(loadConfig({}).postingService.name).toBe("none");
     expect(loadConfig({ POSTING_SERVICE: "postiz" }).postingService.name).toBe("none");
@@ -27,5 +33,12 @@ describe("loadConfig: posting service", () => {
   it("reads the refresh interval, defaulting to an hour", () => {
     expect(loadConfig({}).postingRefreshMinutes).toBe(60);
     expect(loadConfig({ POSTING_REFRESH_MINUTES: "15" }).postingRefreshMinutes).toBe(15);
+  });
+});
+
+describe("loadConfig: folders", () => {
+  it("makes MEDIA_DIR absolute, so the paths saved with each clip do not depend on where the server was started", () => {
+    expect(isAbsolute(loadConfig({ MEDIA_DIR: "media" }).mediaDir)).toBe(true);
+    expect(loadConfig({ MEDIA_DIR: "/var/lib/clipfarm/media" }).mediaDir).toBe("/var/lib/clipfarm/media");
   });
 });

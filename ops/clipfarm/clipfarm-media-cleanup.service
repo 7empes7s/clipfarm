@@ -1,0 +1,15 @@
+# Deletes the video files of clips rejected more than 14 days ago. Install: RUNBOOK.md step 10.
+[Unit]
+Description=Free disk: delete the files of long-rejected clipfarm clips
+
+[Service]
+Type=oneshot
+User=clipfarm
+Group=clipfarm
+WorkingDirectory=/opt/clipfarm-live/current
+EnvironmentFile=/etc/clipfarm/clipfarm.env
+ExecStart=/usr/bin/node ops/clipfarm/media-cleanup-cli.ts
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/clipfarm
+PrivateTmp=true

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Platform, RejectReason } from "../shared/types.js";
 import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
+import { accessGate } from "./access.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
 import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
@@ -37,6 +38,8 @@ export interface AppDeps {
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
   clientDir?: string;
+  /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests that did not come through Cloudflare Access. */
+  requireAccess?: boolean;
 }
 
 /** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
@@ -76,8 +79,10 @@ export function createApp({
   watchlist,
   seedDemoClip,
   clientDir,
+  requireAccess,
 }: AppDeps): express.Express {
   const app = express();
+  if (requireAccess) app.use(accessGate());
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (_req, res) => {

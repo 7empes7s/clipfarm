@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["postiz", "../test/ops"]
+  "include": ["postiz", "clipfarm", "../test/ops"]
 }

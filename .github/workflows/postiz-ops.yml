@@ -13,7 +13,7 @@ jobs:
       - name: Validate docker-compose.yml (no containers started)
         run: ops/postiz/validate.sh
       - name: Shellcheck
-        run: shellcheck ops/postiz/*.sh
+        run: shellcheck ops/postiz/*.sh ops/clipfarm/*.sh
 
   # typecheck and test now run for the whole repo (ops included) in CI's "check" job,
   # which also installs ffmpeg for the pipeline tests. A second "npm test" here would
