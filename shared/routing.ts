@@ -4,11 +4,13 @@
 import type { ChannelAccount, Permission } from "./types.js";
 import { PERMISSION_KIND_LABELS } from "./types.js";
 
-export type RoutingBlock = "brief" | "kind" | "pinned";
+export type RoutingBlock = "brief" | "burner" | "kind" | "pinned";
 
 /** Why this account does not take clips posted under this permission, or null when it does. */
 export function routingBlock(permission: Permission, account: ChannelAccount, accounts: ChannelAccount[]): RoutingBlock | null {
   if (!permission.allowedPlatforms.includes(account.platform)) return "brief";
+  // An experiment record is held to burner accounts, whatever kinds a main account is set to take.
+  if (permission.kind === "experiment" && account.role !== "burner") return "burner";
   if (!account.takes.includes(permission.kind)) return "kind";
   // A pin holds per platform, and even while the pinned account is off: the campaign waits for it.
   const pinnedElsewhere =
@@ -20,6 +22,7 @@ export function routingBlock(permission: Permission, account: ChannelAccount, ac
 /** The block in plain words, to follow the account's name ("gtavi.daily does not take …"). */
 export function routingBlockText(block: RoutingBlock, permission: Permission): string {
   if (block === "brief") return "is not in the brief";
+  if (block === "burner") return "is a main account, and experiment clips go to burner accounts only";
   if (block === "kind") return `does not take “${PERMISSION_KIND_LABELS[permission.kind]}” clips`;
   return "is not the account this campaign is pinned to";
 }
@@ -42,7 +45,10 @@ export function noAccountReason(permissions: Permission[], accounts: ChannelAcco
   const active = permissions.filter((p) => isActive(p, now));
   const open = accounts.filter((a) => a.enabled && !a.disabled);
   if (active.length === 0 || accounts.length === 0) return null;
-  if (active.some((p) => open.some((a) => a.takes.includes(p.kind)))) return null;
+  if (active.every((p) => p.kind === "experiment") && !open.some((a) => a.role === "burner")) {
+    return "Experiment clips post only to burner accounts, and none is switched on. Mark an account as Burner in Dashboard, Posting accounts.";
+  }
+  if (active.some((p) => open.some((a) => a.takes.includes(p.kind) && (p.kind !== "experiment" || a.role === "burner")))) return null;
   const kinds = [...new Set(active.map((p) => `“${PERMISSION_KIND_LABELS[p.kind]}”`))];
   return `No account takes ${kinds.join(" or ")} clips yet. Tick it for an account in Dashboard, Posting accounts.`;
 }

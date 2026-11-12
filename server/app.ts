@@ -1,8 +1,8 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, RejectReason, WatchChannel } from "../shared/types.js";
-import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
+import type { Platform, PostFlag, RejectReason, WatchChannel } from "../shared/types.js";
+import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
 import { accessGate } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
@@ -23,7 +23,7 @@ import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
 import type { AllowanceChecker } from "./sources/proof.js";
-import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
+import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
 import { addSuggested, listSuggested, type SeedCreator } from "./sources/suggested.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
@@ -140,6 +140,14 @@ export function createApp({
       res.json(await allowance.find(channels));
     });
   }
+
+  // Another record for a creator we already have (an experiment, or a campaign that replaces an old one).
+  app.post("/api/sources/:id/permissions", (req, res) => {
+    const id = idParam(req.params.id);
+    sources.get(id);
+    sources.addPermission(id, parsePermission(req.body));
+    res.status(201).json(sources.get(id));
+  });
 
   // Clears a source and everything made from it (the end-to-end test tidies up with this).
   app.delete("/api/sources/:id", (req, res) => {
@@ -312,6 +320,13 @@ export function createApp({
 
   app.post("/api/posts/:id/whop", (req, res) => {
     res.json(posts.markWhopSubmitted(idParam(req.params.id)));
+  });
+
+  // One tap on a post: a claim, removal or strike seen on the platform (on: false takes it back).
+  app.post("/api/posts/:id/flags", (req, res) => {
+    const { flag, on } = (req.body ?? {}) as { flag?: unknown; on?: unknown };
+    if (!POST_FLAGS.includes(flag as PostFlag)) throw new ValidationError("Pick what happened: claim, removal or strike.");
+    res.json(posts.setFlag(idParam(req.params.id), flag as PostFlag, on !== false));
   });
 
   app.get("/api/stats", (_req, res) => {

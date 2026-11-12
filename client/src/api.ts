@@ -9,6 +9,7 @@ import type {
   FaceCam,
   ExportPack,
   Job,
+  NewPermissionInput,
   NewSourceInput,
   Pick,
   Platform,
@@ -17,6 +18,7 @@ import type {
   SettingsInfo,
   SetupChecklist,
   Post,
+  PostFlag,
   PostingInfo,
   PostingRules,
   PostOutcome,
@@ -50,6 +52,8 @@ export const api = {
   checkPermission: (id: number) => call<{ ok: boolean; message: string; source: Source }>(`/api/permissions/${id}/check`, { method: "POST" }),
   findAllowance: (channels: WatchChannel[]) =>
     call<AllowanceFind>("/api/allowance/find", { method: "POST", body: JSON.stringify({ channels }) }),
+  addPermission: (sourceId: number, input: NewPermissionInput) =>
+    call<Source>(`/api/sources/${sourceId}/permissions`, { method: "POST", body: JSON.stringify(input) }),
   vods: () => call<Vod[]>("/api/vods"),
   vod: (id: number) => call<VodDetail>(`/api/vods/${id}`),
   addVod: (sourceId: number, url: string) =>
@@ -78,6 +82,8 @@ export const api = {
   refreshPosts: () => call<{ updated: number; error: string | null }>("/api/posts/refresh", { method: "POST" }),
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),
   markWhop: (id: number) => call<Post>(`/api/posts/${id}/whop`, { method: "POST" }),
+  flagPost: (id: number, flag: PostFlag, on: boolean) =>
+    call<Post>(`/api/posts/${id}/flags`, { method: "POST", body: JSON.stringify({ flag, on }) }),
   stats: () => call<Stats>("/api/stats"),
   dashboard: () => call<Dashboard>("/api/dashboard"),
   accounts: () => call<AccountsInfo>("/api/accounts"),

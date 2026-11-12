@@ -15,6 +15,7 @@ function perm(overrides: Partial<Permission> = {}): Permission {
     kind: "whop-campaign",
     campaignUrl: "https://whop.com/x",
     briefRules: "",
+    note: "",
     cpmRateUsd: 1.5,
     minViews: 3000,
     allowedPlatforms: ["tiktok", "youtube"],
@@ -30,26 +31,26 @@ function perm(overrides: Partial<Permission> = {}): Permission {
 
 describe("assertCanPost (permission and brief gate)", () => {
   it("refuses a source with no permission record", () => {
-    expect(() => assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions: [], platforms: ["tiktok"], now: NOW })).toThrow(
+    expect(() => assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions: [], targets: [{ platform: "tiktok", role: "main" }], now: NOW })).toThrow(
       new PermissionError("Ana has no permission record. Add their campaign or written permission first."),
     );
   });
 
   it("refuses when the permission expired", () => {
     const permissions = [perm({ expiresAt: "2026-11-18T00:00:00.000Z" })];
-    expect(() => assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions, platforms: ["tiktok"], now: NOW })).toThrow(
+    expect(() => assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions, targets: [{ platform: "tiktok", role: "main" }], now: NOW })).toThrow(
       "expired on 2026-11-18",
     );
   });
 
   it("refuses a platform the brief does not allow, even if others are allowed", () => {
     expect(() =>
-      assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions: [perm()], platforms: ["tiktok", "instagram"], now: NOW }),
+      assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions: [perm()], targets: [{ platform: "tiktok", role: "main" }, { platform: "instagram", role: "main" }], now: NOW }),
     ).toThrow("does not allow posting to Instagram Reels");
   });
 
   it("refuses a clip that is not approved", () => {
-    expect(() => assertCanPost({ clipStatus: "pending", creatorName: "Ana", permissions: [perm()], platforms: ["tiktok"], now: NOW })).toThrow(
+    expect(() => assertCanPost({ clipStatus: "pending", creatorName: "Ana", permissions: [perm()], targets: [{ platform: "tiktok", role: "main" }], now: NOW })).toThrow(
       "Approve the clip before posting it.",
     );
   });
@@ -57,9 +58,14 @@ describe("assertCanPost (permission and brief gate)", () => {
   it("returns the permission that covers each platform", () => {
     const yt = perm({ id: 9, allowedPlatforms: ["youtube"] });
     const tt = perm({ id: 8, allowedPlatforms: ["tiktok"] });
-    const covering = assertCanPost({ clipStatus: "approved", creatorName: "Ana", permissions: [tt, yt], platforms: ["youtube", "tiktok"], now: NOW });
-    expect(covering.youtube?.id).toBe(9);
-    expect(covering.tiktok?.id).toBe(8);
+    const covering = assertCanPost({
+      clipStatus: "approved",
+      creatorName: "Ana",
+      permissions: [tt, yt],
+      targets: [{ platform: "youtube", role: "main" }, { platform: "tiktok", role: "main" }],
+      now: NOW,
+    });
+    expect(covering.map((p) => p.id)).toEqual([9, 8]);
   });
 });
 
