@@ -122,6 +122,55 @@ export interface VodDetail extends Vod {
   words: Word[];
 }
 
+/** Why the picker may refuse a moment. Any of these drops the pick before it can render. */
+export interface PickFlags {
+  spoiler: boolean;
+  cutscene: boolean;
+  ending: boolean;
+  leak: boolean;
+  breaksBrief: boolean;
+}
+
+export type PickStatus = "picked" | "dropped" | "rendering" | "rendered" | "failed";
+
+export interface StepTime {
+  step: string;
+  ms: number;
+}
+
+/** A highlight chosen from a VOD's transcript, and (once rendered) its vertical clip. */
+export interface Pick {
+  id: number;
+  vodId: number;
+  sourceId: number;
+  rank: number;
+  startSec: number;
+  endSec: number;
+  title: string;
+  hook: string;
+  score: number;
+  /** Why it was chosen. */
+  reason: string;
+  flags: PickFlags;
+  /** Set when the pick was left out (spoiler, brief ban, bad length…); it never renders. */
+  dropReason: string | null;
+  layout: ClipLayout;
+  status: PickStatus;
+  error: string | null;
+  /** Share of the transcript and picking cost, in USD. */
+  costUsd: number;
+  /** Time per step of the run (picks share, download, render). */
+  steps: StepTime[];
+  sizeBytes: number | null;
+  durationSec: number | null;
+  videoUrl: string | null;
+  thumbUrl: string | null;
+  /** The clip waiting for review and posting, once rendered. */
+  clipId: number | null;
+  createdAt: string;
+}
+
+
 /** "rendering": an edit was saved and the new version is being made; it returns to "pending". */
 export type ClipStatus = "pending" | "approved" | "rejected" | "rendering";
 

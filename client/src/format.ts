@@ -22,3 +22,11 @@ export function ago(iso: string, now = Date.now()): string {
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 }
+
+export function megabytes(bytes: number): string {
+  return `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+export function seconds(ms: number): string {
+  return ms < 1000 ? "under 1 s" : `${Math.round(ms / 1000)} s`;
+}

@@ -1,0 +1,42 @@
+import type { Chapter, PickFlags, Word } from "../../../shared/types.js";
+import type { Signals } from "./signals.js";
+
+export interface PickInput {
+  title: string | null;
+  durationSec: number;
+  chapters: Chapter[];
+  words: Word[];
+  signals: Signals;
+  creatorName: string;
+  /** The campaign brief from the source's permission record. */
+  briefRules: string;
+  /** What the creator does not want clipped. */
+  bannedContent: string;
+  maxPicks: number;
+}
+
+/** What a picker proposes. Times are seconds in the VOD; they get snapped and checked afterwards. */
+export interface RawPick {
+  startSec: number;
+  endSec: number;
+  hook: string;
+  title: string;
+  score: number;
+  reason: string;
+  /** Gameplay center crop, or the full frame on a blurred background (when the whole screen matters). */
+  layout: "center" | "full";
+  flags: PickFlags;
+}
+
+export interface PickerResult {
+  picks: RawPick[];
+  costUsd: number;
+}
+
+/** Ranks highlight windows in a transcribed VOD. Real adapters call a paid LLM; tests use fakes. */
+export interface Picker {
+  readonly name: string;
+  pick(input: PickInput, signal?: AbortSignal): Promise<PickerResult>;
+}
+
+export const NO_FLAGS: PickFlags = { spoiler: false, cutscene: false, ending: false, leak: false, breaksBrief: false };

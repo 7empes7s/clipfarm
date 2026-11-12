@@ -75,6 +75,16 @@ export class VodsRepo {
       .run(meta.title, meta.durationSec, JSON.stringify(meta.chapters), id);
   }
 
+  /** Loudest momentary loudness per second (LUFS), measured on the audio at ingest. */
+  saveLoudness(id: number, perSec: number[]): void {
+    this.db.prepare("UPDATE vods SET loudness = ? WHERE id = ?").run(JSON.stringify(perSec), id);
+  }
+
+  loudness(id: number): number[] {
+    const row = this.db.prepare("SELECT loudness FROM vods WHERE id = ?").get(id) as { loudness: string } | undefined;
+    return row ? (JSON.parse(row.loudness) as number[]) : [];
+  }
+
   /** Replaces the transcript (so a retried job never leaves duplicates) and marks the video ready. */
   saveTranscript(id: number, words: Word[], transcriber: string, costUsd: number): void {
     this.db.transaction(() => {

@@ -4,6 +4,7 @@ import type { JobHandler } from "../../jobs/queue.js";
 import { extractAudio, probeDuration } from "../../tools/ffmpeg.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import type { VodsRepo } from "../../vods/repo.js";
+import { measureLoudness } from "../picks/signals.js";
 import type { Transcriber } from "../transcript/types.js";
 import type { AudioDownloader } from "./downloader.js";
 
@@ -36,6 +37,9 @@ export function ingestHandler(deps: IngestDeps): JobHandler {
     await extractAudio(downloaded.file, audio, { signal });
     const durationSec = await probeDuration(audio, signal);
     deps.vods.saveMeta(vodId, { ...downloaded.meta, durationSec: downloaded.meta.durationSec ?? durationSec });
+    // Loudness spikes help find highlights later; measure them now, while the audio is here.
+    progress(0.35, "Measuring loudness");
+    deps.vods.saveLoudness(vodId, await measureLoudness(audio, signal));
 
     deps.vods.setStatus(vodId, "transcribing");
     progress(0.4, "Transcribing");
