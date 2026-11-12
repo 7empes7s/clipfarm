@@ -177,26 +177,33 @@ function SourceCard({ source, vods, onChange }: { source: Source; vods: Vod[]; o
       )}
       {source.bannedContent && <p className="banned">Off limits: {source.bannedContent}</p>}
 
-      <form className="add-vod" onSubmit={addVod}>
-        <label htmlFor={`vod-url-${source.id}`}>Stream or video link</label>
-        <div className="inline">
-          <input
-            id={`vod-url-${source.id}`}
-            type="url"
-            inputMode="url"
-            required
-            placeholder="https://www.twitch.tv/videos/…"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-          <button type="submit">Add</button>
-        </div>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-      </form>
+      {source.permissionState === "active" ? (
+        <form className="add-vod" onSubmit={addVod}>
+          <label htmlFor={`vod-url-${source.id}`}>Stream or video link</label>
+          <div className="inline">
+            <input
+              id={`vod-url-${source.id}`}
+              type="url"
+              inputMode="url"
+              required
+              placeholder="https://www.twitch.tv/videos/…"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+            <button type="submit">Add</button>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      ) : (
+        <p className="blocked">
+          {source.permissionState === "expired" ? "This permission has expired." : "There is no permission yet."} Add a
+          current campaign before adding streams.
+        </p>
+      )}
 
       {vods.length > 0 && (
         <ul className="vods">
@@ -260,7 +267,7 @@ function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => v
         </div>
       )}
       <div className="job-line">
-        <span className="hint">{job.error ?? job.message}</span>
+        <span className="hint">{job.error ?? (active ? job.message : "")}</span>
         {active && (
           <button
             type="button"

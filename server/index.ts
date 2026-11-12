@@ -32,10 +32,13 @@ const server = app.listen(config.port, () => {
 });
 
 function shutdown() {
+  // A running job is aborted and put back in the queue for the next start.
   queue.stop();
   server.close(() => {
-    db.close();
-    process.exit(0);
+    void queue.idle().then(() => {
+      db.close();
+      process.exit(0);
+    });
   });
 }
 process.on("SIGINT", shutdown);

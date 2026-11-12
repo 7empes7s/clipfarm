@@ -100,6 +100,7 @@ a {
   width: 0.7em;
   height: 0.7em;
   border-radius: 50%;
+  margin-left: 0.18em;
   background: var(--tally);
   box-shadow: 0 0 0 0.18em color-mix(in srgb, var(--tally) 22%, transparent);
 }
@@ -268,8 +269,13 @@ textarea {
   color: var(--muted);
 }
 
-.add-vod {
+.add-vod,
+.blocked {
   margin-top: var(--s3);
+}
+.blocked {
+  margin-bottom: 0;
+  color: var(--bad);
 }
 .add-vod label {
   display: block;
@@ -442,7 +448,10 @@ textarea {
   font-size: 0.9375rem;
   font-weight: 600;
 }
-.form .hint {
+.form .hint,
+.form input,
+.form select,
+.form textarea {
   font-weight: 400;
 }
 .form fieldset {
