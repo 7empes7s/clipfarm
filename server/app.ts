@@ -25,7 +25,8 @@ function idParam(raw: string | string[] | undefined): number {
 
 function sendMedia(res: express.Response, file: string | null): void {
   if (!file || !existsSync(file)) throw new NotFoundError("That file is not there (yet).");
-  res.sendFile(file);
+  // Paths come from the server, never the request; they may sit under a dot-folder (e.g. ~/.cubefarm).
+  res.sendFile(file, { dotfiles: "allow" });
 }
 
 export function createApp({ sources, vods, picks, queue, clientDir }: AppDeps): express.Express {

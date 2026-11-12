@@ -32,7 +32,11 @@ export function Clips({ picks }: { picks: Pick[] }) {
                 type="button"
                 className="clip-frame"
                 disabled={!p.videoUrl}
-                aria-label={p.videoUrl ? `Play ${p.title}` : `${p.title}: ${STATUS_LABEL[p.status]}`}
+                aria-label={
+                  p.videoUrl
+                    ? `Play ${p.title}, score ${Math.round(p.score)}`
+                    : `${p.title}: ${STATUS_LABEL[p.status]}, score ${Math.round(p.score)}`
+                }
                 onClick={() => setPlaying(p)}
               >
                 {p.thumbUrl ? <img src={p.thumbUrl} alt="" loading="lazy" /> : <span>{STATUS_LABEL[p.status]}</span>}

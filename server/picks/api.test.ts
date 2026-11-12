@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { campaignInput } from "../../test/helpers.js";
@@ -55,5 +58,31 @@ describe("picks API", () => {
     expect((await request(app).get("/api/picks")).body).toHaveLength(1);
     expect((await request(app).get(`/api/picks/${p!.id}/video`)).status).toBe(404);
     expect((await request(app).get(`/api/vods/999/picks`)).status).toBe(404);
+  });
+});
+
+describe("clip files", () => {
+  it("serves a rendered clip even when the media folder sits under a dot-folder", async () => {
+    const { sources, vods, picks, app } = setup();
+    const dir = await mkdtemp(join(tmpdir(), "clipfarm-api-"));
+    try {
+      const media = join(dir, ".hidden", "media");
+      await mkdir(media, { recursive: true });
+      await writeFile(join(media, "a.mp4"), "video");
+      await writeFile(join(media, "a.jpg"), "jpg");
+      const s = sources.create(campaignInput());
+      const v = vods.create(s.id, "https://www.twitch.tv/videos/1");
+      const [p] = picks.replaceForVod(v.id, s.id, [
+        { startSec: 1, endSec: 30, title: "T", hook: "", score: 1, reason: "", flags: NO_FLAGS, dropReason: null,
+          layout: "center", costUsd: 0, steps: [] },
+      ]);
+      picks.saveRender(p!.id, { filePath: join(media, "a.mp4"), thumbPath: join(media, "a.jpg"), sizeBytes: 5, durationSec: 29, steps: [] });
+      const res = await request(app).get(`/api/picks/${p!.id}/video`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toBe("video/mp4");
+      expect((await request(app).get(`/api/picks/${p!.id}/thumb`)).status).toBe(200);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
