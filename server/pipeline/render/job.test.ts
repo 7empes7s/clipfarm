@@ -77,3 +77,19 @@ describe("render job gate", () => {
     expect(picks.get(p!.id).status).toBe("failed");
   });
 });
+
+describe("render job for a pick that was replaced", () => {
+  it("fails once without retrying and leaves the queue working", async () => {
+    const { sources, vods, picks, downloader, queue } = setup();
+    const source = sources.create(campaignInput());
+    const vod = vods.create(source.id, "https://www.twitch.tv/videos/1");
+    queue.stop();
+    const [old] = picks.replaceForVod(vod.id, source.id, [base]);
+    const stale = queue.enqueue(RENDER_JOB, { pickId: old!.id });
+    picks.replaceForVod(vod.id, source.id, [base]); // a picks re-run replaces the unrendered pick
+    queue.start();
+    await queue.idle();
+    expect(queue.get(stale.id)).toMatchObject({ status: "failed", attempts: 1, error: "That clip was not found." });
+    expect(downloader.calls).toEqual([]);
+  });
+});

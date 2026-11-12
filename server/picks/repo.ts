@@ -119,6 +119,11 @@ export class PicksRepo {
     return toPick(this.row(id));
   }
 
+  find(id: number): Pick | null {
+    const row = this.db.prepare("SELECT * FROM picks WHERE id = ?").get(id) as PickRow | undefined;
+    return row ? toPick(row) : null;
+  }
+
   listForVod(vodId: number): Pick[] {
     return (this.db.prepare("SELECT * FROM picks WHERE vod_id = ? ORDER BY rank").all(vodId) as PickRow[]).map(toPick);
   }

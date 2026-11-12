@@ -107,7 +107,8 @@ const MIGRATIONS: string[] = [
   ALTER TABLE sources ADD COLUMN frame_path TEXT;
   ALTER TABLE vods ADD COLUMN loudness TEXT NOT NULL DEFAULT '[]';
   CREATE TABLE picks (
-    id INTEGER PRIMARY KEY,
+    -- AUTOINCREMENT: a re-run replaces picks, and a stale render job must never reach a new one.
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     vod_id INTEGER NOT NULL REFERENCES vods(id) ON DELETE CASCADE,
     source_id INTEGER NOT NULL REFERENCES sources(id),
     rank INTEGER NOT NULL,

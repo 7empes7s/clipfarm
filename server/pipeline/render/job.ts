@@ -125,7 +125,8 @@ export function onRenderFinished(picks: PicksRepo) {
   return (job: Job, payload: unknown): void => {
     if (job.type !== RENDER_JOB || job.status === "done") return;
     const { pickId } = payload as { pickId: number };
-    const pick = picks.get(pickId);
-    if (pick.status !== "dropped") picks.setStatus(pickId, "failed", job.error ?? job.message);
+    // The pick may be gone: a picks re-run replaces unrendered picks (and queues their own renders).
+    const pick = picks.find(pickId);
+    if (pick && pick.status !== "dropped") picks.setStatus(pickId, "failed", job.error ?? job.message);
   };
 }
