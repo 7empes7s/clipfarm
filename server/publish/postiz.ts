@@ -21,6 +21,8 @@ interface PostizIntegration {
   name?: string;
   identifier: string;
   disabled?: boolean;
+  picture?: string | null;
+  profile?: string | null;
 }
 
 interface PostizMedia {
@@ -71,6 +73,7 @@ export function accountStatsFromPostiz(accountId: string, metrics: PostizAnalyti
     accountId,
     followers: points(pick(/^(page )?followers$/i, /^subscribers$/i)),
     views: points(pick(/^(video )?views$/i, /^impressions$/i)),
+    claims: points(pick(/^(copyright )?(claims|strikes)$/i)).at(-1)?.value ?? null,
   };
 }
 
@@ -126,7 +129,14 @@ export class PostizService implements PostingService {
       const platform = IDENTIFIERS[i.identifier];
       if (!platform) continue;
       this.identifiers.set(i.id, i.identifier);
-      accounts.push({ id: i.id, platform, name: i.name ?? i.identifier, disabled: Boolean(i.disabled) });
+      accounts.push({
+        id: i.id,
+        platform,
+        name: i.name ?? i.identifier,
+        disabled: Boolean(i.disabled),
+        handle: i.profile || null,
+        avatarUrl: i.picture || null,
+      });
     }
     return accounts;
   }

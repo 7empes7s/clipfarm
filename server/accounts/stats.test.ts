@@ -27,6 +27,7 @@ const row = (o: Partial<AccountStatsRow>): AccountStatsRow => ({
   accountId: "int-yt",
   platform: "youtube",
   name: "GTA VI Moments",
+  claims: null,
   followers: [],
   views: [],
   manualFollowers: [],
@@ -176,7 +177,7 @@ describe("AccountStatsStore", () => {
     const { app, service, tick } = setup();
     const first = await request(app).get("/api/accounts");
     expect(first.status).toBe(200);
-    expect(first.body.cards).toHaveLength(4);
+    expect(first.body.cards).toHaveLength(5);
     expect(first.body.cards[0]).toMatchObject({ followers: 1240, followersSource: "service", followersGrowth: { change: 240 } });
     expect(service.calls).toEqual(["listAccounts", "accountStats"]);
 
@@ -192,7 +193,7 @@ describe("AccountStatsStore", () => {
 
   it("shares one read between requests that arrive together", async () => {
     const { store, service } = setup();
-    expect(await Promise.all([store.refresh(), store.refresh(), store.refresh()])).toEqual([4, 4, 4]);
+    expect(await Promise.all([store.refresh(), store.refresh(), store.refresh()])).toEqual([5, 5, 5]);
     expect(service.calls).toEqual(["listAccounts", "accountStats"]);
   });
 
@@ -207,9 +208,9 @@ describe("AccountStatsStore", () => {
     };
     const { store } = setup(service);
     expect(await store.refresh()).toBe(3);
-    expect(await store.refresh()).toBe(1);
+    expect(await store.refresh()).toBe(2);
     expect(await store.refresh()).toBe(0);
-    expect(asked).toEqual([["fake-youtube", "fake-tiktok", "fake-instagram"], ["fake-x"]]);
+    expect(asked).toEqual([["fake-youtube", "fake-tiktok", "fake-tiktok-2"], ["fake-instagram", "fake-x"]]);
   });
 
   it("keeps the error to show, waits before asking again, and never sends the key", async () => {

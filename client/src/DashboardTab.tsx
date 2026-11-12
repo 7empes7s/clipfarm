@@ -1,6 +1,27 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { AccountCard, AccountsInfo, Clip, Dashboard, Job, Platform, Post, Source, VodProgress, WatchedCreator } from "../../shared/types";
-import { PLATFORM_LABELS, PLATFORMS, WATCH_PLATFORM_LABELS } from "../../shared/types";
+import type {
+  AccountCard,
+  AccountHealth,
+  AccountRole,
+  AccountsInfo,
+  Clip,
+  Dashboard,
+  Job,
+  Platform,
+  Post,
+  Source,
+  VodProgress,
+  WatchedCreator,
+} from "../../shared/types";
+import {
+  ACCOUNT_HEALTH_LABELS,
+  ACCOUNT_HEALTHS,
+  ACCOUNT_ROLE_LABELS,
+  ACCOUNT_ROLES,
+  PLATFORM_LABELS,
+  PLATFORMS,
+  WATCH_PLATFORM_LABELS,
+} from "../../shared/types";
 import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { compact, duration, shortDate, usd } from "./format";
@@ -414,6 +435,23 @@ function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sour
 function Accounts() {
   const [info, setInfo] = useState<AccountsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const closeSettings = useCallback(() => setEditing(null), []);
+
+  async function sync() {
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      setInfo(await api.syncAccounts());
+      setSyncNote("Accounts are up to date.");
+    } catch (err) {
+      setSyncNote((err as Error).message);
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     let live = true;
@@ -433,8 +471,28 @@ function Accounts() {
       </p>
     );
   if (!info) return <p className="hint">Loading accounts…</p>;
+  const edited = info.cards.find((c) => c.accountId === editing);
   return (
     <>
+      <div className="section-head">
+        <h3>Posting accounts</h3>
+        {info.service !== "none" && (
+          <button type="button" onClick={() => void sync()} disabled={syncing}>
+            {syncing ? "Syncing…" : "Sync accounts"}
+          </button>
+        )}
+      </div>
+      {info.service !== "none" && (
+        <p className="hint">
+          Create each account yourself and link it once in {info.label}. It shows up here after a sync, and clipfarm posts to it
+          from then on.
+        </p>
+      )}
+      {syncNote && (
+        <p className="hint" role="status">
+          {syncNote}
+        </p>
+      )}
       <p className="hint">
         {info.service === "none"
           ? "No posting service is set up, so there are no account stats yet. Set up Postiz or Upload-Post on the server (see the README)."
@@ -450,15 +508,163 @@ function Accounts() {
       ) : (
         <ul className="stack">
           {info.cards.map((c) => (
-            <AccountCardView key={c.accountId} card={c} label={info.label} onSaved={setInfo} />
+            <AccountCardView key={c.accountId} card={c} label={info.label} onSaved={setInfo} onSettings={() => setEditing(c.accountId)} />
           ))}
         </ul>
+      )}
+      {edited?.account && (
+        <AccountSheet
+          card={edited}
+          info={info}
+          onClose={closeSettings}
+          onSaved={(i) => {
+            setInfo(i);
+            setEditing(null);
+          }}
+        />
       )}
     </>
   );
 }
 
-function AccountCardView({ card, label, onSaved }: { card: AccountCard; label: string; onSaved: (i: AccountsInfo) => void }) {
+/** Role, niche, pace, status and on/off for one posting account. */
+function AccountSheet({
+  card,
+  info,
+  onClose,
+  onSaved,
+}: {
+  card: AccountCard;
+  info: AccountsInfo;
+  onClose: () => void;
+  onSaved: (i: AccountsInfo) => void;
+}) {
+  const a = card.account!;
+  const [role, setRole] = useState<AccountRole>(a.role);
+  const [niche, setNiche] = useState(a.niche);
+  const [maxPerDay, setMaxPerDay] = useState(a.maxPerDay === null ? "" : String(a.maxPerDay));
+  const [gap, setGap] = useState(a.minGapMinutes === null ? "" : String(a.minGapMinutes));
+  const [health, setHealth] = useState<AccountHealth>(a.health);
+  const [enabled, setEnabled] = useState(a.enabled);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaving(true);
+    try {
+      onSaved(
+        await api.saveAccount(a.id, {
+          role,
+          niche,
+          maxPerDay: maxPerDay === "" ? null : Number(maxPerDay),
+          minGapMinutes: gap === "" ? null : Number(gap),
+          health,
+          enabled,
+        }),
+      );
+    } catch (err) {
+      setError((err as Error).message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Sheet id="account-sheet-title" title="Account settings" onClose={onClose}>
+      <form className="form" onSubmit={save}>
+        <p className="hint">
+          {a.name} · {PLATFORM_LABELS[a.platform]}
+        </p>
+        <fieldset>
+          <legend>Role</legend>
+          <div className="chips">
+            {ACCOUNT_ROLES.map((r) => (
+              <label key={r} className="chip">
+                <input type="radio" name="role" checked={role === r} onChange={() => setRole(r)} />
+                {ACCOUNT_ROLE_LABELS[r]}
+              </label>
+            ))}
+          </div>
+          <p className="hint">A burner is a throwaway channel for tests. It is never ticked for you when posting.</p>
+        </fieldset>
+        <label>
+          Niche
+          <input type="text" maxLength={60} placeholder="GTA VI moments" value={niche} onChange={(e) => setNiche(e.target.value)} />
+        </label>
+        <p className="hint">Clips that fit the niche are suggested for this account. Empty takes any clip.</p>
+        <div className="row">
+          <label>
+            Posts a day
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="50"
+              step="1"
+              placeholder={String(info.rules.maxPerDay)}
+              value={maxPerDay}
+              onChange={(e) => setMaxPerDay(e.target.value)}
+            />
+          </label>
+          <label>
+            Minutes between posts
+            <input
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="1440"
+              step="1"
+              placeholder={String(info.rules.minGapMinutes)}
+              value={gap}
+              onChange={(e) => setGap(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="hint">
+          Empty follows the shared spacing ({info.rules.maxPerDay} a day, {info.rules.minGapMinutes} minutes apart).
+        </p>
+        <fieldset>
+          <legend>Status</legend>
+          <div className="chips">
+            {ACCOUNT_HEALTHS.map((h) => (
+              <label key={h} className="chip">
+                <input type="radio" name="health" checked={health === h} onChange={() => setHealth(h)} />
+                {ACCOUNT_HEALTH_LABELS[h]}
+              </label>
+            ))}
+          </div>
+          <p className="hint">Set by hand: {info.label} does not say. A banned account is skipped when posting.</p>
+        </fieldset>
+        <label className="chip">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Post to this account
+        </label>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="primary" disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </form>
+    </Sheet>
+  );
+}
+
+function AccountCardView({
+  card,
+  label,
+  onSaved,
+  onSettings,
+}: {
+  card: AccountCard;
+  label: string;
+  onSaved: (i: AccountsInfo) => void;
+  onSettings: () => void;
+}) {
+  const a = card.account;
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const g = card.followersGrowth;
@@ -477,9 +683,33 @@ function AccountCardView({ card, label, onSaved }: { card: AccountCard; label: s
   return (
     <li className="card account" data-testid="account-card">
       <div className="card-head">
-        <h3>{card.name}</h3>
+        <div className="account-name">
+          {a?.avatarUrl ? (
+            <img className="avatar" src={a.avatarUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="avatar" aria-hidden="true">
+              {card.name.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+          <div>
+            <h3>{card.name}</h3>
+            {a?.handle && <p className="hint">@{a.handle.replace(/^@/, "")}</p>}
+          </div>
+        </div>
         <span className="state">{card.demo ? `${PLATFORM_LABELS[card.platform]}, demo` : PLATFORM_LABELS[card.platform]}</span>
       </div>
+      {a && (
+        <div className="account-tags" data-testid="account-tags">
+          <span className={`state role-${a.role}`}>{ACCOUNT_ROLE_LABELS[a.role]}</span>
+          <span className={`state health-${a.health}`}>{ACCOUNT_HEALTH_LABELS[a.health]}</span>
+          {!a.enabled && <span className="state state-none">Off</span>}
+          {a.disabled && <span className="state state-none">Disconnected</span>}
+          {a.niche && <span className="hint">{a.niche}</span>}
+          <button type="button" className="link" onClick={onSettings}>
+            Settings
+          </button>
+        </div>
+      )}
       <div className="followers">
         <strong>{card.followers === null ? "–" : card.followers.toLocaleString()}</strong>
         <span>
@@ -513,6 +743,25 @@ function AccountCardView({ card, label, onSaved }: { card: AccountCard; label: s
             {card.postsLast7Days} of {card.plannedLast7Days} planned
           </dd>
         </div>
+        <div>
+          <dt>Posts so far</dt>
+          <dd>
+            {card.posts}, {usd(card.estimatedEarningsUsd)} estimated
+          </dd>
+        </div>
+        <div>
+          <dt>Claims or strikes</dt>
+          <dd>{card.claims === null ? `Not reported by ${label}` : card.claims.toLocaleString()}</dd>
+        </div>
+        {a && (
+          <div className="wide">
+            <dt>Pace</dt>
+            <dd>
+              Up to {a.pace.maxPerDay} post{a.pace.maxPerDay === 1 ? "" : "s"} a day, {a.pace.minGapMinutes} minutes apart
+              {a.maxPerDay === null && a.minGapMinutes === null && " (shared spacing)"}
+            </dd>
+          </div>
+        )}
       </dl>
       <Meter value={card.plannedLast7Days ? card.postsLast7Days / card.plannedLast7Days : null} label="Posting compared with the plan" />
       {card.topClips.length > 0 && (

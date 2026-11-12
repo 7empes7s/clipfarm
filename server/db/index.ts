@@ -205,6 +205,26 @@ const MIGRATIONS: string[] = [
     demo INTEGER NOT NULL DEFAULT 0
   );
   `,
+  `
+  CREATE TABLE posting_accounts (
+    account_id TEXT PRIMARY KEY,
+    service TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    name TEXT NOT NULL,
+    handle TEXT,
+    avatar_url TEXT,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    listed INTEGER NOT NULL DEFAULT 1,
+    role TEXT NOT NULL DEFAULT 'main',
+    niche TEXT NOT NULL DEFAULT '',
+    max_per_day INTEGER,
+    min_gap_minutes INTEGER,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    health TEXT NOT NULL DEFAULT 'healthy',
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE account_stats ADD COLUMN claims INTEGER;
+  `,
 ];
 
 export function migrate(db: Db): void {

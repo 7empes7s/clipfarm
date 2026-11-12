@@ -5,6 +5,7 @@ import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResu
 export const FAKE_ACCOUNTS: PostingAccount[] = [
   { id: "fake-youtube", platform: "youtube", name: "GTA VI Moments", disabled: false },
   { id: "fake-tiktok", platform: "tiktok", name: "gtavimoments", disabled: false },
+  { id: "fake-tiktok-2", platform: "tiktok", name: "gtavi.daily", disabled: false },
   { id: "fake-instagram", platform: "instagram", name: "gtavi.moments", disabled: false },
   { id: "fake-x", platform: "x", name: "GTA VI Moments", disabled: false },
 ];
