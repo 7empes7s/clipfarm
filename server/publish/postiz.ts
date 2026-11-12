@@ -107,9 +107,9 @@ export class PostizService implements PostingService {
     this.voice = {
       label: "Postiz",
       secret: opts.apiKey,
-      refusedKey: "Postiz refused the API key. Copy it again from Postiz > Settings > Public API into POSTIZ_API_KEY.",
+      refusedKey: "Postiz refused the API key. Copy it again from Postiz > Settings > Public API and paste it in Settings.",
       limited: () => "Postiz's hourly limit was reached. Try again in an hour.",
-      unreachable: (reason) => `Cannot reach Postiz at ${this.site} (${reason}). Is it running, and is POSTIZ_URL right?`,
+      unreachable: (reason) => `Cannot reach Postiz at ${this.site} (${reason}). Is it running, and is its address in Settings right?`,
     };
   }
 

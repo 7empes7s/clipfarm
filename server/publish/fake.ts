@@ -92,7 +92,7 @@ export class NoPostingService implements PostingService {
   publish(): Promise<PublishResult[]> {
     return Promise.reject(
       new PostingServiceError(
-        "No posting service is set up. Use Export to post by hand, or set POSTIZ_URL and POSTIZ_API_KEY (or UPLOAD_POST_API_KEY) on the server.",
+        "No posting service is set up. Use Export to post by hand, or add Postiz or Upload-Post in Settings.",
       ),
     );
   }

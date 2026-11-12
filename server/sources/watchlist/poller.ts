@@ -53,6 +53,12 @@ export class WatchlistPoller {
     this.timer = null;
   }
 
+  /** A key was saved or removed: stop waiting out old errors and check again in the background. */
+  retryNow(): void {
+    for (const backoff of this.backoffs.values()) backoff.succeed();
+    this.pollAll().catch((err: unknown) => console.error("Watchlist check failed:", err));
+  }
+
   status(): WatchPlatformStatus[] {
     return WATCH_PLATFORMS.map((platform) => {
       const client = this.deps.clients.find((c) => c.platform === platform);

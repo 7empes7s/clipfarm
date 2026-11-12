@@ -542,7 +542,7 @@ export interface WatchedCreatorInput {
 
 export interface WatchPlatformStatus {
   platform: WatchPlatform;
-  /** False when the keys it needs are not set on the server. */
+  /** False when the keys it needs are not set (in Settings or the server's env). */
   configured: boolean;
   /** What to set, or why it is waiting, in plain words; null when all is well. */
   note: string | null;
@@ -554,4 +554,68 @@ export interface Watchlist {
   creators: WatchedCreator[];
   platforms: WatchPlatformStatus[];
   lastPollAt: string | null;
+}
+
+export const INTEGRATION_IDS = ["openai", "twitch", "youtube", "postiz", "upload-post"] as const;
+export type IntegrationId = (typeof INTEGRATION_IDS)[number];
+
+/** The last Test of an integration's keys. The message is plain and never holds a key. */
+export interface KeyTestResult {
+  ok: boolean;
+  message: string;
+  at: string;
+}
+
+/** One value of an integration, as the Settings screen may see it: a key's value is never sent. */
+export interface SettingField {
+  /** The setting's name, the same as the server's env variable. */
+  name: string;
+  label: string;
+  /** A key: only "set" and its last characters are shown. False for addresses and names. */
+  secret: boolean;
+  required: boolean;
+  set: boolean;
+  /** Where the value in use comes from: saved in Settings, or the server's env file. */
+  source: "settings" | "env" | null;
+  /** The last 4 characters of a key, to tell keys apart; null when it is too short to show any. */
+  ending: string | null;
+  /** The value itself, only for fields that are not keys. */
+  value: string | null;
+  savedAt: string | null;
+  placeholder: string;
+}
+
+export interface IntegrationStatus {
+  id: IntegrationId;
+  label: string;
+  /** What clipfarm uses it for. */
+  purpose: string;
+  fields: SettingField[];
+  /** Every required value is set (in Settings or the server's env). */
+  configured: boolean;
+  test: KeyTestResult | null;
+  /** Something to know about this row right now, in plain words. */
+  note: string | null;
+}
+
+export interface SettingsInfo {
+  integrations: IntegrationStatus[];
+  /** Demo mode (CLIPFARM_FAKES=1): keys are saved, but every outside service is a stand-in. */
+  demo: boolean;
+}
+
+export interface SetupItem {
+  id: "keys" | "accounts" | "permission" | "clip" | "post";
+  label: string;
+  done: boolean;
+  /** One plain line on what to do (or what is done). */
+  line: string;
+  /** Where the button goes, and what it says. */
+  href: string;
+  action: string;
+}
+
+export interface SetupChecklist {
+  items: SetupItem[];
+  done: boolean;
 }

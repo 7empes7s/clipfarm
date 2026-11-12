@@ -118,7 +118,12 @@ install -o root -g root -m 600 /opt/clipfarm-live/repo/ops/clipfarm/.env.example
 nano /etc/clipfarm/clipfarm.env
 ```
 
-Fill in what the manager gives you. The file explains every line. The ones that matter:
+The keys do not have to go in this file: the manager pastes and tests them in the app, under
+**⋯ > Settings** (`https://clip.techinsiderbytes.com/#settings`), and they are in use at once,
+with no restart. Leave the key lines empty unless you are given keys to put here. A key saved in
+Settings wins over the same line in this file; this file is the fallback.
+
+The file explains every line. The ones that matter:
 
 | Line | Value |
 |---|---|
@@ -132,6 +137,10 @@ Without keys clipfarm still starts and shows the gallery; jobs that need a missi
 say which key.
 
 Save a copy of the filled file in the team password manager: the backup does not include it.
+
+Keys pasted in Settings are kept in `/var/lib/clipfarm/secrets.json` (owner `clipfarm`, mode 600).
+The server writes it; never open, copy or print it. It is not in the backup either: after a
+restore on a new box the keys are pasted again in Settings.
 
 Install the service (it starts in step 5, once there is a release to run):
 
@@ -316,7 +325,9 @@ What is and is not backed up:
   is taken while the server runs. The 3 newest are kept; other files in the backup folders are
   never touched.
 - **Not backed up:** `/var/lib/clipfarm/media` (video files: clips can be rendered again from
-  their source) and `/etc/clipfarm/clipfarm.env` (keep it in the password manager).
+  their source), `/etc/clipfarm/clipfarm.env` (keep it in the password manager) and
+  `/var/lib/clipfarm/secrets.json` (the keys pasted in Settings: left out on purpose, so no copy
+  of them sits in `/opt/backups`. After a restore on a new box, paste them again in Settings).
 
 Disk cleanup: `clipfarm-media-cleanup.timer` runs at 05:00 and deletes the video files of clips
 that were **rejected more than 14 days ago** (`MEDIA_KEEP_REJECTED_DAYS` in the env file).
@@ -552,7 +563,8 @@ from the lists (their files are still in `media/`); posts made after it are stil
 platforms but no longer tracked. When all is well: `rm /var/lib/clipfarm/clipfarm.db.before-restore`.
 
 On a new box: do steps 1-6 (with your saved `clipfarm.env` in step 4), the restore above, then
-steps 8-10. The Access application (step 7) stays as it is.
+steps 8-10. The keys that were pasted in Settings are not in the backup: the manager pastes them
+again under ⋯ > Settings and taps Test on each (the dashboard's setup list shows what is missing). The Access application (step 7) stays as it is.
 
 ## Remove clipfarm from the box (IT, then manager)
 

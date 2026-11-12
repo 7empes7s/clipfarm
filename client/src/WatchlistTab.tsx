@@ -72,7 +72,7 @@ export function WatchlistTab({ sources, onQueued }: { sources: Source[]; onQueue
         .filter((p) => p.note)
         .map((p) => (
           <p key={p.platform} className="hint platform-note">
-            {WATCH_PLATFORM_LABELS[p.platform]}: {p.note}
+            {WATCH_PLATFORM_LABELS[p.platform]}: {p.configured ? p.note : <a href={`#settings/${p.platform}`}>{p.note}</a>}
           </p>
         ))}
       {error && (

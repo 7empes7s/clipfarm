@@ -15,6 +15,10 @@ import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
+import { buildChecklist } from "./settings/checklist.js";
+import { configuredMap, integration, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
+import { testIntegration } from "./settings/keyTests.js";
+import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
 import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
@@ -34,6 +38,8 @@ export interface AppDeps {
   accountStats?: AccountStatsStore;
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
+  /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
+  settings?: { store: Settings; demo: boolean };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -77,6 +83,7 @@ export function createApp({
   publisher,
   accountStats,
   watchlist,
+  settings,
   seedDemoClip,
   clientDir,
   requireAccess,
@@ -85,8 +92,9 @@ export function createApp({
   if (requireAccess) app.use(accessGate());
   app.use(express.json({ limit: "1mb" }));
 
+  // Open to anyone (see access.ts), so about keys it says only yes or no per connection.
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json(settings ? { ok: true, configured: configuredMap(settings.store) } : { ok: true });
   });
 
   app.get("/api/sources", (_req, res) => {
@@ -304,6 +312,54 @@ export function createApp({
     app.post("/api/watchlist/poll", async (_req, res) => {
       await poller.pollAll();
       res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+  }
+
+  if (settings) {
+    const { store, demo } = settings;
+    const info = () => settingsInfo(store, { demo, posting: publisher.service.name });
+
+    // A key's value is never in an answer: see settingsInfo.
+    app.get("/api/settings", (_req, res) => {
+      res.json(info());
+    });
+
+    app.put("/api/settings/:id", (req, res) => {
+      const def = integration(req.params.id);
+      store.save(parseSettingsInput(def, req.body), [def.id]);
+      res.json(info());
+    });
+
+    app.delete("/api/settings/:id", (req, res) => {
+      const def = integration(req.params.id);
+      store.save(Object.fromEntries(def.fields.map((f) => [f.name, null])), [def.id]);
+      res.json(info());
+    });
+
+    app.post("/api/settings/:id/test", async (req, res) => {
+      const result = await testIntegration(integration(req.params.id).id, store, demo);
+      res.json({ ...result, settings: info() });
+    });
+
+    app.get("/api/setup", async (_req, res) => {
+      let postingAccounts: number | null = null;
+      if (publisher.service.name !== "none") {
+        try {
+          postingAccounts = (await publisher.service.listAccounts()).filter((a) => !a.disabled).length;
+        } catch {
+          // Not reachable or a bad key: the Settings row says why when it is tested.
+        }
+      }
+      res.json(
+        buildChecklist({
+          integrations: info().integrations,
+          postingAccounts,
+          postingLabel: publisher.service.label,
+          activePermissions: sources.list().filter((s) => s.permissionState === "active").length,
+          clips: clips.list().length,
+          posted: posts.list().filter((p) => p.status === "posted").length,
+        }),
+      );
     });
   }
 
