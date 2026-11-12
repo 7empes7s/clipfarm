@@ -1,5 +1,7 @@
 import type {
+  AccountsInfo,
   Clip,
+  Dashboard,
   ClipEditInput,
   FaceCam,
   ExportPack,
@@ -61,6 +63,11 @@ export const api = {
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),
   markWhop: (id: number) => call<Post>(`/api/posts/${id}/whop`, { method: "POST" }),
   stats: () => call<Stats>("/api/stats"),
+  dashboard: () => call<Dashboard>("/api/dashboard"),
+  accounts: () => call<AccountsInfo>("/api/accounts"),
+  setFollowers: (accountId: string, followers: number) =>
+    call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
+  loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),
   watchlist: () => call<Watchlist>("/api/watchlist"),
   checkWatchlist: () => call<Watchlist>("/api/watchlist/poll", { method: "POST" }),
   addWatched: (input: WatchedCreatorInput) => call<WatchedCreator>("/api/watchlist", { method: "POST", body: JSON.stringify(input) }),

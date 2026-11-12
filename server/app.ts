@@ -3,9 +3,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Platform, RejectReason } from "../shared/types.js";
 import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
+import type { AccountStatsStore } from "./accounts/stats.js";
 import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
+import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
+import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
@@ -26,6 +29,8 @@ export interface AppDeps {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  /** Account stats from the posting service, for the dashboard. */
+  accountStats?: AccountStatsStore;
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
@@ -60,6 +65,7 @@ export function createApp({
   clips,
   posts,
   publisher,
+  accountStats,
   watchlist,
   seedDemoClip,
   clientDir,
@@ -277,6 +283,45 @@ export function createApp({
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
   });
+
+  if (accountStats) {
+    app.get("/api/dashboard", (_req, res) => {
+      res.json(
+        buildDashboard({
+          now: new Date(),
+          clips: clips.list(),
+          posts: posts.list(),
+          vods: vods.list(),
+          jobs: queue.list(500),
+          sources: sources.list(),
+          accounts: accountStats.info(posts.rules()).cards,
+          decisionTimes: clips.decisionTimes(),
+        }),
+      );
+    });
+
+    // Reads the posting service only when the cached stats are due (see AccountStatsStore).
+    app.get("/api/accounts", async (_req, res) => {
+      await accountStats.refresh();
+      res.json(accountStats.info(posts.rules()));
+    });
+
+    app.post("/api/accounts/:id/followers", (req, res) => {
+      const followers = Number((req.body ?? {}).followers);
+      if (!Number.isInteger(followers) || followers < 0) throw new ValidationError("Followers must be a whole number of zero or more.");
+      accountStats.setManualFollowers(String(req.params.id), followers);
+      res.json(accountStats.info(posts.rules()));
+    });
+
+    // "Load demo data" on an empty dashboard: demo clips plus history, made by a queued job.
+    app.post("/api/demo-data", (_req, res) => {
+      assertNoDemoData(accountStats);
+      if (queue.list().some((j) => j.type === DEMO_DATA_JOB && (j.status === "queued" || j.status === "running"))) {
+        throw new ValidationError("Demo data is already being made.");
+      }
+      res.status(201).json(queue.enqueue(DEMO_DATA_JOB, {}, { maxAttempts: 1 }));
+    });
+  }
 
   if (seedDemoClip) {
     app.post("/api/dev/seed-clip", async (_req, res) => {

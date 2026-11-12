@@ -1,8 +1,8 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { Word } from "../../shared/types.js";
+import type { Clip, Source, Word } from "../../shared/types.js";
 import type { ClipsRepo } from "../clips/repo.js";
-import type { JobHandler } from "../jobs/queue.js";
+import type { JobContext, JobHandler } from "../jobs/queue.js";
 import { renderClip } from "../pipeline/rerender/render.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { generateSample } from "../tools/ffmpeg.js";
@@ -45,65 +45,83 @@ function demoWords(): Word[] {
  * media), so the gallery can be tried on an empty database. Runs as a queued job because it uses
  * ffmpeg. Demo campaigns allow no platform, so their clips can be exported but never posted.
  */
-export function demoClipsHandler(deps: { sources: SourcesRepo; clips: ClipsRepo; mediaDir: string }): JobHandler {
-  return async ({ tmpDir, signal, progress }) => {
-    await mkdir(deps.mediaDir, { recursive: true });
-    const creators = [
-      { name: "Demo Streamer A", pattern: "testsrc2" as const, faceCam: { x: 0.68, y: 0.05, w: 0.28, h: 0.3 } },
-      { name: "Demo Streamer B", pattern: "smptehdbars" as const, faceCam: null },
-    ];
-    const made: string[] = [];
-    const saved = new Set<string>();
-    try {
-      const masters = [];
-      for (const c of creators) {
-        const source = deps.sources.create({
-          creatorName: c.name,
-          channelUrls: [],
-          bannedContent: "Demo data: generated test patterns",
-          permission: {
-            kind: "direct-permission",
-            briefRules: "Demo only. Nothing from this creator can be posted.",
-            allowedPlatforms: [],
-          },
-        });
-        if (c.faceCam) deps.sources.setFaceCam(source.id, c.faceCam);
-        const masterPath = join(deps.mediaDir, `demo-master-${source.id}.mp4`);
-        made.push(masterPath);
-        await generateSample(masterPath, MASTER_SEC, signal, "1280x720", c.pattern);
-        masters.push({ source, masterPath, faceCam: c.faceCam });
-      }
-      const words = demoWords();
-      for (const [i, [startSec, endSec, score, title, hook, reason]] of PICKS.entries()) {
-        progress(0.1 + (0.9 * i) / PICKS.length, `Making demo clip ${i + 1} of ${PICKS.length}`);
-        const m = masters[i % masters.length]!;
-        const layout = m.faceCam ? ("stacked" as const) : ("center" as const);
-        const filePath = join(deps.mediaDir, `demo-clip-${m.source.id}-${i}.mp4`);
-        made.push(filePath);
-        const input = { clipId: 0, sourceId: m.source.id, masterPath: m.masterPath, startSec, endSec, layout, hook, captionWords: words };
-        const durationSec = await renderClip({ ...input, faceCam: m.faceCam }, filePath, tmpDir, signal);
-        deps.clips.create({
-          sourceId: m.source.id,
-          vodId: null,
-          title,
-          hook,
-          reason,
-          score,
-          layout,
-          filePath,
-          durationSec,
-          captionWords: words,
-          masterPath: m.masterPath,
-          masterDurationSec: MASTER_SEC,
-          startSec,
-          endSec,
-        });
-        saved.add(filePath).add(m.masterPath);
-      }
-    } catch (err) {
-      // Clips already saved keep their files; files no clip points to are removed.
-      for (const f of made) if (!saved.has(f)) await rm(f, { force: true });
-      throw err;
-    }
+export function demoClipsHandler(deps: DemoClipsDeps): JobHandler {
+  return async (ctx) => {
+    await makeDemoClips(deps, ctx);
   };
+}
+
+export interface DemoClipsDeps {
+  sources: SourcesRepo;
+  clips: ClipsRepo;
+  mediaDir: string;
+}
+
+/** Makes the two demo creators and their ten clips; returns them in the order made. */
+export async function makeDemoClips(
+  deps: DemoClipsDeps,
+  { tmpDir, signal, progress }: Pick<JobContext, "tmpDir" | "signal" | "progress">,
+): Promise<{ sources: Source[]; clips: Clip[] }> {
+  await mkdir(deps.mediaDir, { recursive: true });
+  const creators = [
+    { name: "Demo Streamer A", pattern: "testsrc2" as const, faceCam: { x: 0.68, y: 0.05, w: 0.28, h: 0.3 } },
+    { name: "Demo Streamer B", pattern: "smptehdbars" as const, faceCam: null },
+  ];
+  const made: string[] = [];
+  const saved = new Set<string>();
+  const result: { sources: Source[]; clips: Clip[] } = { sources: [], clips: [] };
+  try {
+    const masters = [];
+    for (const c of creators) {
+      const source = deps.sources.create({
+        creatorName: c.name,
+        channelUrls: [],
+        bannedContent: "Demo data: generated test patterns",
+        permission: {
+          kind: "direct-permission",
+          briefRules: "Demo only. Nothing from this creator can be posted.",
+          allowedPlatforms: [],
+        },
+      });
+      if (c.faceCam) deps.sources.setFaceCam(source.id, c.faceCam);
+      const masterPath = join(deps.mediaDir, `demo-master-${source.id}.mp4`);
+      made.push(masterPath);
+      await generateSample(masterPath, MASTER_SEC, signal, "1280x720", c.pattern);
+      masters.push({ source, masterPath, faceCam: c.faceCam });
+      result.sources.push(source);
+    }
+    const words = demoWords();
+    for (const [i, [startSec, endSec, score, title, hook, reason]] of PICKS.entries()) {
+      progress(0.1 + (0.9 * i) / PICKS.length, `Making demo clip ${i + 1} of ${PICKS.length}`);
+      const m = masters[i % masters.length]!;
+      const layout = m.faceCam ? ("stacked" as const) : ("center" as const);
+      const filePath = join(deps.mediaDir, `demo-clip-${m.source.id}-${i}.mp4`);
+      made.push(filePath);
+      const input = { clipId: 0, sourceId: m.source.id, masterPath: m.masterPath, startSec, endSec, layout, hook, captionWords: words };
+      const durationSec = await renderClip({ ...input, faceCam: m.faceCam }, filePath, tmpDir, signal);
+      const clip = deps.clips.create({
+        sourceId: m.source.id,
+        vodId: null,
+        title,
+        hook,
+        reason,
+        score,
+        layout,
+        filePath,
+        durationSec,
+        captionWords: words,
+        masterPath: m.masterPath,
+        masterDurationSec: MASTER_SEC,
+        startSec,
+        endSec,
+      });
+      result.clips.push(clip);
+      saved.add(filePath).add(m.masterPath);
+    }
+    return result;
+  } catch (err) {
+    // Clips already saved keep their files; files no clip points to are removed.
+    for (const f of made) if (!saved.has(f)) await rm(f, { force: true });
+    throw err;
+  }
 }

@@ -1,0 +1,612 @@
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { AccountCard, AccountsInfo, Clip, Dashboard, Job, Platform, Post, Source, VodProgress, WatchedCreator } from "../../shared/types";
+import { PLATFORM_LABELS, PLATFORMS, WATCH_PLATFORM_LABELS } from "../../shared/types";
+import { api } from "./api";
+import { BarChart, LineChart, Meter } from "./charts";
+import { compact, duration, shortDate, usd } from "./format";
+import { Sheet } from "./Sheet";
+
+export const DASH_VIEWS = [
+  { id: "today", label: "Today" },
+  { id: "progress", label: "Progress" },
+  { id: "outputs", label: "Outputs" },
+  { id: "accounts", label: "Accounts" },
+  { id: "earnings", label: "Earnings" },
+] as const;
+export type DashView = (typeof DASH_VIEWS)[number]["id"];
+
+const STAGE_LABEL = { transcript: "Transcript", picks: "Picks", render: "Render" } as const;
+const STAGE_STATE_LABEL = { waiting: "Waiting", running: "Running", done: "Done", failed: "Failed" } as const;
+
+/** The dashboard: today's numbers, pipeline progress, every clip, account stats and earnings. */
+export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; clips: Clip[]; sources: Source[]; jobs: Job[] }) {
+  const [dash, setDash] = useState<Dashboard | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [d, p] = await Promise.all([api.dashboard(), api.posts()]);
+      setDash(d);
+      setPosts(p);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, []);
+
+  // Reload whenever the job list changes (App polls it), so progress and tiles stay current.
+  const jobsKey = jobs.map((j) => `${j.id}:${j.status}:${Math.round(j.progress * 100)}`).join(",");
+  useEffect(() => {
+    const t = setTimeout(() => void load(), 0);
+    return () => clearTimeout(t);
+  }, [load, jobsKey, clips.length]);
+
+  return (
+    <section aria-labelledby="dash-title" className="dash">
+      <h2 id="dash-title" className="visually-hidden">
+        Dashboard
+      </h2>
+      <nav className="dash-nav" aria-label="Dashboard sections">
+        {DASH_VIEWS.map((v) => (
+          <a key={v.id} href={`#dashboard/${v.id}`} aria-current={view === v.id ? "page" : undefined}>
+            {v.label}
+          </a>
+        ))}
+      </nav>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
+      {dash && view === "progress" && <Progress dash={dash} />}
+      {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
+      {view === "accounts" && <Accounts />}
+      {dash && view === "earnings" && <Earnings dash={dash} />}
+    </section>
+  );
+}
+
+function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoaded: () => Promise<void> }) {
+  const [error, setError] = useState<string | null>(null);
+  const t = dash.today;
+  const making = jobs.find((j) => j.type === "demo-data" && (j.status === "queued" || j.status === "running"));
+  const failed = jobs.find((j) => j.type === "demo-data" && j.status === "failed");
+  return (
+    <>
+      {dash.empty && (
+        <div className="empty dash-empty">
+          <p>Nothing here yet. Add a campaign and a stream link in Sources, or try the dashboard with demo data first.</p>
+          <p className="hint">Demo data is made from test patterns: ten clips, two streams, posts and account stats. None of it can be posted.</p>
+          {making ? (
+            <p role="status">Making demo data… {Math.round(making.progress * 100)}%</p>
+          ) : (
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                setError(null);
+                void api.loadDemoData().then(onLoaded, (err: Error) => setError(err.message));
+              }}
+            >
+              Load demo data
+            </button>
+          )}
+          {(error ?? failed?.error) && (
+            <p className="error" role="alert">
+              {error ?? failed?.error}
+            </p>
+          )}
+        </div>
+      )}
+      <dl className="tiles" data-testid="today">
+        <Tile label="Waiting for review" value={String(t.waiting)} href="#inbox" />
+        <Tile label="Approved, not posted" value={String(t.approved)} href="#approved" />
+        <Tile label="Posted today" value={String(t.postedToday)} href="#posted" />
+        <Tile label={t.viewsTodayFrom === "accounts" ? "Views today" : "Views on today's posts"} value={compact(t.viewsToday)} />
+        <Tile label="Earnings this week (estimate)" value={usd(t.earningsWeekUsd)} />
+        <Tile label="Cost this week" value={usd(t.costWeekUsd)} />
+        <Tile
+          label="Cost per approved clip"
+          value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)}
+          wide
+        />
+      </dl>
+
+      <LiveNow />
+
+      <h3 className="sub">Running now</h3>
+      {dash.running.length === 0 ? (
+        <p className="hint">No job is running. One runs at a time, so the server stays light.</p>
+      ) : (
+        <ul className="stack" data-testid="running">
+          {dash.running.map((j) => (
+            <li key={j.jobId} className="job">
+              <div className="job-line">
+                <span className="job-name">{j.label}</span>
+                <span className="job-status">{j.etaSec === null ? `${Math.round(j.progress * 100)}%` : `about ${duration(j.etaSec)} left`}</span>
+              </div>
+              <Meter value={j.progress} label={`${j.label} progress`} />
+              <span className="hint">{j.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** Who on the watchlist is streaming now (from the watchlist's own checks). */
+function LiveNow() {
+  const [live, setLive] = useState<WatchedCreator[] | null>(null);
+  useEffect(() => {
+    let on = true;
+    api.watchlist().then(
+      (w) => on && setLive(w.creators.filter((c) => c.live)),
+      () => on && setLive(null),
+    );
+    return () => {
+      on = false;
+    };
+  }, []);
+  if (live === null) return null;
+  return (
+    <>
+      <h3 className="sub">Live now</h3>
+      {live.length === 0 ? (
+        <p className="hint">
+          Nobody on the <a href="#watchlist">watchlist</a> is live.
+        </p>
+      ) : (
+        <ul className="stack" data-testid="dash-live">
+          {live.map((c) => (
+            <li key={c.id} className="job">
+              <div className="job-line">
+                <a className="job-name" href={c.live!.url} target="_blank" rel="noreferrer">
+                  {c.name}
+                </a>
+                <span className="job-status">{WATCH_PLATFORM_LABELS[c.live!.platform]}</span>
+              </div>
+              <span className="hint">{c.live!.game ? `${c.live!.game}: ${c.live!.title}` : c.live!.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function Tile({ label, value, href, wide }: { label: string; value: string; href?: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "tile wide" : "tile"}>
+      <dt>{href ? <a href={href}>{label}</a> : label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function Progress({ dash }: { dash: Dashboard }) {
+  return (
+    <>
+      <h3 className="sub">Goals</h3>
+      <ul className="goals" data-testid="goals">
+        {dash.goals.map((g) => (
+          <li key={g.id}>
+            <div className="job-line">
+              <span className="job-name">
+                {g.label} <span className="hint">({g.objective})</span>
+              </span>
+              <span className="job-status">{g.now}</span>
+            </div>
+            <Meter value={g.value} label={`${g.label}: ${g.now}, goal ${g.target}`} />
+            <span className="hint">Goal: {g.target}</span>
+          </li>
+        ))}
+      </ul>
+
+      <h3 className="sub">Streams</h3>
+      {dash.vods.length === 0 ? (
+        <p className="empty">No streams yet. Add a stream link to a campaign in Sources.</p>
+      ) : (
+        <ul className="stack">
+          {dash.vods.map((v) => (
+            <VodCard key={v.vodId} vod={v} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function VodCard({ vod }: { vod: VodProgress }) {
+  const total = vod.stages.reduce((s, x) => s + (x.seconds ?? 0), 0);
+  return (
+    <li className="card" data-testid="vod-progress">
+      <div className="card-head">
+        <h3>{vod.title}</h3>
+      </div>
+      <p className="hint">
+        {vod.creatorName}
+        {vod.durationSec !== null && `, ${duration(vod.durationSec)} long`}
+      </p>
+      <ol className="stages">
+        {vod.stages.map((s) => (
+          <li key={s.stage} className={`stage stage-${s.state}`}>
+            <span className="stage-name">{STAGE_LABEL[s.stage]}</span>
+            <span className="stage-state">
+              {s.state === "done" && s.seconds !== null
+                ? duration(s.seconds)
+                : s.state === "running"
+                  ? `${Math.round(s.progress * 100)}%`
+                  : STAGE_STATE_LABEL[s.state]}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="meta">
+        <span>{vod.clips} clips made</span>
+        <span>{vod.approvedShare === null ? "None approved yet" : `${Math.round(vod.approvedShare * 100)}% approved`}</span>
+        {total > 0 && <span>{duration(total)} in all</span>}
+      </div>
+    </li>
+  );
+}
+
+type ClipState = "new" | "approved" | "posted" | "rejected";
+const CLIP_STATE_LABEL: Record<ClipState, string> = { new: "New", approved: "Approved", posted: "Posted", rejected: "Rejected" };
+const DATE_FILTERS = { all: "Any time", today: "Today", week: "Last 7 days", month: "Last 30 days" } as const;
+type DateFilter = keyof typeof DATE_FILTERS;
+
+/** Start of the date filter's range, in ms. */
+function sinceOf(when: DateFilter): number {
+  const now = Date.now();
+  return { all: 0, today: new Date().setHours(0, 0, 0, 0), week: now - 7 * 86_400_000, month: now - 30 * 86_400_000 }[when];
+}
+
+function clipState(c: Clip): ClipState {
+  if (c.postCount > 0) return "posted";
+  if (c.status === "approved") return "approved";
+  if (c.status === "rejected") return "rejected";
+  return "new";
+}
+
+function campaignLabel(p: Post): string {
+  return p.campaignUrl ? new URL(p.campaignUrl).pathname.replace(/^\/+|\/+$/g, "") || p.creatorName : `${p.creatorName} (direct)`;
+}
+
+function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sources: Source[] }) {
+  const [creator, setCreator] = useState("");
+  const [campaign, setCampaign] = useState("");
+  const [platform, setPlatform] = useState<Platform | "">("");
+  const [when, setWhen] = useState<DateFilter>("all");
+  const [since, setSince] = useState(0);
+  const [playing, setPlaying] = useState<Clip | null>(null);
+  const closePlayer = useCallback(() => setPlaying(null), []);
+
+  const campaigns = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const p of posts) m.set(p.permissionId, campaignLabel(p));
+    return [...m];
+  }, [posts]);
+
+  const shown = useMemo(() => {
+    return clips.filter((c) => {
+      const mine = posts.filter((p) => p.clipId === c.id && p.status !== "failed");
+      if (creator && String(c.sourceId) !== creator) return false;
+      if (campaign && !mine.some((p) => String(p.permissionId) === campaign)) return false;
+      if (platform && !mine.some((p) => p.platform === platform)) return false;
+      const latest = Math.max(new Date(c.createdAt).getTime(), ...mine.map((p) => new Date(p.postedAt ?? p.scheduledAt).getTime()));
+      return latest >= since;
+    });
+  }, [clips, posts, creator, campaign, platform, since]);
+
+  return (
+    <>
+      <div className="filters" data-testid="output-filters">
+        <label>
+          Creator
+          <select value={creator} onChange={(e) => setCreator(e.target.value)}>
+            <option value="">All creators</option>
+            {sources.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.creatorName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Campaign
+          <select value={campaign} onChange={(e) => setCampaign(e.target.value)}>
+            <option value="">All campaigns</option>
+            {campaigns.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Platform
+          <select value={platform} onChange={(e) => setPlatform(e.target.value as Platform | "")}>
+            <option value="">All platforms</option>
+            {PLATFORMS.map((p) => (
+              <option key={p} value={p}>
+                {PLATFORM_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Date
+          <select value={when} onChange={(e) => {
+              const w = e.target.value as DateFilter;
+              setWhen(w);
+              setSince(sinceOf(w));
+            }}>
+            {Object.entries(DATE_FILTERS).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="hint" role="status">
+        {shown.length} of {clips.length} clips
+      </p>
+      {shown.length === 0 ? (
+        <p className="empty">{clips.length === 0 ? "No clips yet." : "No clips match these filters."}</p>
+      ) : (
+        <ul className="outputs">
+          {shown.map((c) => {
+            const state = clipState(c);
+            const mine = posts.filter((p) => p.clipId === c.id && p.status !== "failed");
+            const views = mine.reduce((s, p) => s + (p.views ?? 0), 0);
+            return (
+              <li key={c.id} className={`output output-${state}`} data-testid="output">
+                <button type="button" className="output-play" aria-label={`Play ${c.title}`} onClick={() => setPlaying(c)}>
+                  <span aria-hidden="true">▶</span>
+                </button>
+                <div className="output-body">
+                  <div className="job-line">
+                    <span className="job-name">{c.title}</span>
+                    <span className={`chip-state state-${state}`}>{CLIP_STATE_LABEL[state]}</span>
+                  </div>
+                  <div className="meta">
+                    <span>{sources.find((s) => s.id === c.sourceId)?.creatorName ?? "Unknown creator"}</span>
+                    <span>{shortDate(c.createdAt)}</span>
+                    {mine.length > 0 && <span>{compact(views)} views</span>}
+                  </div>
+                  {mine.length > 0 && (
+                    <ul className="output-posts">
+                      {mine.map((p) => (
+                        <li key={p.id}>
+                          {p.url ? (
+                            <a href={p.url} target="_blank" rel="noreferrer">
+                              {PLATFORM_LABELS[p.platform]}
+                            </a>
+                          ) : (
+                            PLATFORM_LABELS[p.platform]
+                          )}
+                          <span className="hint">
+                            {p.views === null ? "no views yet" : `${compact(p.views)} views`}, {campaignLabel(p)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {playing && (
+        <Sheet id="player-title" title={playing.title} onClose={closePlayer}>
+          <video className="player" src={playing.videoUrl} controls autoPlay playsInline />
+        </Sheet>
+      )}
+    </>
+  );
+}
+
+function Accounts() {
+  const [info, setInfo] = useState<AccountsInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.accounts().then(
+      (i) => live && setInfo(i),
+      (err: Error) => live && setError(err.message),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (error)
+    return (
+      <p className="error" role="alert">
+        {error}
+      </p>
+    );
+  if (!info) return <p className="hint">Loading accounts…</p>;
+  return (
+    <>
+      <p className="hint">
+        {info.service === "none"
+          ? "No posting service is set up, so there are no account stats yet. Set up Postiz or Upload-Post on the server (see the README)."
+          : `Stats come from ${info.label}, read every ${info.refreshHours} hours to stay inside its limits.`}
+      </p>
+      {info.error && (
+        <p className="error" role="alert">
+          {info.error}
+        </p>
+      )}
+      {info.cards.length === 0 ? (
+        <p className="empty">No accounts yet. Connect accounts in the posting service (Postiz or Upload-Post) and they show up here.</p>
+      ) : (
+        <ul className="stack">
+          {info.cards.map((c) => (
+            <AccountCardView key={c.accountId} card={c} label={info.label} onSaved={setInfo} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function AccountCardView({ card, label, onSaved }: { card: AccountCard; label: string; onSaved: (i: AccountsInfo) => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const g = card.followersGrowth;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      onSaved(await api.setFollowers(card.accountId, Number(value)));
+      setValue("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <li className="card account" data-testid="account-card">
+      <div className="card-head">
+        <h3>{card.name}</h3>
+        <span className="state">{card.demo ? `${PLATFORM_LABELS[card.platform]}, demo` : PLATFORM_LABELS[card.platform]}</span>
+      </div>
+      <div className="followers">
+        <strong>{card.followers === null ? "–" : card.followers.toLocaleString()}</strong>
+        <span>
+          followers
+          {g && (
+            <span className={g.change < 0 ? "down" : "up"}>
+              {" "}
+              {g.change >= 0 ? "+" : ""}
+              {g.change.toLocaleString()}
+              {g.pct !== null && ` (${g.pct >= 0 ? "+" : ""}${Math.round(g.pct * 1000) / 10}%)`} in {card.followersSeries.length} days
+            </span>
+          )}
+        </span>
+        {card.followersSource === "manual" && <span className="hand">Entered by hand</span>}
+      </div>
+      {card.followersSource === "none" && <p className="hint">{label} has no follower numbers for this account.</p>}
+      <LineChart points={card.followersSeries} label="Followers" />
+      {card.viewsSource === "none" ? (
+        <p className="hint">No views per day from {label} yet.</p>
+      ) : (
+        <BarChart points={card.viewsPerDay} label="Views per day" />
+      )}
+      <dl className="stub">
+        <div>
+          <dt>Average views per post</dt>
+          <dd>{card.avgViewsPerPost === null ? "No views yet" : card.avgViewsPerPost.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Posts in 7 days</dt>
+          <dd>
+            {card.postsLast7Days} of {card.plannedLast7Days} planned
+          </dd>
+        </div>
+      </dl>
+      <Meter value={card.plannedLast7Days ? card.postsLast7Days / card.plannedLast7Days : null} label="Posting compared with the plan" />
+      {card.topClips.length > 0 && (
+        <>
+          <h4 className="mini">Top clips</h4>
+          <ol className="top-clips">
+            {card.topClips.map((t, i) => (
+              <li key={`${t.clipId}-${i}`}>
+                {t.url ? (
+                  <a href={t.url} target="_blank" rel="noreferrer">
+                    {t.title}
+                  </a>
+                ) : (
+                  t.title
+                )}
+                <span>{compact(t.views)}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+      {!card.demo && card.followersSource !== "service" && (
+        <form className="inline-form" onSubmit={save}>
+          <label htmlFor={`followers-${card.accountId}`}>Followers today (by hand)</label>
+          <div className="inline">
+            <input
+              id={`followers-${card.accountId}`}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              required
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+            <button type="submit">Save</button>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
+      {card.updatedAt && <p className="hint">Updated {new Date(card.updatedAt).toLocaleString()}</p>}
+    </li>
+  );
+}
+
+function Earnings({ dash }: { dash: Dashboard }) {
+  const { rows, weekUsd, totalUsd } = dash.earnings;
+  return (
+    <>
+      <dl className="tiles">
+        <Tile label="This week (estimate)" value={usd(weekUsd)} />
+        <Tile label="All time (estimate)" value={usd(totalUsd)} />
+      </dl>
+      <p className="hint">A post earns only once it reaches its campaign's minimum views. Mark posts sent to Whop in Posted.</p>
+      {rows.length === 0 ? (
+        <p className="empty">No posts yet, so nothing earned.</p>
+      ) : (
+        <table className="breakdown earnings" data-testid="earnings">
+          <thead>
+            <tr>
+              <th scope="col">Campaign</th>
+              <th scope="col">Views</th>
+              <th scope="col">Over min.</th>
+              <th scope="col">Payout</th>
+              <th scope="col">Whop</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <th scope="row">
+                  {r.campaign}
+                  <span className="hint">{PLATFORM_LABELS[r.platform]}</span>
+                </th>
+                <td>{compact(r.views)}</td>
+                <td>
+                  {r.overMinimum} of {r.posts}
+                  {r.minViews !== null && <span className="hint">{compact(r.minViews)} min.</span>}
+                </td>
+                <td>
+                  {usd(r.estimatedUsd)}
+                  {r.weekUsd > 0 && <span className="hint">{usd(r.weekUsd)} this week</span>}
+                </td>
+                <td>
+                  {r.submitted} of {r.posts}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}

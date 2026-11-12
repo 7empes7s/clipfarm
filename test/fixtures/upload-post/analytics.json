@@ -1,0 +1,20 @@
+{
+  "tiktok": {
+    "followers": 2410,
+    "views": 3400,
+    "impressions": 3400,
+    "reach_timeseries": [
+      { "date": "2026-11-18", "value": 1200 },
+      { "date": "2026-11-19", "value": 2200 }
+    ],
+    "metric_type": "reach"
+  },
+  "instagram": {
+    "followers": 47,
+    "reach": 1250,
+    "timeseries": [
+      { "date": "2026-11-18", "impressions": 900, "reach": 600, "followers": 40 },
+      { "date": "2026-11-19", "impressions": 1100, "reach": 650, "followers": 45 }
+    ]
+  }
+}

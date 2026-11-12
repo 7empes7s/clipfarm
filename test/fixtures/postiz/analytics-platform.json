@@ -1,0 +1,5 @@
+[
+  { "label": "Subscribers", "data": [{ "total": "1250", "date": "2026-11-17" }, { "total": "1280", "date": "2026-11-18" }, { "total": "1342", "date": "2026-11-19" }], "percentageChange": 7.4 },
+  { "label": "Views", "data": [{ "total": "5000", "date": "2026-11-17" }, { "total": "5200", "date": "2026-11-18" }, { "total": "8100", "date": "2026-11-19" }], "percentageChange": 62 },
+  { "label": "Likes", "data": [{ "total": "300", "date": "2026-11-19" }], "percentageChange": 0 }
+]

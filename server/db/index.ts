@@ -191,6 +191,20 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX detected_vods_creator ON detected_vods(creator_id, published_at);
   `,
+  `
+  ALTER TABLE jobs ADD COLUMN started_at TEXT;
+  ALTER TABLE jobs ADD COLUMN finished_at TEXT;
+  CREATE TABLE account_stats (
+    account_id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    name TEXT NOT NULL,
+    followers TEXT NOT NULL DEFAULT '[]',
+    views TEXT NOT NULL DEFAULT '[]',
+    manual_followers TEXT NOT NULL DEFAULT '[]',
+    fetched_at TEXT,
+    demo INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

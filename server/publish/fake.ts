@@ -1,6 +1,6 @@
-import type { Platform, PostingAccount } from "../../shared/types.js";
+import type { DailyPoint, Platform, PostingAccount } from "../../shared/types.js";
 import { PostingServiceError } from "./errors.js";
-import type { PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
+import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
 
 export const FAKE_ACCOUNTS: PostingAccount[] = [
   { id: "fake-youtube", platform: "youtube", name: "GTA VI Moments", disabled: false },
@@ -15,11 +15,13 @@ export class FakePostingService implements PostingService {
   readonly label = "Test posting service";
   dailyCaps: Partial<Record<Platform, number>> = {};
   /** Every call made, in order, so tests can check nothing was called. */
-  calls: ("listAccounts" | "publish" | "refresh")[] = [];
+  calls: ("listAccounts" | "publish" | "refresh" | "accountStats")[] = [];
   published: PublishItem[] = [];
   /** Views every posted post reports on refresh; null reports none. */
   views: number | null = 12_000;
   failWith: string | null = null;
+  /** The last day account stats end on. */
+  today: () => Date = () => new Date();
   private n = 0;
   private postedIds = new Set<string>();
 
@@ -48,6 +50,19 @@ export class FakePostingService implements PostingService {
           postedAt: now ? new Date().toISOString() : null,
         };
       }),
+    );
+  }
+
+  /** Steady made-up growth: followers up 40 a day from 1,000, views 2,000 + 150 a day. */
+  accountStats(accounts: PostingAccount[], days: number): Promise<AccountStats[]> {
+    this.calls.push("accountStats");
+    if (this.failWith) return Promise.reject(new PostingServiceError(this.failWith));
+    const d = this.today();
+    const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const series = (f: (i: number) => number): DailyPoint[] =>
+      Array.from({ length: days }, (_, i) => ({ date: new Date(today - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10), value: f(i) }));
+    return Promise.resolve(
+      accounts.map((a) => ({ accountId: a.id, followers: series((i) => 1000 + 40 * i), views: series((i) => 2000 + 150 * i) })),
     );
   }
 

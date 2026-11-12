@@ -41,6 +41,8 @@ interface JobRow {
   clip_id: number | null;
   created_at: string;
   updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 function toJob(r: JobRow): Job {
@@ -57,6 +59,8 @@ function toJob(r: JobRow): Job {
     clipId: r.clip_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
   };
 }
 
@@ -174,9 +178,9 @@ export class JobQueue {
     const attempts = row.attempts + 1;
     this.db
       .prepare(
-        "UPDATE jobs SET status = 'running', attempts = ?, progress = 0, error = NULL, message = 'Starting', updated_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = 'running', attempts = ?, progress = 0, error = NULL, message = 'Starting', updated_at = ?, started_at = ?, finished_at = NULL WHERE id = ?",
       )
-      .run(attempts, this.now().toISOString(), row.id);
+      .run(attempts, this.now().toISOString(), this.now().toISOString(), row.id);
 
     const controller = new AbortController();
     this.current = { id: row.id, controller };
@@ -234,9 +238,9 @@ export class JobQueue {
   ): void {
     this.db
       .prepare(
-        "UPDATE jobs SET status = ?, progress = COALESCE(?, progress), message = ?, error = ?, updated_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = ?, progress = COALESCE(?, progress), message = ?, error = ?, updated_at = ?, finished_at = ? WHERE id = ?",
       )
-      .run(status, fields.progress ?? null, fields.message, fields.error ?? null, this.now().toISOString(), id);
+      .run(status, fields.progress ?? null, fields.message, fields.error ?? null, this.now().toISOString(), this.now().toISOString(), id);
     if (this.opts.onFinished) {
       const { payload } = this.db.prepare("SELECT payload FROM jobs WHERE id = ?").get(id) as { payload: string };
       this.opts.onFinished(this.get(id), JSON.parse(payload));

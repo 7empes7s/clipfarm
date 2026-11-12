@@ -30,3 +30,15 @@ export function megabytes(bytes: number): string {
 export function seconds(ms: number): string {
   return ms < 1000 ? "under 1 s" : `${Math.round(ms / 1000)} s`;
 }
+
+/** 950, 12.4k, 1.2M: short counts for tiles and charts. */
+export function compact(n: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+}
+
+/** 45 s, 6 min, 1 h 5 min. */
+export function duration(sec: number): string {
+  if (sec < 60) return `${Math.round(sec)} s`;
+  const min = Math.round(sec / 60);
+  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`;
+}

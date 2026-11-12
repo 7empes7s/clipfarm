@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import type { Platform, PostingAccount } from "../../shared/types.js";
+import type { DailyPoint, Platform, PostingAccount } from "../../shared/types.js";
 import { PLATFORM_LABELS } from "../../shared/types.js";
 import { callService, type ServiceVoice } from "./errors.js";
-import type { PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
+import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
 
 /** Upload-Post (hosted, paid): https://docs.upload-post.com */
 
@@ -23,6 +23,64 @@ interface PostAnalyticsResponse {
   platforms?: Partial<
     Record<Platform, { success: boolean; post_url?: string | null; error?: string; post_metrics?: { views?: number } }>
   >;
+}
+
+interface UploadPostTimePoint {
+  date: string;
+  value?: number;
+  views?: number;
+  impressions?: number;
+  reach?: number;
+  followers?: number;
+}
+
+/** GET /analytics/{profile}: keyed by platform. */
+export type UploadPostAnalyticsResponse = Partial<
+  Record<
+    Platform,
+    {
+      followers?: number;
+      views?: number;
+      impressions?: number;
+      reach?: number;
+      reach_timeseries?: UploadPostTimePoint[];
+      timeseries?: UploadPostTimePoint[];
+    }
+  >
+>;
+
+/**
+ * Account stats from Upload-Post's profile analytics. It gives today's follower count (plus a
+ * follower time series on some platforms) and views (or impressions, else reach) per day.
+ */
+export function accountStatsFromUploadPost(
+  res: UploadPostAnalyticsResponse,
+  accounts: PostingAccount[],
+  today: string,
+): AccountStats[] {
+  const out: AccountStats[] = [];
+  for (const a of accounts) {
+    const p = res[a.platform];
+    if (!p) continue;
+    const series = p.timeseries ?? p.reach_timeseries ?? [];
+    const day = (t: UploadPostTimePoint) => t.date.slice(0, 10);
+    const followers: DailyPoint[] = series
+      .filter((t) => typeof t.followers === "number")
+      .map((t) => ({ date: day(t), value: t.followers! }));
+    if (typeof p.followers === "number") {
+      const i = followers.findIndex((f) => f.date === today);
+      if (i >= 0) followers.splice(i, 1);
+      followers.push({ date: today, value: p.followers });
+    }
+    const views: DailyPoint[] = [];
+    for (const t of series) {
+      const value = t.views ?? t.impressions ?? t.value ?? t.reach;
+      if (typeof value === "number") views.push({ date: day(t), value });
+    }
+    const byDate = (x: DailyPoint, y: DailyPoint) => x.date.localeCompare(y.date);
+    out.push({ accountId: a.id, followers: followers.sort(byDate), views: views.sort(byDate) });
+  }
+  return out;
 }
 
 export interface UploadPostOptions {
@@ -138,5 +196,15 @@ export class UploadPostService implements PostingService {
       }
     }
     return updates;
+  }
+
+  /** One call for every platform on the profile. */
+  async accountStats(accounts: PostingAccount[]): Promise<AccountStats[]> {
+    if (accounts.length === 0) return [];
+    const platforms = [...new Set(accounts.map((a) => a.platform))].join(",");
+    const res = await this.call<UploadPostAnalyticsResponse>(
+      `/analytics/${encodeURIComponent(this.opts.user)}?${new URLSearchParams({ platforms })}`,
+    );
+    return accountStatsFromUploadPost(res, accounts, new Date().toISOString().slice(0, 10));
   }
 }
