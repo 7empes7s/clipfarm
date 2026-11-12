@@ -27,6 +27,10 @@ jobs:
         run: npm run test:e2e
       - name: The whole flow against the local preview (fakes, dry-run posting)
         run: npm run e2e:live
+      - name: The same flow, posting through the test posting service (phone only)
+        run: npm run e2e:live -- --project=phone
+        env:
+          E2E_DRY_RUN: "0"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
