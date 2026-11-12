@@ -1,0 +1,445 @@
+{
+  "about": "Seed for the watchlist: names and channel handles only, no media. Edited in the app after the first start.",
+  "sources": [
+    "https://streamscharts.com/news/top-gta-streamers-2025",
+    "https://streamscharts.com/news/kick-overtakes-twitch-gta-v-viewership",
+    "https://streamscharts.com/news/twitch-september-2026-results",
+    "https://creatordb.app/creator-news/the-rise-of-the-clip-economy/",
+    "https://cut.pro/en/blog/streamers-paying-clippers-market-2026"
+  ],
+  "compiledOn": "2026-11-12",
+  "creators": [
+    {
+      "name": "IShowSpeed",
+      "channels": [
+        {
+          "platform": "youtube",
+          "handle": "IShowSpeed"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro)"
+    },
+    {
+      "name": "Kai Cenat",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "kaicenat"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro)"
+    },
+    {
+      "name": "N3on",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "n3on"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro)"
+    },
+    {
+      "name": "CaseOh",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "caseoh_"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro)"
+    },
+    {
+      "name": "Adin Ross",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "adinross"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro)"
+    },
+    {
+      "name": "xQc",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "xqc"
+        },
+        {
+          "platform": "kick",
+          "handle": "xqc"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Most-clipped streamers of 2026 (creatordb.app, cut.pro); 9.1M hours watched on Twitch in Sep 2026, mostly GTA V (Streams Charts, 2026-10-01)"
+    },
+    {
+      "name": "3mr",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "3mr"
+        }
+      ],
+      "language": "ar",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "#1 GTA creator on Kick, H1 2026, about twice JLTomy's hours (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04))"
+    },
+    {
+      "name": "JLTomy",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "jltomy"
+        }
+      ],
+      "language": "fr",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "#1 GTA creator on Twitch, H1 2026 (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04)); 14.5M GTA hours in 2025 (#10, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "drb7h",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "drb7h"
+        }
+      ],
+      "language": "ar",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "Top 3 GTA on Kick, H1 2026 (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04)); 31.0M GTA hours in 2025 (#2, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "sxb",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "sxb"
+        }
+      ],
+      "language": "ar",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "Top 3 GTA on Kick, H1 2026 (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04)); 17.8M GTA hours in 2025 (#8, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "RDjavi",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "rdjavi"
+        }
+      ],
+      "language": "es",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "Top 5 GTA, H1 2026 (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04)); 21.4M GTA hours in 2025 (#6, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "PaulinhoLOKObr",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "paulinholokobr"
+        },
+        {
+          "platform": "twitch",
+          "handle": "paulinholokobr"
+        }
+      ],
+      "language": "pt",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "27.9M GTA hours in 2025 (#3, Streams Charts, top GTA streamers of 2025 (published 2025-12-23)); moved to Kick by May 2026 (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04))"
+    },
+    {
+      "name": "LOUD Coringa",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "loud_coringa"
+        }
+      ],
+      "language": "pt",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "24.2M GTA hours in 2025 (#4, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "absi",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "absi"
+        }
+      ],
+      "language": "ar",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "22.6M GTA hours in 2025 (#5, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "Lord Kebun",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "lordkebun"
+        },
+        {
+          "platform": "twitch",
+          "handle": "lord_kebun"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "kick",
+      "programUrl": null,
+      "note": "17.4M GTA hours in 2025 (#9, Streams Charts, top GTA streamers of 2025 (published 2025-12-23)); on Kick since Feb 2026, 1.2-1.8M GTA hours a month (Streams Charts, GTA V by platform, H1 2026 (published 2026-08-04))"
+    },
+    {
+      "name": "MixiGaming",
+      "channels": [
+        {
+          "platform": "youtube",
+          "handle": "MixiGaming"
+        }
+      ],
+      "language": "vi",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "68.4M GTA hours in 2025 (#1, Streams Charts, top GTA streamers of 2025 (published 2025-12-23))"
+    },
+    {
+      "name": "Fps_shaka",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "fps_shaka"
+        }
+      ],
+      "language": "ja",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Top 3 GTA on Twitch (Streams Charts, 2026)"
+    },
+    {
+      "name": "Penta",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "penta"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Top 3 GTA on Twitch (Streams Charts, 2026)"
+    },
+    {
+      "name": "Vanillamace",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "vanillamace"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Top female streamer, mostly GTA V on NoPixel, Sep 2026 (Streams Charts, 2026-10-01)"
+    },
+    {
+      "name": "Valkyrae",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "valkyrae"
+        },
+        {
+          "platform": "youtube",
+          "handle": "Valkyrae"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Joined the NoPixel V GTA RP server, Sep 2026 (Streams Charts, 2026-10-01)"
+    },
+    {
+      "name": "Buddha",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "buddha"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Joined the NoPixel V GTA RP server, Sep 2026 (Streams Charts, 2026-10-01)"
+    },
+    {
+      "name": "summit1g",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "summit1g"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Big GTA RP and variety name, not in the ranked lists above (check before relying on it)"
+    },
+    {
+      "name": "Ramee",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "ramee"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Big GTA RP and variety name, not in the ranked lists above (check before relying on it)"
+    },
+    {
+      "name": "Kyle",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "kyle"
+        }
+      ],
+      "language": "en",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Big GTA RP and variety name, not in the ranked lists above (check before relying on it)"
+    },
+    {
+      "name": "AuronPlay",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "auronplay"
+        }
+      ],
+      "language": "es",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Big GTA RP and variety name, not in the ranked lists above (check before relying on it)"
+    },
+    {
+      "name": "Spreen",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "elspreen"
+        }
+      ],
+      "language": "es",
+      "games": [
+        "GTA VI"
+      ],
+      "program": "none",
+      "programUrl": null,
+      "note": "Big GTA RP and variety name, not in the ranked lists above (check before relying on it)"
+    }
+  ]
+}

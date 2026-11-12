@@ -35,6 +35,8 @@ test("dashboard: today, a stream's progress, outputs filters, an account's growt
   }
   // Earlier specs share this database, so only the shape is fixed: a dollar amount.
   await expect(today.locator(".tile").filter({ hasText: "Cost per approved clip" }).locator("dd")).toHaveText(/^\$\d+\.\d{2,4}$/);
+  // The watchlist's "live now" (who is live depends on the watchlist's checks).
+  await expect(page.getByRole("heading", { name: "Live now" })).toBeVisible();
   await expectFits(page);
 
   await page.getByRole("link", { name: "Progress" }).click();

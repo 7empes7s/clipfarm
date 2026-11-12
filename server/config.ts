@@ -15,6 +15,11 @@ import { FakePostingService, NoPostingService } from "./publish/fake.js";
 import { PostizService } from "./publish/postiz.js";
 import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
+import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
+import { KickClient } from "./sources/watchlist/platforms/kick.js";
+import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
+import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
+import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 
 export interface Config {
   port: number;
@@ -30,6 +35,10 @@ export interface Config {
   postingService: PostingService;
   /** How often post links and views are read from the posting service. */
   postingRefreshMinutes: number;
+  /** Twitch, Kick and YouTube, for the watchlist's live and new-VOD checks. */
+  watchClients: PlatformClient[];
+  /** How often the watchlist is checked. */
+  watchPollMinutes: number;
 }
 
 /** Reads settings from env. Keys only ever come from env, never from files in the repo. */
@@ -51,6 +60,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     renderPreset: env.RENDER_PRESET || "veryfast",
     postingService: fakes ? new FakePostingService() : postingService(env),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
+    watchClients: fakes
+      ? [new FakePlatformClient("twitch"), new FakePlatformClient("kick"), new FakePlatformClient("youtube")]
+      : [
+          new TwitchClient({ clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET }),
+          new KickClient(),
+          new YouTubeClient({ apiKey: env.YOUTUBE_API_KEY }),
+        ],
+    // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
+    watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
   };
 }
 

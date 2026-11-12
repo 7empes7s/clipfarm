@@ -17,6 +17,9 @@ import type {
   Stats,
   Vod,
   VodDetail,
+  WatchedCreator,
+  WatchedCreatorInput,
+  Watchlist,
 } from "../../shared/types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -65,4 +68,12 @@ export const api = {
   setFollowers: (accountId: string, followers: number) =>
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
   loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),
+  watchlist: () => call<Watchlist>("/api/watchlist"),
+  checkWatchlist: () => call<Watchlist>("/api/watchlist/poll", { method: "POST" }),
+  addWatched: (input: WatchedCreatorInput) => call<WatchedCreator>("/api/watchlist", { method: "POST", body: JSON.stringify(input) }),
+  updateWatched: (id: number, input: WatchedCreatorInput) =>
+    call<WatchedCreator>(`/api/watchlist/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  removeWatched: (id: number) => call<unknown>(`/api/watchlist/${id}`, { method: "DELETE" }),
+  setAutoIngest: (id: number, on: boolean) =>
+    call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };

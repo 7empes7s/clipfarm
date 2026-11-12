@@ -448,3 +448,100 @@ export interface Dashboard {
   goals: Goal[];
   earnings: { rows: EarningsRow[]; weekUsd: number; totalUsd: number };
 }
+
+export const WATCH_PLATFORMS = ["twitch", "kick", "youtube"] as const;
+export type WatchPlatform = (typeof WATCH_PLATFORMS)[number];
+
+export const WATCH_PLATFORM_LABELS: Record<WatchPlatform, string> = {
+  twitch: "Twitch",
+  kick: "Kick",
+  youtube: "YouTube",
+};
+
+/** How clippers get a creator's permission. "none" means we know of no program yet. */
+export const CLIP_PROGRAMS = ["whop", "own", "kick", "none"] as const;
+export type ClipProgram = (typeof CLIP_PROGRAMS)[number];
+
+export const CLIP_PROGRAM_LABELS: Record<ClipProgram, string> = {
+  whop: "Whop Content Rewards",
+  own: "Their own program",
+  kick: "Kick clipping program",
+  none: "No program known",
+};
+
+/** A creator's handle on one platform (Twitch login, Kick slug, YouTube @handle without the @). */
+export interface WatchChannel {
+  platform: WatchPlatform;
+  handle: string;
+}
+
+export interface LiveNow {
+  platform: WatchPlatform;
+  title: string;
+  /** The category or game shown on the stream, when the platform says. */
+  game: string | null;
+  startedAt: string | null;
+  url: string;
+}
+
+export type DetectedVodStatus = "queued" | "skipped";
+
+export interface DetectedVod {
+  id: number;
+  platform: WatchPlatform;
+  url: string;
+  title: string;
+  category: string | null;
+  publishedAt: string;
+  status: DetectedVodStatus;
+  /** Why it was not queued, in plain words. */
+  skipReason: string | null;
+  vodId: number | null;
+}
+
+export interface WatchedCreator {
+  id: number;
+  name: string;
+  channels: WatchChannel[];
+  /** Language code, like "en", "ar", "es". */
+  language: string;
+  /** Games whose VODs are picked up, matched in the VOD title or category ("GTA VI" first). */
+  games: string[];
+  program: ClipProgram;
+  programUrl: string | null;
+  /** Why they are on the list: rank, source and date. */
+  note: string;
+  /** The campaign (permission records) for this creator: set by hand, else found by the same name. */
+  sourceId: number | null;
+  permissionState: PermissionState;
+  autoIngest: boolean;
+  live: LiveNow | null;
+  lastVod: DetectedVod | null;
+}
+
+export interface WatchedCreatorInput {
+  name: string;
+  channels: WatchChannel[];
+  language: string;
+  games: string[];
+  program: ClipProgram;
+  programUrl: string | null;
+  note: string;
+  sourceId: number | null;
+}
+
+export interface WatchPlatformStatus {
+  platform: WatchPlatform;
+  /** False when the keys it needs are not set on the server. */
+  configured: boolean;
+  /** What to set, or why it is waiting, in plain words; null when all is well. */
+  note: string | null;
+  /** Set while the platform is backed off after errors. */
+  nextTryAt: string | null;
+}
+
+export interface Watchlist {
+  creators: WatchedCreator[];
+  platforms: WatchPlatformStatus[];
+  lastPollAt: string | null;
+}

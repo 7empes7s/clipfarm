@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { AccountCard, AccountsInfo, Clip, Dashboard, Job, Platform, Post, Source, VodProgress } from "../../shared/types";
-import { PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
+import type { AccountCard, AccountsInfo, Clip, Dashboard, Job, Platform, Post, Source, VodProgress, WatchedCreator } from "../../shared/types";
+import { PLATFORM_LABELS, PLATFORMS, WATCH_PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { compact, duration, shortDate, usd } from "./format";
@@ -114,6 +114,8 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
         />
       </dl>
 
+      <LiveNow />
+
       <h3 className="sub">Running now</h3>
       {dash.running.length === 0 ? (
         <p className="hint">No job is running. One runs at a time, so the server stays light.</p>
@@ -127,6 +129,46 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
               </div>
               <Meter value={j.progress} label={`${j.label} progress`} />
               <span className="hint">{j.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** Who on the watchlist is streaming now (from the watchlist's own checks). */
+function LiveNow() {
+  const [live, setLive] = useState<WatchedCreator[] | null>(null);
+  useEffect(() => {
+    let on = true;
+    api.watchlist().then(
+      (w) => on && setLive(w.creators.filter((c) => c.live)),
+      () => on && setLive(null),
+    );
+    return () => {
+      on = false;
+    };
+  }, []);
+  if (live === null) return null;
+  return (
+    <>
+      <h3 className="sub">Live now</h3>
+      {live.length === 0 ? (
+        <p className="hint">
+          Nobody on the <a href="#watchlist">watchlist</a> is live.
+        </p>
+      ) : (
+        <ul className="stack" data-testid="dash-live">
+          {live.map((c) => (
+            <li key={c.id} className="job">
+              <div className="job-line">
+                <a className="job-name" href={c.live!.url} target="_blank" rel="noreferrer">
+                  {c.name}
+                </a>
+                <span className="job-status">{WATCH_PLATFORM_LABELS[c.live!.platform]}</span>
+              </div>
+              <span className="hint">{c.live!.game ? `${c.live!.game}: ${c.live!.title}` : c.live!.title}</span>
             </li>
           ))}
         </ul>
