@@ -49,7 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           new KickClient(),
           new YouTubeClient({ apiKey: env.YOUTUBE_API_KEY }),
         ],
-    // YouTube's free quota (10,000 units a day) covers about 25 channels every 10 minutes.
+    // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
   };
 }
