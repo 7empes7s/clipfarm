@@ -58,9 +58,11 @@ export function renderHandler(deps: RenderDeps): JobHandler {
 
     progress(0.3, "Cutting and adding captions");
     const durationSec = pick.endSec - pick.startSec;
+    let plannedLayout = pick.layout;
     await timed("render", async () => {
       const info = await probeVideo(input, signal);
       const plan = planLayout(pick.layout, info.width, info.height, source.faceCam);
+      plannedLayout = plan.layout;
       await writeFile(join(tmpDir, "captions.ass"), buildAss(clipWords(vod.words, pick.startSec, pick.endSec), pick.hook));
       await renderClip({
         input,
@@ -74,10 +76,6 @@ export function renderHandler(deps: RenderDeps): JobHandler {
         signal,
       });
       await grabFrame(join(tmpDir, "clip.mp4"), Math.min(1, durationSec / 2), join(tmpDir, "thumb.jpg"), { signal });
-      if (!source.hasFrame) {
-        // A frame of the creator's stream, to draw the face cam box on in the gallery.
-        await grabFrame(input, pick.startSec - section.startSec, join(tmpDir, "frame.jpg"), { width: 960, signal });
-      }
     });
 
     progress(0.95, "Saving the clip");
@@ -85,26 +83,39 @@ export function renderHandler(deps: RenderDeps): JobHandler {
     await mkdir(clipsDir, { recursive: true });
     const filePath = join(clipsDir, `pick-${pickId}.mp4`);
     const thumbPath = join(clipsDir, `pick-${pickId}.jpg`);
+    // The section stays as the clip's master, so an edit in the gallery (trim, layout, captions) can
+    // re-render without downloading again. The section and captions in tmpDir go with the job.
+    const masterPath = join(clipsDir, `pick-${pickId}-master.mp4`);
     try {
       await copyFile(join(tmpDir, "clip.mp4"), filePath);
       await copyFile(join(tmpDir, "thumb.jpg"), thumbPath);
-      if (!source.hasFrame) {
-        const framesDir = join(deps.mediaDir, "frames");
-        await mkdir(framesDir, { recursive: true });
-        const framePath = join(framesDir, `source-${source.id}.jpg`);
-        await copyFile(join(tmpDir, "frame.jpg"), framePath);
-        deps.sources.setFramePath(source.id, framePath);
-      }
+      await copyFile(input, masterPath);
     } catch (err) {
-      await rm(filePath, { force: true });
-      await rm(thumbPath, { force: true });
+      for (const f of [filePath, thumbPath, masterPath]) await rm(f, { force: true });
       throw err;
     }
     const out = await probeVideo(filePath, signal);
     const clipDurationSec = Math.round(out.durationSec * 1000) / 1000;
+    const offsetSec = pick.startSec - section.startSec;
     const clipId =
       pick.clipId ??
-      deps.clips.create({ sourceId: pick.sourceId, vodId: pick.vodId, title: pick.title, filePath, durationSec: clipDurationSec }).id;
+      deps.clips.create({
+        sourceId: pick.sourceId,
+        vodId: pick.vodId,
+        title: pick.title,
+        filePath,
+        durationSec: clipDurationSec,
+        hook: pick.hook,
+        reason: pick.reason,
+        score: pick.score,
+        layout: plannedLayout,
+        // Timed in master seconds, as the gallery's editor expects.
+        captionWords: clipWords(vod.words, section.startSec, section.endSec),
+        masterPath,
+        masterDurationSec: section.endSec - section.startSec,
+        startSec: offsetSec,
+        endSec: offsetSec + durationSec,
+      }).id;
     const saved = deps.picks.saveRender(pickId, {
       filePath,
       thumbPath,

@@ -1,12 +1,14 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
-import type { Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
 import { ClipsTab } from "./ClipsTab";
+import { FaceCamSheet } from "./FaceCamSheet";
+import { InboxTab } from "./InboxTab";
+import { tabCounts } from "./review";
 import { StatsTab } from "./StatsTab";
 import { Clips } from "./Clips";
-import { FaceCamEditor } from "./FaceCamEditor";
 import { clock, shortDate, usd } from "./format";
 
 const STATE_LABEL = { active: "Allowed", expired: "Expired", none: "No permission" } as const;
@@ -17,11 +19,6 @@ const VOD_STATUS_LABEL: Record<Vod["status"], string> = {
   ready: "Transcript ready",
   failed: "Failed",
 };
-const JOB_TYPE_LABEL: Record<string, string> = {
-  ingest: "Transcript",
-  picks: "Picking highlights",
-  render: "Cutting a clip",
-};
 const JOB_STATUS_LABEL: Record<Job["status"], string> = {
   queued: "Waiting",
   running: "Running",
@@ -30,16 +27,31 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
   cancelled: "Cancelled",
 };
 
+const JOB_TYPE_LABEL: Record<string, string> = {
+  ingest: "Transcript",
+  picks: "Picking highlights",
+  render: "Cutting a clip",
+  "render-clip": "New version",
+  "demo-clips": "Demo clips",
+};
+
 const TABS = [
-  { id: "campaigns", label: "Campaigns" },
-  { id: "clips", label: "Clips" },
+  { id: "inbox", label: "Inbox" },
+  { id: "approved", label: "Approved" },
+  { id: "posted", label: "Posted" },
+  { id: "sources", label: "Sources" },
+  { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
 ] as const;
-type Tab = (typeof TABS)[number]["id"];
+/** "rejected" is reached from the inbox, not the tab bar. */
+type Tab = (typeof TABS)[number]["id"] | "rejected";
+// Older links keep working.
+const ALIASES: Record<string, Tab> = { campaigns: "sources", clips: "approved" };
 
 function tabFromHash(): Tab {
   const h = window.location.hash.slice(1);
-  return TABS.some((t) => t.id === h) ? (h as Tab) : "campaigns";
+  if (h === "rejected" || TABS.some((t) => t.id === h)) return h as Tab;
+  return ALIASES[h] ?? "inbox";
 }
 
 export function App() {
@@ -48,16 +60,27 @@ export function App() {
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [picks, setPicks] = useState<Pick[]>([]);
+  const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
+  // Bumped on every local change to the clips, so a poll that started earlier cannot undo it.
+  const clipsEdits = useRef(0);
+
+  const updateClips = useCallback((fn: (c: Clip[]) => Clip[]) => {
+    clipsEdits.current++;
+    setClips(fn);
+  }, []);
 
   const refresh = useCallback(async () => {
+    const edits = clipsEdits.current;
     try {
-      const [s, v, j, p] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.picks()]);
+      const [s, v, j, c, p] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.clips(), api.picks()]);
       setSources(s);
       setVods(v);
       setJobs(j);
       setPicks(p);
+      if (edits === clipsEdits.current) setClips(c);
       setLoadError(null);
     } catch (err) {
       setLoadError((err as Error).message);
@@ -76,6 +99,8 @@ export function App() {
   }, [refresh, busy]);
 
   const closeForm = useCallback(() => setFormOpen(false), []);
+  const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
+  const counts = tabCounts(clips, sources, jobs);
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -97,6 +122,7 @@ export function App() {
         {TABS.map((t) => (
           <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
             {t.label}
+            {t.id !== "stats" && <span className="count">{counts[t.id]}</span>}
           </a>
         ))}
       </nav>
@@ -107,10 +133,13 @@ export function App() {
         </p>
       )}
 
-      {tab === "clips" && <ClipsTab sources={sources} />}
+      {tab === "inbox" && <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />}
+      {(tab === "approved" || tab === "posted" || tab === "rejected") && (
+        <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />
+      )}
       {tab === "stats" && <StatsTab />}
 
-      {tab === "campaigns" && (
+      {tab === "sources" && (
         <section aria-labelledby="campaigns-title">
           <div className="section-head">
             <h2 id="campaigns-title">Campaigns</h2>
@@ -131,6 +160,7 @@ export function App() {
                   vods={vods.filter((v) => v.sourceId === s.id)}
                   picks={picks}
                   onChange={refresh}
+                  onFaceCam={() => setFaceCamFor(s)}
                 />
               ))}
             </ul>
@@ -138,16 +168,21 @@ export function App() {
         </section>
       )}
 
-      {tab === "campaigns" && (
+      {tab === "jobs" && (
         <section aria-labelledby="jobs-title">
-          <h2 id="jobs-title">Work queue</h2>
+          <h2 id="jobs-title">Jobs</h2>
           <p className="hint">One job at a time, so the server stays light.</p>
           {jobs.length === 0 ? (
-            <p className="empty">Nothing running. Add a stream link to a campaign to start.</p>
+            <p className="empty">Nothing running. Add a stream link to a campaign in Sources to start.</p>
           ) : (
             <ul className="jobs">
               {jobs.map((j) => (
-                <JobRow key={j.id} job={j} vod={vods.find((v) => v.id === j.vodId)} onChange={refresh} />
+                <JobRow
+                  key={j.id}
+                  job={j}
+                  name={vods.find((v) => v.id === j.vodId)?.title ?? vods.find((v) => v.id === j.vodId)?.url ?? clips.find((c) => c.id === j.clipId)?.title}
+                  onChange={refresh}
+                />
               ))}
             </ul>
           )}
@@ -163,6 +198,17 @@ export function App() {
           }}
         />
       )}
+      {faceCamFor && (
+        <FaceCamSheet
+          source={faceCamFor}
+          clip={clips.find((c) => c.sourceId === faceCamFor.id)}
+          onClose={closeFaceCam}
+          onSaved={() => {
+            setFaceCamFor(null);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -172,15 +218,16 @@ function SourceCard({
   vods,
   picks,
   onChange,
+  onFaceCam,
 }: {
   source: Source;
   vods: Vod[];
   picks: Pick[];
   onChange: () => void;
+  onFaceCam: () => void;
 }) {
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
-  const [faceCamOpen, setFaceCamOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function addVod(e: FormEvent) {
@@ -238,19 +285,11 @@ function SourceCard({
         </dl>
       )}
       {source.bannedContent && <p className="banned">Off limits: {source.bannedContent}</p>}
-      <div className="facecam-line">
-        <span className="hint">
-          {source.faceCam
-            ? "Face cam set: clips show it on top."
-            : source.hasFrame
-              ? "No face cam set: clips show the game only."
-              : "You can mark their face cam once the first clip is cut."}
-        </span>
-        {source.hasFrame && (
-          <button type="button" className="link" onClick={() => setFaceCamOpen(true)}>
-            {source.faceCam ? "Change face cam" : "Mark face cam"}
-          </button>
-        )}
+      <div className="meta">
+        <span>{source.faceCam ? "Face cam set" : "No face cam set"}</span>
+        <button type="button" className="link" onClick={onFaceCam}>
+          {source.faceCam ? "Change face cam" : "Set face cam"}
+        </button>
       </div>
 
       {source.permissionState === "active" ? (
@@ -287,16 +326,6 @@ function SourceCard({
             <VodRow key={v.id} vod={v} picks={picks.filter((p) => p.vodId === v.id)} />
           ))}
         </ul>
-      )}
-      {faceCamOpen && (
-        <FaceCamEditor
-          source={source}
-          onClose={() => setFaceCamOpen(false)}
-          onSaved={() => {
-            setFaceCamOpen(false);
-            onChange();
-          }}
-        />
       )}
     </li>
   );
@@ -340,14 +369,13 @@ function VodRow({ vod, picks }: { vod: Vod; picks: Pick[] }) {
   );
 }
 
-function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => void }) {
+function JobRow({ job, name, onChange }: { job: Job; name?: string; onChange: () => void }) {
   const active = job.status === "queued" || job.status === "running";
+  const kind = JOB_TYPE_LABEL[job.type] ?? "Job";
   return (
     <li className={`job job-${job.status}`} data-testid="job">
       <div className="job-line">
-        <span className="job-name">
-          {JOB_TYPE_LABEL[job.type] ?? job.type}: {vod?.title ?? vod?.url ?? `job ${job.id}`}
-        </span>
+        <span className="job-name">{name ? `${kind}: ${name}` : `${kind} ${job.id}`}</span>
         <span className="job-status">{JOB_STATUS_LABEL[job.status]}</span>
       </div>
       {active && (
@@ -366,6 +394,17 @@ function JobRow({ job, vod, onChange }: { job: Job; vod?: Vod; onChange: () => v
             }}
           >
             Cancel
+          </button>
+        )}
+        {(job.status === "failed" || job.status === "cancelled") && (
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              void api.retryJob(job.id).then(onChange);
+            }}
+          >
+            Try again
           </button>
         )}
       </div>

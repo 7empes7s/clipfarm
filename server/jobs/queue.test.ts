@@ -71,6 +71,23 @@ describe("JobQueue", () => {
     expect(finished).toEqual([`${job.id}:failed`]);
   });
 
+  it("tries a failed job again with fresh tries, and refuses to retry a finished one", async () => {
+    let calls = 0;
+    const { queue } = makeQueue({
+      once: async () => {
+        calls++;
+        if (calls === 1) throw new Error("disk full");
+      },
+    });
+    const job = queue.enqueue("once", {}, { maxAttempts: 1 });
+    await queue.idle();
+    expect(queue.get(job.id).status).toBe("failed");
+    queue.retry(job.id);
+    await queue.idle();
+    expect(queue.get(job.id)).toMatchObject({ status: "done", attempts: 1, error: null });
+    expect(() => queue.retry(job.id)).toThrow(ValidationError);
+  });
+
   it("does not retry errors that a retry cannot fix", async () => {
     let calls = 0;
     const { queue } = makeQueue({

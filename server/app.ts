@@ -1,16 +1,19 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform } from "../shared/types.js";
-import { PLATFORMS } from "../shared/types.js";
+import type { Platform, RejectReason } from "../shared/types.js";
+import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
+import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
+import { DEMO_JOB } from "./dev/demo.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
+import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
-import { parseCropRect, parseNewSource, type SourcesRepo } from "./sources/repo.js";
+import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
@@ -61,14 +64,9 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
     res.status(201).json(sources.create(parseNewSource(req.body)));
   });
 
-  // Where the creator's face cam sits, for the stacked layout. Send null to clear it.
   app.put("/api/sources/:id/face-cam", (req, res) => {
-    const body = (req.body ?? {}) as { faceCam?: unknown };
-    res.json(sources.setFaceCam(idParam(req.params.id), parseCropRect(body.faceCam)));
-  });
-
-  app.get("/api/sources/:id/frame", (req, res, next) => {
-    sendMedia(res, next, sources.framePath(idParam(req.params.id)));
+    const id = idParam(req.params.id);
+    res.json(sources.setFaceCam(id, req.body === null || req.body?.clear ? null : parseFaceCam(req.body)));
   });
 
   app.get("/api/vods/:id/picks", (req, res) => {
@@ -125,26 +123,55 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
     res.json(queue.cancel(idParam(req.params.id)));
   });
 
+  app.post("/api/jobs/:id/retry", (req, res) => {
+    const job = queue.retry(idParam(req.params.id));
+    if (job.type === RENDER_CLIP_JOB && job.clipId !== null) clips.setStatus(job.clipId, "rendering");
+    res.json(job);
+  });
+
   app.get("/api/clips", (_req, res) => {
     res.json(clips.list());
   });
 
+  app.post("/api/clips/undo", (_req, res) => {
+    res.json(clips.undoLastReview());
+  });
+
   app.post("/api/clips/:id/approve", (req, res) => {
-    res.json(clips.setStatus(idParam(req.params.id), "approved"));
+    res.json(clips.review(idParam(req.params.id), "approve"));
   });
 
   app.post("/api/clips/:id/reject", (req, res) => {
-    res.json(clips.setStatus(idParam(req.params.id), "rejected"));
+    const reason = (req.body ?? {}).reason as unknown;
+    if (reason !== undefined && reason !== null && !REJECT_REASONS.includes(reason as RejectReason)) {
+      throw new ValidationError("Pick a reason: boring, spoiler, bad crop, bad captions or other.");
+    }
+    res.json(clips.review(idParam(req.params.id), "reject", (reason as RejectReason | undefined) ?? null));
   });
+
+  app.post("/api/clips/:id/edit", (req, res) => {
+    const clip = clips.get(idParam(req.params.id));
+    const edit = parseClipEdit(req.body, clip, sources.get(clip.sourceId));
+    const updated = clips.applyEdit(clip.id, edit);
+    const job = queue.enqueue(RENDER_CLIP_JOB, { clipId: clip.id }, { clipId: clip.id, maxAttempts: 2 });
+    res.status(202).json({ clip: updated, job });
+  });
+
+  // The data folder may sit under a dot folder (.e2e-data), which send() refuses by default.
+  const sendOpts = { dotfiles: "allow" as const };
 
   app.get("/api/clips/:id/video", (req, res, next) => {
     const id = idParam(req.params.id);
     const file = clips.filePath(id);
     if (!existsSync(file)) throw new NotFoundError("The video file for this clip is missing on the server.");
-    // The data folder may sit under a dot folder (.e2e-data), which send() refuses by default.
-    const opts = { dotfiles: "allow" as const };
-    if (req.query.download) res.download(file, `${slug(clips.get(id).title)}.mp4`, opts, (err) => err && next(err));
-    else res.sendFile(file, opts, (err) => err && next(err));
+    if (req.query.download) res.download(file, `${slug(clips.get(id).title)}.mp4`, sendOpts, (err) => err && next(err));
+    else res.sendFile(file, sendOpts, (err) => err && next(err));
+  });
+
+  app.get("/api/clips/:id/master", (req, res, next) => {
+    const file = clips.masterPath(idParam(req.params.id));
+    if (!existsSync(file)) throw new NotFoundError("The source video for this clip is missing on the server.");
+    res.sendFile(file, sendOpts, (err) => err && next(err));
   });
 
   app.get("/api/clips/:id/export", (req, res) => {
@@ -191,6 +218,11 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
 
   app.get("/api/stats", (_req, res) => {
     res.json(publisher.stats());
+  });
+
+  // "Load demo clips" on an empty gallery: generated test patterns, made by a queued job.
+  app.post("/api/demo", (_req, res) => {
+    res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
   });
 
   if (seedDemoClip) {

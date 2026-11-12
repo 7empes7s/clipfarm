@@ -35,15 +35,21 @@ export interface Permission {
 
 export type PermissionState = "active" | "expired" | "none";
 
+/** Where the face cam sits in the stream's frame, as fractions (0..1) of its width and height. */
+export interface FaceCam {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface Source {
   id: number;
   creatorName: string;
   channelUrls: string[];
   bannedContent: string;
-  /** Where the creator's face cam sits in their stream, for the stacked layout; null if none. */
-  faceCam: CropRect | null;
-  /** Whether a frame of their stream is saved to draw the face cam on. */
-  hasFrame: boolean;
+  /** Set once per creator in Sources; the stacked layout puts this region on top. */
+  faceCam: FaceCam | null;
   createdAt: string;
   permissions: Permission[];
   /** Whether the source has a permission record that is in force right now. */
@@ -79,6 +85,7 @@ export interface Job {
   attempts: number;
   maxAttempts: number;
   vodId: number | null;
+  clipId: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -115,21 +122,6 @@ export interface VodDetail extends Vod {
   words: Word[];
 }
 
-/** A rectangle as fractions (0..1) of the source frame, so it fits any resolution. */
-export interface CropRect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/**
- * How a clip is laid out on the 1080×1920 canvas: face cam over gameplay, a center crop of the
- * gameplay, or the whole frame over a blurred copy of itself.
- */
-export const LAYOUTS = ["stacked", "center", "full"] as const;
-export type Layout = (typeof LAYOUTS)[number];
-
 /** Why the picker may refuse a moment. Any of these drops the pick before it can render. */
 export interface PickFlags {
   spoiler: boolean;
@@ -162,7 +154,7 @@ export interface Pick {
   flags: PickFlags;
   /** Set when the pick was left out (spoiler, brief ban, bad length…); it never renders. */
   dropReason: string | null;
-  layout: Layout;
+  layout: ClipLayout;
   status: PickStatus;
   error: string | null;
   /** Share of the transcript and picking cost, in USD. */
@@ -178,18 +170,70 @@ export interface Pick {
   createdAt: string;
 }
 
-export type ClipStatus = "pending" | "approved" | "rejected";
+
+/** "rendering": an edit was saved and the new version is being made; it returns to "pending". */
+export type ClipStatus = "pending" | "approved" | "rejected" | "rendering";
+
+export const CLIP_LAYOUTS = ["stacked", "center", "full"] as const;
+export type ClipLayout = (typeof CLIP_LAYOUTS)[number];
+
+export const CLIP_LAYOUT_LABELS: Record<ClipLayout, string> = {
+  stacked: "Face cam on top",
+  center: "Center crop",
+  full: "Full frame",
+};
+
+export const REJECT_REASONS = ["boring", "spoiler", "bad-crop", "bad-captions", "other"] as const;
+export type RejectReason = (typeof REJECT_REASONS)[number];
+
+export const REJECT_REASON_LABELS: Record<RejectReason, string> = {
+  boring: "Boring",
+  spoiler: "Spoiler",
+  "bad-crop": "Bad crop",
+  "bad-captions": "Bad captions",
+  other: "Other",
+};
+
+/** Shortest and longest clip an edit may produce, in seconds. */
+export const CLIP_MIN_SEC = 3;
+export const CLIP_MAX_SEC = 60;
 
 export interface Clip {
   id: number;
   sourceId: number;
   vodId: number | null;
   title: string;
+  /** The text on screen for the first seconds. */
+  hook: string;
+  /** Why the picker chose it. */
+  reason: string;
+  /** 0..100 from the picker; null when unknown. */
+  score: number | null;
   durationSec: number;
   status: ClipStatus;
+  rejectReason: RejectReason | null;
+  layout: ClipLayout;
+  /** Cut points inside the longer source section ("master") the clip was rendered from. */
+  startSec: number;
+  endSec: number;
+  masterDurationSec: number;
+  /** Caption words, timed in master seconds. */
+  captionWords: Word[];
+  postCount: number;
   /** Where the gallery plays and downloads the MP4. */
   videoUrl: string;
+  /** The source section, for trimming and the face cam frame. */
+  masterUrl: string;
   createdAt: string;
+}
+
+export interface ClipEditInput {
+  title: string;
+  hook: string;
+  captionText: string;
+  layout: ClipLayout;
+  startSec: number;
+  endSec: number;
 }
 
 export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none"] as const;

@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
 
-test("a VOD becomes a ranked 9:16 clip to play, and the face cam can be marked (390 px)", async ({ page }) => {
+test("a VOD becomes a ranked 9:16 clip to play and review, and the face cam is set on it (390 px)", async ({ page, request }) => {
   test.setTimeout(120_000);
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
 
   await page.goto("/");
+  await page.getByRole("link", { name: /^Sources/ }).click();
   await page.getByRole("button", { name: "Add a campaign" }).click();
   const sheet = page.getByRole("dialog", { name: "Add a campaign" });
   await sheet.getByLabel("Whop campaign link").fill("https://whop.com/e2e/clips");
@@ -14,7 +15,7 @@ test("a VOD becomes a ranked 9:16 clip to play, and the face cam can be marked (
   await expect(sheet).toBeHidden();
 
   const campaign = page.getByTestId("campaign").filter({ hasText: "Clip Streamer" });
-  await expect(campaign.getByText("You can mark their face cam once the first clip is cut.")).toBeVisible();
+  await expect(campaign.getByText("No face cam set")).toBeVisible();
   await campaign.getByLabel("Stream or video link").fill("https://www.twitch.tv/videos/777");
   await campaign.getByRole("button", { name: "Add", exact: true }).click();
 
@@ -37,18 +38,21 @@ test("a VOD becomes a ranked 9:16 clip to play, and the face cam can be marked (
   await player.getByRole("button", { name: "Close" }).click();
   await expect(player).toBeHidden();
 
-  await campaign.getByRole("button", { name: "Mark face cam" }).click();
-  const editor = page.getByRole("dialog", { name: "Face cam for Clip Streamer" });
-  await expect(editor.getByRole("img")).toBeVisible();
-  await editor.getByRole("button", { name: "Bottom right" }).click();
-  await editor.getByRole("button", { name: "Save face cam" }).click();
-  await expect(editor).toBeHidden();
-  await expect(campaign.getByText("Face cam set: clips show it on top.")).toBeVisible();
+  // The face cam box is drawn on the new clip's master (the downloaded section).
+  await campaign.getByRole("button", { name: "Set face cam" }).click();
+  const camSheet = page.getByRole("dialog", { name: "Face cam: Clip Streamer" });
+  const area = (await camSheet.getByTestId("facecam-area").boundingBox())!;
+  await page.mouse.move(area.x + area.width * 0.6, area.y + area.height * 0.55);
+  await page.mouse.down();
+  await page.mouse.move(area.x + area.width * 0.95, area.y + area.height * 0.95, { steps: 5 });
+  await page.mouse.up();
+  await camSheet.getByRole("button", { name: "Save face cam" }).click();
+  await expect(camSheet).toBeHidden();
+  await expect(campaign.getByText("Face cam set")).toBeVisible();
 
-  // The rendered clip waits for review in the Clips tab.
-  await page.getByRole("link", { name: "Clips" }).click();
-  const review = page.getByTestId("clip").filter({ hasText: "Clip Streamer moment 1" });
-  await expect(review.getByText("To review")).toBeVisible();
+  // The rendered clip waits in the Inbox for review, with the pick's hook, reason and score.
+  const clips = (await (await request.get("/api/clips")).json()) as { title: string; status: string; hook: string; score: number }[];
+  expect(clips.find((c) => c.title === "Clip Streamer moment 1")).toMatchObject({ status: "pending", hook: "Wait for it", score: 80 });
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);

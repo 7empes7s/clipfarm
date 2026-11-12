@@ -132,12 +132,23 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect([clip.width, clip.height, clip.hasAudio]).toEqual([1080, 1920, true]);
     expect(Math.abs(clip.durationSec - 20.9)).toBeLessThanOrEqual(0.1);
     expect(good!.sizeBytes).toBeGreaterThan(0);
-    expect(sources.get(source.id).hasFrame).toBe(true);
     // The clip now waits for review in the gallery's Clips tab.
     expect(clips.list().map((c) => [c.id, c.title, c.status, c.vodId])).toEqual([[good!.clipId, "Good one", "pending", vod.id]]);
     expect(clips.filePath(good!.clipId!)).toBe(join(mediaDir, "clips", `pick-${good!.id}.mp4`));
-    expect((await readdir(join(mediaDir, "clips"))).sort()).toEqual([`pick-${good!.id}.jpg`, `pick-${good!.id}.mp4`]);
-    expect(await readdir(join(mediaDir, "frames"))).toEqual([`source-${source.id}.jpg`]);
+    // The clip, its thumbnail and its master (the padded section, kept for edits in the gallery).
+    expect((await readdir(mediaDir))).toEqual(["clips"]);
+    expect((await readdir(join(mediaDir, "clips"))).sort()).toEqual([
+      `pick-${good!.id}-master.mp4`,
+      `pick-${good!.id}.jpg`,
+      `pick-${good!.id}.mp4`,
+    ]);
+    const review = clips.get(good!.clipId!);
+    // The section starts at 11 s, so the clip is 3-23.9 s of the master, captions in master seconds.
+    expect(review).toMatchObject({ hook: "Wait for it", reason: "Loud", score: 80, layout: "center", startSec: 3 });
+    expect(review.endSec).toBeCloseTo(23.9, 6);
+    expect(review.masterDurationSec).toBeCloseTo(26.9, 6);
+    expect(review.captionWords[0]).toEqual({ word: "no", startSec: 0, endSec: 0.4 });
+    expect(clips.renderInput(review.id).masterPath).toBe(join(mediaDir, "clips", `pick-${good!.id}-master.mp4`));
     // Section downloads, audio and captions lived only in the jobs' temp folders.
     expect(await readdir(jobsDir)).toEqual([]);
   });

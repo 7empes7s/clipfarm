@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { ClipsRepo } from "./clips/repo.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
+import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { JobQueue } from "./jobs/queue.js";
 import { PicksRepo } from "./picks/repo.js";
@@ -11,6 +12,7 @@ import { pipelineOnFinished } from "./pipeline/chain.js";
 import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
 import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
 import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
+import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
 import { SourcesRepo } from "./sources/repo.js";
@@ -24,6 +26,9 @@ const picks = new PicksRepo(db);
 const clips = new ClipsRepo(db);
 const posts = new PostsRepo(db);
 const publisher = new Publisher({ sources, clips, posts, service: config.postingService });
+const mediaDir = config.mediaDir;
+const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
+const clipRenderFinished = onRenderFinished(clips);
 const queue: JobQueue = new JobQueue(db, {
   handlers: {
     [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
@@ -34,18 +39,23 @@ const queue: JobQueue = new JobQueue(db, {
       picks,
       clips,
       downloader: config.sectionDownloader,
-      mediaDir: config.mediaDir,
+      mediaDir,
       preset: config.renderPreset,
     }),
+    [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
+    [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
   },
-  onFinished: pipelineOnFinished({ vods, picks, queue: () => queue }),
+  onFinished: (job, payload) => {
+    pipelineFinished(job, payload);
+    clipRenderFinished(job);
+  },
 });
 
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
 const here = fileURLToPath(import.meta.url);
 const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : undefined;
 const seedDemoClip =
-  process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir: join(dirname(config.dbFile), "media") }) : undefined;
+  process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
 const app = createApp({ sources, vods, picks, queue, clips, posts, publisher, seedDemoClip, clientDir });
 
 queue.start();

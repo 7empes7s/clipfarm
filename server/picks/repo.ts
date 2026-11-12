@@ -1,5 +1,5 @@
 import type { Db } from "../db/index.js";
-import type { Layout, Pick, PickFlags, PickStatus, StepTime } from "../../shared/types.js";
+import type { ClipLayout, Pick, PickFlags, PickStatus, StepTime } from "../../shared/types.js";
 import { NotFoundError } from "../errors.js";
 
 interface PickRow {
@@ -15,7 +15,7 @@ interface PickRow {
   reason: string;
   flags: string;
   drop_reason: string | null;
-  layout: Layout;
+  layout: ClipLayout;
   status: PickStatus;
   error: string | null;
   cost_usd: number;
@@ -37,7 +37,7 @@ export interface NewPick {
   reason: string;
   flags: PickFlags;
   dropReason: string | null;
-  layout: Layout;
+  layout: ClipLayout;
   costUsd: number;
   steps: StepTime[];
 }

@@ -1,5 +1,5 @@
 import type { Db } from "../db/index.js";
-import type { CropRect, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
+import type { FaceCam, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
 import { PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { permissionState, requireActivePermission } from "./permission.js";
@@ -23,7 +23,6 @@ interface SourceRow {
   channel_urls: string;
   banned_content: string;
   face_cam: string | null;
-  frame_path: string | null;
   created_at: string;
 }
 
@@ -57,20 +56,6 @@ function optionalNumber(v: unknown, label: string): number | null {
     throw new ValidationError(`${label} must be a number of zero or more.`);
   }
   return v;
-}
-
-/** Checks a face cam rectangle from a request: fractions of the frame, inside it, not tiny. Null clears it. */
-export function parseCropRect(body: unknown): CropRect | null {
-  if (body === null) return null;
-  const b = (body ?? {}) as Record<string, unknown>;
-  const [x, y, w, h] = [b.x, b.y, b.w, b.h];
-  const nums = [x, y, w, h].every((v) => typeof v === "number" && Number.isFinite(v));
-  if (!nums) throw new ValidationError("Draw the face cam box on the frame first.");
-  const r = { x: x as number, y: y as number, w: w as number, h: h as number };
-  if (r.x < 0 || r.y < 0 || r.w < 0.05 || r.h < 0.05 || r.x + r.w > 1.0001 || r.y + r.h > 1.0001) {
-    throw new ValidationError("The face cam box must sit inside the frame and be at least a little bigger.");
-  }
-  return r;
 }
 
 /** Checks a request body and returns a clean NewSourceInput, or throws a plain ValidationError. */
@@ -119,6 +104,22 @@ export function parseNewSource(body: unknown): NewSourceInput {
       expiresAt,
     },
   };
+}
+
+/** Checks a face cam rectangle (fractions of the frame) and rounds it; throws a plain ValidationError. */
+export function parseFaceCam(body: unknown): FaceCam {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const [x, y, w, h] = [b.x, b.y, b.w, b.h].map((v) => (typeof v === "number" && Number.isFinite(v) ? v : NaN)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  if ([x, y, w, h].some(Number.isNaN)) throw new ValidationError("Drag a box around the face cam first.");
+  const round = (v: number) => Math.round(v * 10000) / 10000;
+  if (x < 0 || y < 0 || x + w > 1.0001 || y + h > 1.0001) throw new ValidationError("The face cam box must stay inside the frame.");
+  if (w < 0.05 || h < 0.05) throw new ValidationError("The face cam box is too small. Drag a bigger box.");
+  return { x: round(x), y: round(y), w: round(Math.min(w, 1 - x)), h: round(Math.min(h, 1 - y)) };
 }
 
 export class SourcesRepo {
@@ -171,21 +172,10 @@ export class SourcesRepo {
     return this.hydrate(row);
   }
 
-  /** Saves (or clears, with null) where the face cam sits in this creator's stream. */
-  setFaceCam(id: number, rect: CropRect | null): Source {
+  setFaceCam(id: number, faceCam: FaceCam | null): Source {
     this.get(id);
-    this.db.prepare("UPDATE sources SET face_cam = ? WHERE id = ?").run(rect ? JSON.stringify(rect) : null, id);
+    this.db.prepare("UPDATE sources SET face_cam = ? WHERE id = ?").run(faceCam ? JSON.stringify(faceCam) : null, id);
     return this.get(id);
-  }
-
-  /** Remembers a frame of the creator's stream, shown in the gallery to draw the face cam on. */
-  setFramePath(id: number, path: string): void {
-    this.db.prepare("UPDATE sources SET frame_path = ? WHERE id = ?").run(path, id);
-  }
-
-  framePath(id: number): string | null {
-    return (this.db.prepare("SELECT frame_path FROM sources WHERE id = ?").get(id) as { frame_path: string | null } | undefined)
-      ?.frame_path ?? null;
   }
 
   /** Throws a PermissionError unless the source may be used right now (optionally on one platform). */
@@ -203,8 +193,7 @@ export class SourcesRepo {
       creatorName: r.creator_name,
       channelUrls: JSON.parse(r.channel_urls) as string[],
       bannedContent: r.banned_content,
-      faceCam: r.face_cam ? (JSON.parse(r.face_cam) as CropRect) : null,
-      hasFrame: r.frame_path !== null,
+      faceCam: r.face_cam ? (JSON.parse(r.face_cam) as FaceCam) : null,
       createdAt: r.created_at,
       permissions,
       permissionState: permissionState(permissions, this.now()),

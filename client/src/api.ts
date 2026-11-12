@@ -1,11 +1,13 @@
 import type {
   Clip,
-  CropRect,
+  ClipEditInput,
+  FaceCam,
   ExportPack,
   Job,
   NewSourceInput,
   Pick,
   Platform,
+  RejectReason,
   Post,
   PostingInfo,
   PostingRules,
@@ -34,12 +36,18 @@ export const api = {
     call<{ vod: Vod; job: Job }>("/api/vods", { method: "POST", body: JSON.stringify({ sourceId, url }) }),
   jobs: () => call<Job[]>("/api/jobs"),
   picks: () => call<Pick[]>("/api/picks"),
-  setFaceCam: (sourceId: number, faceCam: CropRect | null) =>
-    call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify({ faceCam }) }),
   cancelJob: (id: number) => call<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  retryJob: (id: number) => call<Job>(`/api/jobs/${id}/retry`, { method: "POST" }),
   clips: () => call<Clip[]>("/api/clips"),
   approveClip: (id: number) => call<Clip>(`/api/clips/${id}/approve`, { method: "POST" }),
-  rejectClip: (id: number) => call<Clip>(`/api/clips/${id}/reject`, { method: "POST" }),
+  rejectClip: (id: number, reason: RejectReason | null = null) =>
+    call<Clip>(`/api/clips/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  undoReview: () => call<Clip>("/api/clips/undo", { method: "POST" }),
+  editClip: (id: number, edit: ClipEditInput) =>
+    call<{ clip: Clip; job: Job }>(`/api/clips/${id}/edit`, { method: "POST", body: JSON.stringify(edit) }),
+  setFaceCam: (sourceId: number, faceCam: FaceCam | null) =>
+    call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify(faceCam ?? { clear: true }) }),
+  loadDemo: () => call<Job>("/api/demo", { method: "POST" }),
   exportPack: (id: number, platform: Platform) => call<ExportPack>(`/api/clips/${id}/export?platform=${platform}`),
   postClip: (id: number, accountIds: string[], when: string | null) =>
     call<Post[]>(`/api/clips/${id}/posts`, { method: "POST", body: JSON.stringify({ accountIds, when }) }),

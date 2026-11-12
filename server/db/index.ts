@@ -103,8 +103,32 @@ const MIGRATIONS: string[] = [
   );
   `,
   `
+  ALTER TABLE clips ADD COLUMN hook TEXT NOT NULL DEFAULT '';
+  ALTER TABLE clips ADD COLUMN reason TEXT NOT NULL DEFAULT '';
+  ALTER TABLE clips ADD COLUMN score REAL;
+  ALTER TABLE clips ADD COLUMN layout TEXT NOT NULL DEFAULT 'center';
+  ALTER TABLE clips ADD COLUMN caption_words TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE clips ADD COLUMN master_path TEXT;
+  ALTER TABLE clips ADD COLUMN master_duration_sec REAL;
+  ALTER TABLE clips ADD COLUMN start_sec REAL NOT NULL DEFAULT 0;
+  ALTER TABLE clips ADD COLUMN end_sec REAL;
+  ALTER TABLE clips ADD COLUMN reject_reason TEXT;
+  ALTER TABLE clips ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE sources ADD COLUMN face_cam TEXT;
-  ALTER TABLE sources ADD COLUMN frame_path TEXT;
+  ALTER TABLE jobs ADD COLUMN clip_id INTEGER REFERENCES clips(id);
+  CREATE TABLE clip_reviews (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id),
+    action TEXT NOT NULL,
+    reason TEXT,
+    prev_status TEXT NOT NULL,
+    prev_reject_reason TEXT,
+    created_at TEXT NOT NULL,
+    undone_at TEXT
+  );
+  CREATE INDEX clip_reviews_clip ON clip_reviews(clip_id);
+  `,
+  `
   ALTER TABLE vods ADD COLUMN loudness TEXT NOT NULL DEFAULT '[]';
   CREATE TABLE picks (
     -- AUTOINCREMENT: a re-run replaces picks, and a stale render job must never reach a new one.

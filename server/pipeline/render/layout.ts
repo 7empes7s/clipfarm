@@ -1,4 +1,4 @@
-import type { CropRect, Layout } from "../../../shared/types.js";
+import type { ClipLayout, FaceCam } from "../../../shared/types.js";
 
 export const OUT_W = 1080;
 export const OUT_H = 1920;
@@ -21,7 +21,7 @@ export interface Panel {
 }
 
 export interface LayoutPlan {
-  layout: Layout;
+  layout: ClipLayout;
   /** Drawn in order; later panels go on top. */
   panels: Panel[];
 }
@@ -45,7 +45,7 @@ export function cropToAspect(srcW: number, srcH: number, aspect: number, cx = sr
 }
 
 /** Converts a face cam rectangle (fractions of the frame) to source pixels, kept inside the frame. */
-export function rectToBox(r: CropRect, srcW: number, srcH: number): Box {
+export function rectToBox(r: FaceCam, srcW: number, srcH: number): Box {
   const x = Math.max(0, Math.min(srcW - 2, Math.round(r.x * srcW)));
   const y = Math.max(0, Math.min(srcH - 2, Math.round(r.y * srcH)));
   return { x, y, w: Math.min(even(r.w * srcW), even(srcW - x)), h: Math.min(even(r.h * srcH), even(srcH - y)) };
@@ -58,7 +58,7 @@ export function rectToBox(r: CropRect, srcW: number, srcH: number): Box {
  * - center: a 9:16 centre crop of the gameplay.
  * - full: the whole frame, fitted to the width, over a blurred centre crop of itself.
  */
-export function planLayout(layout: Layout, srcW: number, srcH: number, faceCam: CropRect | null = null): LayoutPlan {
+export function planLayout(layout: ClipLayout, srcW: number, srcH: number, faceCam: FaceCam | null = null): LayoutPlan {
   if (!(srcW >= 2 && srcH >= 2)) throw new Error(`The video has no usable size (${srcW}×${srcH}).`);
   const canvas: Box = { x: 0, y: 0, w: OUT_W, h: OUT_H };
 
