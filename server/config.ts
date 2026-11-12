@@ -9,6 +9,12 @@ import { FakePicker } from "./pipeline/picks/fake.js";
 import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
+import type { Platform } from "../shared/types.js";
+import { PLATFORMS } from "../shared/types.js";
+import { FakePostingService, NoPostingService } from "./publish/fake.js";
+import { PostizService } from "./publish/postiz.js";
+import type { PostingService } from "./publish/types.js";
+import { UploadPostService } from "./publish/uploadPost.js";
 
 export interface Config {
   port: number;
@@ -21,6 +27,9 @@ export interface Config {
   mediaDir: string;
   maxPicks: number;
   renderPreset: string;
+  postingService: PostingService;
+  /** How often post links and views are read from the posting service. */
+  postingRefreshMinutes: number;
 }
 
 /** Reads settings from env. Keys only ever come from env, never from files in the repo. */
@@ -40,6 +49,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
     renderPreset: env.RENDER_PRESET || "veryfast",
+    postingService: fakes ? new FakePostingService() : postingService(env),
+    postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
   };
 }
 
@@ -61,6 +72,26 @@ function llmPickerOrMissingKey(env: NodeJS.ProcessEnv): Picker {
       usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
     }),
   );
+}
+
+/** Postiz or Upload-Post from env (POSTING_SERVICE picks when both are set); export only without keys. */
+function postingService(env: NodeJS.ProcessEnv): PostingService {
+  const postiz = env.POSTIZ_URL && env.POSTIZ_API_KEY ? { url: env.POSTIZ_URL, apiKey: env.POSTIZ_API_KEY } : null;
+  const uploadPost =
+    env.UPLOAD_POST_API_KEY && env.UPLOAD_POST_USER
+      ? {
+          apiKey: env.UPLOAD_POST_API_KEY,
+          user: env.UPLOAD_POST_USER,
+          platforms: [...new Set((env.UPLOAD_POST_PLATFORMS ?? "tiktok,youtube,instagram").split(",").map((x) => x.trim()))].filter(
+            (p): p is Platform => PLATFORMS.includes(p as Platform),
+          ),
+        }
+      : null;
+  const choice = env.POSTING_SERVICE ?? (postiz ? "postiz" : uploadPost ? "upload-post" : "none");
+  if (choice === "fake") return new FakePostingService();
+  if (choice === "postiz" && postiz) return new PostizService(postiz);
+  if (choice === "upload-post" && uploadPost) return new UploadPostService(uploadPost);
+  return new NoPostingService();
 }
 
 function openAiOrMissingKey(apiKey: string | undefined): Transcriber {

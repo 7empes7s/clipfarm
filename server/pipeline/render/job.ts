@@ -2,6 +2,7 @@ import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Job } from "../../../shared/types.js";
 import { HttpError } from "../../errors.js";
+import type { ClipsRepo } from "../../clips/repo.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
@@ -18,6 +19,8 @@ export interface RenderDeps {
   sources: SourcesRepo;
   vods: VodsRepo;
   picks: PicksRepo;
+  /** Each rendered pick becomes a clip waiting for review (and then posting). */
+  clips: ClipsRepo;
   downloader: SectionDownloader;
   /** Final clips go to <mediaDir>/clips, creator frames to <mediaDir>/frames. Nothing else stays. */
   mediaDir: string;
@@ -98,12 +101,17 @@ export function renderHandler(deps: RenderDeps): JobHandler {
       throw err;
     }
     const out = await probeVideo(filePath, signal);
+    const clipDurationSec = Math.round(out.durationSec * 1000) / 1000;
+    const clipId =
+      pick.clipId ??
+      deps.clips.create({ sourceId: pick.sourceId, vodId: pick.vodId, title: pick.title, filePath, durationSec: clipDurationSec }).id;
     const saved = deps.picks.saveRender(pickId, {
       filePath,
       thumbPath,
       sizeBytes: (await stat(filePath)).size,
-      durationSec: Math.round(out.durationSec * 1000) / 1000,
+      durationSec: clipDurationSec,
       steps,
+      clipId,
     });
     console.log(
       `[render] clip ${pickId} "${saved.title}": ${steps.map((s) => `${s.step} ${s.ms} ms`).join(", ")}, ` +

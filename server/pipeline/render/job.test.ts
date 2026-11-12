@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { campaignInput } from "../../../test/helpers.js";
+import { ClipsRepo } from "../../clips/repo.js";
 import { openDb } from "../../db/index.js";
 import { JobQueue } from "../../jobs/queue.js";
 import { type NewPick, PicksRepo } from "../../picks/repo.js";
@@ -32,7 +33,7 @@ function setup(now = () => new Date()) {
   const picks = new PicksRepo(db);
   const downloader = new FakeSectionDownloader();
   const queue = new JobQueue(db, {
-    handlers: { [RENDER_JOB]: renderHandler({ sources, vods, picks, downloader, mediaDir: join(tmpRoot, "media") }) },
+    handlers: { [RENDER_JOB]: renderHandler({ sources, vods, picks, clips: new ClipsRepo(db), downloader, mediaDir: join(tmpRoot, "media") }) },
     tmpRoot,
     onFinished: onRenderFinished(picks),
   });

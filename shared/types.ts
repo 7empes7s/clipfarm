@@ -173,5 +173,109 @@ export interface Pick {
   durationSec: number | null;
   videoUrl: string | null;
   thumbUrl: string | null;
+  /** The clip waiting for review and posting, once rendered. */
+  clipId: number | null;
   createdAt: string;
+}
+
+export type ClipStatus = "pending" | "approved" | "rejected";
+
+export interface Clip {
+  id: number;
+  sourceId: number;
+  vodId: number | null;
+  title: string;
+  durationSec: number;
+  status: ClipStatus;
+  /** Where the gallery plays and downloads the MP4. */
+  videoUrl: string;
+  createdAt: string;
+}
+
+export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none"] as const;
+export type PostingServiceName = (typeof POSTING_SERVICES)[number];
+
+/** A social account connected in the posting service (Postiz "integration", Upload-Post profile platform). */
+export interface PostingAccount {
+  id: string;
+  platform: Platform;
+  name: string;
+  disabled: boolean;
+}
+
+export interface PostingRules {
+  /** Most posts per account per (UTC) day. */
+  maxPerDay: number;
+  /** Least time between two posts on the same account. */
+  minGapMinutes: number;
+}
+
+export interface PostingInfo {
+  service: PostingServiceName;
+  label: string;
+  accounts: PostingAccount[];
+  /** Why accounts could not be loaded, in plain words. */
+  accountsError: string | null;
+  /** Posts per platform per day the service allows (Upload-Post); empty when it has no caps. */
+  dailyCaps: Partial<Record<Platform, number>>;
+  /** Posts sent today per platform through the service. */
+  usedToday: Partial<Record<Platform, number>>;
+  rules: PostingRules;
+  /** Platform limits worth knowing, in plain words. */
+  notes: string[];
+}
+
+export type PostStatus = "scheduled" | "posted" | "failed";
+
+export interface Post {
+  id: number;
+  clipId: number;
+  clipTitle: string;
+  sourceId: number;
+  creatorName: string;
+  platform: Platform;
+  accountId: string;
+  accountName: string;
+  service: PostingServiceName;
+  status: PostStatus;
+  url: string | null;
+  error: string | null;
+  caption: string;
+  scheduledAt: string;
+  postedAt: string | null;
+  permissionId: number;
+  campaignUrl: string | null;
+  views: number | null;
+  viewsUpdatedAt: string | null;
+  viewsSource: "service" | "manual" | null;
+  whopSubmittedAt: string | null;
+  /** Views × the campaign's pay per 1,000, or 0 under its minimum views. */
+  estimatedEarningsUsd: number;
+}
+
+export interface ExportPack {
+  clipId: number;
+  videoUrl: string;
+  fileName: string;
+  platform: Platform;
+  caption: string;
+}
+
+export interface StatsRow {
+  key: string;
+  label: string;
+  posts: number;
+  views: number;
+  estimatedEarningsUsd: number;
+}
+
+export interface Stats {
+  posts: number;
+  views: number;
+  estimatedEarningsUsd: number;
+  approvedClips: number;
+  /** Spend so far (transcription) divided by approved clips; null before the first approval. */
+  costPerApprovedClipUsd: number | null;
+  byCampaign: StatsRow[];
+  byPlatform: StatsRow[];
 }

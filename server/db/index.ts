@@ -65,6 +65,44 @@ const MIGRATIONS: string[] = [
   CREATE INDEX jobs_status ON jobs(status, id);
   `,
   `
+  CREATE TABLE clips (
+    id INTEGER PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    vod_id INTEGER REFERENCES vods(id),
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    duration_sec REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE posts (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id),
+    permission_id INTEGER NOT NULL REFERENCES permissions(id),
+    platform TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    service TEXT NOT NULL,
+    external_id TEXT,
+    status TEXT NOT NULL,
+    url TEXT,
+    error TEXT,
+    caption TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    posted_at TEXT,
+    views INTEGER,
+    views_updated_at TEXT,
+    views_source TEXT,
+    whop_submitted_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX posts_account ON posts(account_id, scheduled_at);
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
+  `
   ALTER TABLE sources ADD COLUMN face_cam TEXT;
   ALTER TABLE sources ADD COLUMN frame_path TEXT;
   ALTER TABLE vods ADD COLUMN loudness TEXT NOT NULL DEFAULT '[]';
@@ -90,6 +128,7 @@ const MIGRATIONS: string[] = [
     thumb_path TEXT,
     size_bytes INTEGER,
     duration_sec REAL,
+    clip_id INTEGER REFERENCES clips(id),
     created_at TEXT NOT NULL
   );
   CREATE INDEX picks_vod ON picks(vod_id, rank);

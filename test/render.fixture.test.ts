@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Word } from "../shared/types.js";
+import { ClipsRepo } from "../server/clips/repo.js";
 import { openDb } from "../server/db/index.js";
 import { JobQueue } from "../server/jobs/queue.js";
 import { PicksRepo } from "../server/picks/repo.js";
@@ -88,6 +89,7 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     const sources = new SourcesRepo(db);
     const vods = new VodsRepo(db);
     const picks = new PicksRepo(db);
+    const clips = new ClipsRepo(db);
     const mediaDir = join(tmpRoot, "media");
     const jobsDir = join(tmpRoot, "jobs");
     await run("mkdir", [jobsDir]);
@@ -103,7 +105,7 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
       handlers: {
         [INGEST_JOB]: ingestHandler({ sources, vods, downloader: new FakeDownloader(40), transcriber: new FakeTranscriber() }),
         [PICKS_JOB]: picksHandler({ sources, vods, picks, picker: new LlmPicker(chat), maxPicks: 5 }),
-        [RENDER_JOB]: renderHandler({ sources, vods, picks, downloader: sectionDownloader, mediaDir, preset: "ultrafast" }),
+        [RENDER_JOB]: renderHandler({ sources, vods, picks, clips, downloader: sectionDownloader, mediaDir, preset: "ultrafast" }),
       },
       tmpRoot: jobsDir,
       onFinished: pipelineOnFinished({ vods, picks, queue: () => queue }),
@@ -131,6 +133,9 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect(Math.abs(clip.durationSec - 20.9)).toBeLessThanOrEqual(0.1);
     expect(good!.sizeBytes).toBeGreaterThan(0);
     expect(sources.get(source.id).hasFrame).toBe(true);
+    // The clip now waits for review in the gallery's Clips tab.
+    expect(clips.list().map((c) => [c.id, c.title, c.status, c.vodId])).toEqual([[good!.clipId, "Good one", "pending", vod.id]]);
+    expect(clips.filePath(good!.clipId!)).toBe(join(mediaDir, "clips", `pick-${good!.id}.mp4`));
     expect((await readdir(join(mediaDir, "clips"))).sort()).toEqual([`pick-${good!.id}.jpg`, `pick-${good!.id}.mp4`]);
     expect(await readdir(join(mediaDir, "frames"))).toEqual([`source-${source.id}.jpg`]);
     // Section downloads, audio and captions lived only in the jobs' temp folders.

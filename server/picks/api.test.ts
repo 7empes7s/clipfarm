@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import { campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
 import { openDb } from "../db/index.js";
+import { ClipsRepo } from "../clips/repo.js";
 import { JobQueue } from "../jobs/queue.js";
+import { FakePostingService } from "../publish/fake.js";
+import { Publisher } from "../publish/publisher.js";
+import { PostsRepo } from "../publish/repo.js";
 import { NO_FLAGS } from "../pipeline/picks/types.js";
 import { SourcesRepo } from "../sources/repo.js";
 import { VodsRepo } from "../vods/repo.js";
@@ -18,7 +22,10 @@ function setup() {
   const vods = new VodsRepo(db);
   const picks = new PicksRepo(db);
   const queue = new JobQueue(db, { handlers: {} });
-  return { sources, vods, picks, app: createApp({ sources, vods, picks, queue }) };
+  const clips = new ClipsRepo(db);
+  const posts = new PostsRepo(db);
+  const publisher = new Publisher({ sources, clips, posts, service: new FakePostingService() });
+  return { sources, vods, picks, clips, app: createApp({ sources, vods, picks, queue, clips, posts, publisher }) };
 }
 
 describe("face cam API", () => {
@@ -63,7 +70,7 @@ describe("picks API", () => {
 
 describe("clip files", () => {
   it("serves a rendered clip even when the media folder sits under a dot-folder", async () => {
-    const { sources, vods, picks, app } = setup();
+    const { sources, vods, picks, clips, app } = setup();
     const dir = await mkdtemp(join(tmpdir(), "clipfarm-api-"));
     try {
       const media = join(dir, ".hidden", "media");
@@ -76,7 +83,10 @@ describe("clip files", () => {
         { startSec: 1, endSec: 30, title: "T", hook: "", score: 1, reason: "", flags: NO_FLAGS, dropReason: null,
           layout: "center", costUsd: 0, steps: [] },
       ]);
-      picks.saveRender(p!.id, { filePath: join(media, "a.mp4"), thumbPath: join(media, "a.jpg"), sizeBytes: 5, durationSec: 29, steps: [] });
+      const clip = clips.create({ sourceId: s.id, vodId: v.id, title: "T", filePath: join(media, "a.mp4"), durationSec: 29 });
+      picks.saveRender(p!.id, {
+        filePath: join(media, "a.mp4"), thumbPath: join(media, "a.jpg"), sizeBytes: 5, durationSec: 29, steps: [], clipId: clip.id,
+      });
       const res = await request(app).get(`/api/picks/${p!.id}/video`);
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toBe("video/mp4");

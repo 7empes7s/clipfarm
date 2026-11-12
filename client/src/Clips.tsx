@@ -20,17 +20,17 @@ export function Clips({ picks }: { picks: Pick[] }) {
   if (picks.length === 0) return null;
 
   return (
-    <div className="clips" data-testid="clips">
+    <div className="picks" data-testid="picks">
       <h4>
         {kept.length} {kept.length === 1 ? "clip" : "clips"}
       </h4>
       {kept.length > 0 && (
-        <ul className="clip-grid">
+        <ul className="pick-grid">
           {kept.map((p) => (
-            <li key={p.id} className={`clip clip-${p.status}`} data-testid="clip">
+            <li key={p.id} className={`pick pick-${p.status}`} data-testid="pick">
               <button
                 type="button"
-                className="clip-frame"
+                className="pick-frame"
                 disabled={!p.videoUrl}
                 aria-label={
                   p.videoUrl
@@ -40,11 +40,11 @@ export function Clips({ picks }: { picks: Pick[] }) {
                 onClick={() => setPlaying(p)}
               >
                 {p.thumbUrl ? <img src={p.thumbUrl} alt="" loading="lazy" /> : <span>{STATUS_LABEL[p.status]}</span>}
-                <span className="clip-score" title="How likely viewers keep watching (0-100)">
+                <span className="pick-score" title="How likely viewers keep watching (0-100)">
                   {Math.round(p.score)}
                 </span>
               </button>
-              <div className="clip-title">{p.title}</div>
+              <div className="pick-title">{p.title}</div>
               <div className="meta">
                 <span>{clock(p.endSec - p.startSec)}</span>
                 {p.sizeBytes !== null && <span>{megabytes(p.sizeBytes)}</span>}
@@ -60,7 +60,7 @@ export function Clips({ picks }: { picks: Pick[] }) {
           <ul>
             {left.map((p) => (
               <li key={p.id}>
-                <span className="clip-title">{p.title || `Moment at ${clock(p.startSec)}`}</span>{" "}
+                <span className="pick-title">{p.title || `Moment at ${clock(p.startSec)}`}</span>{" "}
                 <span className="hint">{p.dropReason}</span>
               </li>
             ))}
@@ -89,7 +89,7 @@ function ClipPlayer({ pick, onClose }: { pick: Pick; onClose: () => void }) {
           </button>
         </header>
         <video className="player" src={pick.videoUrl ?? undefined} controls autoPlay playsInline />
-        <dl className="stub clip-facts">
+        <dl className="stub pick-facts">
           <div className="wide">
             <dt>Why this one</dt>
             <dd>{pick.reason}</dd>

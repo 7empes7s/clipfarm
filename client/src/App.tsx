@@ -3,6 +3,8 @@ import type { Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
+import { ClipsTab } from "./ClipsTab";
+import { StatsTab } from "./StatsTab";
 import { Clips } from "./Clips";
 import { FaceCamEditor } from "./FaceCamEditor";
 import { clock, shortDate, usd } from "./format";
@@ -28,7 +30,20 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
   cancelled: "Cancelled",
 };
 
+const TABS = [
+  { id: "campaigns", label: "Campaigns" },
+  { id: "clips", label: "Clips" },
+  { id: "stats", label: "Stats" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
+
+function tabFromHash(): Tab {
+  const h = window.location.hash.slice(1);
+  return TABS.some((t) => t.id === h) ? (h as Tab) : "campaigns";
+}
+
 export function App() {
+  const [tab, setTab] = useState<Tab>(tabFromHash);
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -62,6 +77,12 @@ export function App() {
 
   const closeForm = useCallback(() => setFormOpen(false), []);
 
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   return (
     <div className="page">
       <header className="masthead">
@@ -72,51 +93,66 @@ export function App() {
         <p>Streams in, vertical clips out. Only from creators who said yes.</p>
       </header>
 
+      <nav className="tabs" aria-label="Sections">
+        {TABS.map((t) => (
+          <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
+            {t.label}
+          </a>
+        ))}
+      </nav>
+
       {loadError && (
         <p className="error" role="alert">
           Could not reach the server: {loadError}
         </p>
       )}
 
-      <section aria-labelledby="campaigns-title">
-        <div className="section-head">
-          <h2 id="campaigns-title">Campaigns</h2>
-          <button type="button" className="primary" onClick={() => setFormOpen(true)}>
-            Add a campaign
-          </button>
-        </div>
-        {sources.length === 0 ? (
-          <p className="empty">
-            No campaigns yet. Add one from a clipping program (like Whop Content Rewards) before adding any stream.
-          </p>
-        ) : (
-          <ul className="stack">
-            {sources.map((s) => (
-              <SourceCard
-                key={s.id}
-                source={s}
-                vods={vods.filter((v) => v.sourceId === s.id)}
-                picks={picks}
-                onChange={refresh}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+      {tab === "clips" && <ClipsTab sources={sources} />}
+      {tab === "stats" && <StatsTab />}
 
-      <section aria-labelledby="jobs-title">
-        <h2 id="jobs-title">Work queue</h2>
-        <p className="hint">One job at a time, so the server stays light.</p>
-        {jobs.length === 0 ? (
-          <p className="empty">Nothing running. Add a stream link to a campaign to start.</p>
-        ) : (
-          <ul className="jobs">
-            {jobs.map((j) => (
-              <JobRow key={j.id} job={j} vod={vods.find((v) => v.id === j.vodId)} onChange={refresh} />
-            ))}
-          </ul>
-        )}
-      </section>
+      {tab === "campaigns" && (
+        <section aria-labelledby="campaigns-title">
+          <div className="section-head">
+            <h2 id="campaigns-title">Campaigns</h2>
+            <button type="button" className="primary" onClick={() => setFormOpen(true)}>
+              Add a campaign
+            </button>
+          </div>
+          {sources.length === 0 ? (
+            <p className="empty">
+              No campaigns yet. Add one from a clipping program (like Whop Content Rewards) before adding any stream.
+            </p>
+          ) : (
+            <ul className="stack">
+              {sources.map((s) => (
+                <SourceCard
+                  key={s.id}
+                  source={s}
+                  vods={vods.filter((v) => v.sourceId === s.id)}
+                  picks={picks}
+                  onChange={refresh}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {tab === "campaigns" && (
+        <section aria-labelledby="jobs-title">
+          <h2 id="jobs-title">Work queue</h2>
+          <p className="hint">One job at a time, so the server stays light.</p>
+          {jobs.length === 0 ? (
+            <p className="empty">Nothing running. Add a stream link to a campaign to start.</p>
+          ) : (
+            <ul className="jobs">
+              {jobs.map((j) => (
+                <JobRow key={j.id} job={j} vod={vods.find((v) => v.id === j.vodId)} onChange={refresh} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {formOpen && (
         <CampaignForm

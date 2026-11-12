@@ -18,7 +18,7 @@ test("a VOD becomes a ranked 9:16 clip to play, and the face cam can be marked (
   await campaign.getByLabel("Stream or video link").fill("https://www.twitch.tv/videos/777");
   await campaign.getByRole("button", { name: "Add", exact: true }).click();
 
-  const clip = campaign.getByTestId("clip").first();
+  const clip = campaign.getByTestId("pick").first();
   const play = clip.getByRole("button", { name: /^Play / });
   await expect(play).toBeVisible({ timeout: 90_000 });
   await expect(clip.locator("img")).toBeVisible();
@@ -44,6 +44,11 @@ test("a VOD becomes a ranked 9:16 clip to play, and the face cam can be marked (
   await editor.getByRole("button", { name: "Save face cam" }).click();
   await expect(editor).toBeHidden();
   await expect(campaign.getByText("Face cam set: clips show it on top.")).toBeVisible();
+
+  // The rendered clip waits for review in the Clips tab.
+  await page.getByRole("link", { name: "Clips" }).click();
+  const review = page.getByTestId("clip").filter({ hasText: "Clip Streamer moment 1" });
+  await expect(review.getByText("To review")).toBeVisible();
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);

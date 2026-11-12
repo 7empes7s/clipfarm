@@ -41,7 +41,7 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `TRANSCRIBER` | `openai` | `openai` or `fake` |
 | `DOWNLOADER` | `yt-dlp` | `yt-dlp` or `fake` |
 | `YT_DLP_BIN` | `yt-dlp` | Path to the yt-dlp binary |
-| `CLIPFARM_FAKES` | – | `1` uses all the fakes (demos, e2e) |
+| `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, picker, posting) and adds a demo-clip button for e2e |
 | `FAKE_VOD_SEC` | `10` | Length of the fake downloader's test clip |
 | `PICKER` | `llm` | `llm` or `fake` (loudest moments, no AI: demos only, it cannot flag spoilers) |
 | `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the picking model. Without one, picking jobs fail with a clear message |
@@ -51,6 +51,49 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `MAX_PICKS` | `15` | Most clips kept per VOD |
 | `MEDIA_DIR` | `./media` | Where final clips, thumbnails and creator frames are kept (never committed) |
 | `RENDER_PRESET` | `veryfast` | x264 preset for clips |
+| `POSTIZ_URL` | – | Address you open Postiz at, e.g. `https://postiz.techinsiderbytes.com` |
+| `POSTIZ_API_KEY` | – | From Postiz > Settings > Public API |
+| `UPLOAD_POST_API_KEY` | – | Upload-Post API key (instead of Postiz) |
+| `UPLOAD_POST_USER` | – | The Upload-Post profile that holds the accounts |
+| `UPLOAD_POST_PLATFORMS` | `tiktok,youtube,instagram` | Platforms connected on that profile |
+| `POSTING_SERVICE` | auto | `postiz`, `upload-post` or `none`; only needed when both are set |
+| `POSTING_REFRESH_MINUTES` | `60` | How often post links and views are read (5 or more) |
+
+## Posting (Postiz or Upload-Post)
+
+clipfarm does not post to each platform itself. A posting service holds the connected accounts
+(YouTube, TikTok, Instagram, X) and does the posting and scheduling; clipfarm uploads the
+approved MP4 with its caption and keeps what is ours: the permission gate, spacing, Whop
+submissions and earnings.
+
+**Postiz** (self-hosted, see `ops/postiz/RUNBOOK.md` to install it):
+
+1. In Postiz, connect the accounts, then copy the key from Settings > Public API.
+2. Set `POSTIZ_URL` and `POSTIZ_API_KEY` on the clipfarm server and restart it.
+3. Check the link with `npm run postiz:check`, then open Clips: it says "Posting through Postiz".
+
+Only Postiz's public HTTP API is called, so none of its (AGPL) code is part of clipfarm. Its API
+allows about 30 calls an hour, so views are read hourly and at most 20 posts per refresh.
+
+**Upload-Post** (hosted, paid): set `UPLOAD_POST_API_KEY`, `UPLOAD_POST_USER` (the profile name)
+and `UPLOAD_POST_PLATFORMS`. Its daily caps (YouTube 10, TikTok 15, Instagram 50) are shown when
+posting and enforced before anything is sent.
+
+Without either, posting says what to set, and **Export** still works: MP4, caption (credit, the
+brief's links and hashtags) and a Share button for posting by hand from the phone.
+
+Rules the server enforces before calling any service: the clip is approved, its creator has an
+active permission record whose brief allows each platform (and is still in force at the post's
+time), the service's daily cap is not passed, and each account keeps the spacing set in Clips >
+"Spacing between posts" (default 3 a day, 90 minutes apart: busy accounts move to the next free
+time). TikTok and YouTube keep API posts private until the posting app passes their review, and
+Instagram needs a Business or Creator account.
+
+Tracking: every post stores clip, platform, account, link, time, permission record and campaign.
+Views come from the service on a timer, or by hand. "Mark sent to Whop" records the submission
+(Whop has no clipper API). Stats shows posts, views and estimated earnings (views × pay per 1,000,
+counted once a post reaches the campaign's minimum views) per campaign and platform, plus cost per
+approved clip.
 
 ## Checks
 
@@ -61,7 +104,8 @@ npm test           # Vitest: unit tests + a real-ffmpeg fixture test on a genera
 npm run test:e2e   # Playwright at 390 px against the built app, with fakes
 ```
 
-No test touches the network or a paid API: yt-dlp and OpenAI are faked. Sample media is generated
+No test touches the network or a paid API: yt-dlp, OpenAI, Postiz and Upload-Post are faked
+(adapter tests use fixtures of their documented answers). Sample media is generated
 by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is committed.
 
 ## How it works
@@ -94,7 +138,10 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   1080×1920, 30 fps, -14 LUFS, plus a thumbnail, in `media/clips/`. The section and captions are
   deleted with the job's temp folder. The server log prints time per step and cost per clip, and
   the gallery shows them on each clip.
-- `client/`: the phone-first gallery (React + Vite).
+- `server/publish/`: a `PostingService` interface with Postiz, Upload-Post and fake adapters,
+  plus pure planners for the permission/brief gate, spacing, captions and earnings.
+- `server/clips/`: clips with approve/reject; each rendered pick becomes one, waiting for review.
+- `client/`: the phone-first gallery (React + Vite): Campaigns, Clips and Stats tabs.
 - `shared/`: types used by both.
 
 ## Manual check with a real link (not run in CI)

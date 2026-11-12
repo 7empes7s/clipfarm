@@ -1,0 +1,256 @@
+import type { ExportPack, Platform, Post, PostingAccount, PostingInfo, PostingRules, Stats, StatsRow } from "../../shared/types.js";
+import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types.js";
+import type { ClipsRepo } from "../clips/repo.js";
+import { ValidationError } from "../errors.js";
+import { requireActivePermission } from "../sources/permission.js";
+import type { SourcesRepo } from "../sources/repo.js";
+import { buildCaption } from "./caption.js";
+import { assertCanPost } from "./gate.js";
+import type { PostsRepo } from "./repo.js";
+import { nextFreeSlot } from "./spacing.js";
+import type { PostingService, PublishItem } from "./types.js";
+
+/** Platform limits in plain words, shown next to the post button. */
+export const PLATFORM_NOTES = [
+  "TikTok and YouTube keep posts made through an API private until the posting app passes their review (Postiz's own app or ours). Check that the first post is public.",
+  "Instagram posting needs a Business or Creator account linked to a Facebook page.",
+  "X allows 280 characters, so long titles are shortened; credit, links and hashtags stay.",
+];
+
+export function slug(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "clip"
+  );
+}
+
+export function parseRules(body: unknown): PostingRules {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const maxPerDay = Number(b.maxPerDay);
+  const minGapMinutes = Number(b.minGapMinutes);
+  if (!Number.isInteger(maxPerDay) || maxPerDay < 1 || maxPerDay > 50) {
+    throw new ValidationError("Posts per account per day must be a whole number from 1 to 50.");
+  }
+  if (!Number.isInteger(minGapMinutes) || minGapMinutes < 0 || minGapMinutes > 1440) {
+    throw new ValidationError("Minutes between posts must be a whole number from 0 to 1440.");
+  }
+  return { maxPerDay, minGapMinutes };
+}
+
+export interface PublisherDeps {
+  sources: SourcesRepo;
+  clips: ClipsRepo;
+  posts: PostsRepo;
+  service: PostingService;
+  now?: () => Date;
+}
+
+export class Publisher {
+  private now: () => Date;
+  private accounts: PostingAccount[] | null = null;
+  lastRefreshError: string | null = null;
+
+  constructor(private deps: PublisherDeps) {
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  get service(): PostingService {
+    return this.deps.service;
+  }
+
+  private async loadAccounts(): Promise<PostingAccount[]> {
+    this.accounts = await this.deps.service.listAccounts();
+    return this.accounts;
+  }
+
+  async info(): Promise<PostingInfo> {
+    const { service, posts } = this.deps;
+    let accounts: PostingAccount[] = [];
+    let accountsError: string | null = null;
+    try {
+      accounts = await this.loadAccounts();
+    } catch (err) {
+      accountsError = (err as Error).message;
+    }
+    const usedToday: Partial<Record<Platform, number>> = {};
+    for (const p of Object.keys(service.dailyCaps) as Platform[]) usedToday[p] = posts.countToday(service.name, p);
+    return {
+      service: service.name,
+      label: service.label,
+      accounts,
+      accountsError,
+      dailyCaps: service.dailyCaps,
+      usedToday,
+      rules: posts.rules(),
+      notes: PLATFORM_NOTES,
+    };
+  }
+
+  /**
+   * Posts an approved clip on the chosen accounts, now or at `when`. Every check (approval,
+   * permission, brief, the permission's end date, daily caps) runs before the service is asked
+   * to post; posts on a busy account are moved to its next free slot.
+   */
+  async post(clipId: number, accountIds: string[], when: Date | null): Promise<Post[]> {
+    const { clips, sources, posts, service } = this.deps;
+    if (accountIds.length === 0) throw new ValidationError("Pick at least one account.");
+    if (new Set(accountIds).size !== accountIds.length) throw new ValidationError("Each account can be picked once.");
+    const now = this.now();
+    if (when && when.getTime() < now.getTime() - 60_000) throw new ValidationError("Pick a time in the future.");
+
+    const clip = clips.get(clipId);
+    const source = sources.get(clip.sourceId);
+    // First pass without platforms: refuses missing or expired records before any service call.
+    assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, platforms: [], now });
+
+    const known = this.accounts ?? (await this.loadAccounts());
+    const chosen = accountIds.map((id) => {
+      const account = known.find((a) => a.id === id);
+      if (!account) throw new ValidationError("One of the accounts is no longer connected. Reload and pick again.");
+      if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
+      return account;
+    });
+    assertCanPost({
+      clipStatus: clip.status,
+      creatorName: source.creatorName,
+      permissions: source.permissions,
+      platforms: chosen.map((a) => a.platform),
+      now,
+    });
+
+    for (const platform of PLATFORMS) {
+      const cap = service.dailyCaps[platform];
+      const wanted = chosen.filter((a) => a.platform === platform).length;
+      if (cap === undefined || wanted === 0) continue;
+      const used = posts.countToday(service.name, platform);
+      if (used + wanted > cap) {
+        throw new ValidationError(
+          `${service.label} allows ${cap} ${PLATFORM_LABELS[platform]} post${cap === 1 ? "" : "s"} a day and ${used} already went out today. Try tomorrow, or use Export to post by hand.`,
+        );
+      }
+    }
+
+    const rules = posts.rules();
+    const wantedAt = when ?? now;
+    const planned = chosen.map((account) => {
+      const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, rules);
+      // The covering permission must still be in force when the post goes out.
+      const permission = requireActivePermission(source.creatorName, source.permissions, at, account.platform);
+      const item: PublishItem = {
+        account,
+        title: clip.title,
+        caption: buildCaption({
+          title: clip.title,
+          creatorName: source.creatorName,
+          channelUrl: source.channelUrls[0] ?? null,
+          briefRules: permission.briefRules,
+          platform: account.platform,
+        }),
+        when: when === null && at.getTime() === now.getTime() ? null : at,
+        paidPromotion: permission.kind === "whop-campaign",
+      };
+      return { item, permission, at };
+    });
+
+    const results = await service.publish(
+      { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
+      planned.map((p) => p.item),
+    );
+    return planned.map(({ item, permission, at }) => {
+      const r = results.find((x) => x.accountId === item.account.id);
+      return posts.insert({
+        clipId: clip.id,
+        permissionId: permission.id,
+        platform: item.account.platform,
+        accountId: item.account.id,
+        accountName: item.account.name,
+        service: service.name,
+        externalId: r?.externalId ?? null,
+        status: r?.status ?? "failed",
+        url: r?.url ?? null,
+        error: r ? r.error : `${service.label} did not answer for this account.`,
+        caption: item.caption,
+        scheduledAt: at.toISOString(),
+        postedAt: r?.postedAt ?? null,
+      });
+    });
+  }
+
+  /** Reads post status, links and views from the service. Errors are kept to show, never thrown. */
+  async refresh(): Promise<number> {
+    const { posts, service } = this.deps;
+    const tracked = posts.tracked(service.name);
+    if (tracked.length === 0) return 0;
+    try {
+      const updates = await service.refresh(tracked);
+      for (const u of updates) posts.apply(service.name, u);
+      this.lastRefreshError = null;
+      return updates.length;
+    } catch (err) {
+      this.lastRefreshError = (err as Error).message;
+      return 0;
+    }
+  }
+
+  /** MP4 + caption to post by hand; held to the same permission and brief as posting. */
+  exportPack(clipId: number, platform: Platform): ExportPack {
+    const { clips, sources } = this.deps;
+    const clip = clips.get(clipId);
+    const source = sources.get(clip.sourceId);
+    const covering = assertCanPost({
+      clipStatus: clip.status,
+      creatorName: source.creatorName,
+      permissions: source.permissions,
+      platforms: [platform],
+      now: this.now(),
+    });
+    return {
+      clipId: clip.id,
+      platform,
+      fileName: `${slug(clip.title)}.mp4`,
+      videoUrl: `/api/clips/${clip.id}/video?download=1`,
+      caption: buildCaption({
+        title: clip.title,
+        creatorName: source.creatorName,
+        channelUrl: source.channelUrls[0] ?? null,
+        briefRules: covering[platform]!.briefRules,
+        platform,
+      }),
+    };
+  }
+
+  stats(): Stats {
+    const { posts, clips, sources } = this.deps;
+    const all = posts.list().filter((p) => p.status !== "failed");
+    const group = (keyOf: (p: Post) => string, labelOf: (p: Post) => string): StatsRow[] => {
+      const rows = new Map<string, StatsRow>();
+      for (const p of all) {
+        const key = keyOf(p);
+        const row = rows.get(key) ?? { key, label: labelOf(p), posts: 0, views: 0, estimatedEarningsUsd: 0 };
+        row.posts++;
+        row.views += p.views ?? 0;
+        row.estimatedEarningsUsd = Math.round((row.estimatedEarningsUsd + p.estimatedEarningsUsd) * 100) / 100;
+        rows.set(key, row);
+      }
+      return [...rows.values()].sort((a, b) => a.label.localeCompare(b.label));
+    };
+    const campaignLabel = (p: Post) => {
+      if (p.campaignUrl) return `${p.creatorName} · ${new URL(p.campaignUrl).hostname.replace(/^www\./, "")}`;
+      const perm = sources.get(p.sourceId).permissions.find((x) => x.id === p.permissionId);
+      return `${p.creatorName} · ${perm ? PERMISSION_KIND_LABELS[perm.kind] : "campaign"}`;
+    };
+    const approvedClips = clips.countApproved();
+    return {
+      posts: all.length,
+      views: all.reduce((s, p) => s + (p.views ?? 0), 0),
+      estimatedEarningsUsd: Math.round(all.reduce((s, p) => s + p.estimatedEarningsUsd, 0) * 100) / 100,
+      approvedClips,
+      costPerApprovedClipUsd: approvedClips ? Math.round((posts.spendUsd() / approvedClips) * 10000) / 10000 : null,
+      byCampaign: group((p) => String(p.permissionId), campaignLabel),
+      byPlatform: group((p) => p.platform, (p) => PLATFORM_LABELS[p.platform]),
+    };
+  }
+}

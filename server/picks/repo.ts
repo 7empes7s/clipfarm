@@ -24,6 +24,7 @@ interface PickRow {
   thumb_path: string | null;
   size_bytes: number | null;
   duration_sec: number | null;
+  clip_id: number | null;
   created_at: string;
 }
 
@@ -47,6 +48,8 @@ export interface RenderOutput {
   sizeBytes: number;
   durationSec: number;
   steps: StepTime[];
+  /** The review/posting clip made from this render. */
+  clipId: number;
 }
 
 function toPick(r: PickRow): Pick {
@@ -73,6 +76,7 @@ function toPick(r: PickRow): Pick {
     durationSec: r.duration_sec,
     videoUrl: rendered ? `/api/picks/${r.id}/video` : null,
     thumbUrl: r.thumb_path !== null ? `/api/picks/${r.id}/thumb` : null,
+    clipId: r.clip_id,
     createdAt: r.created_at,
   };
 }
@@ -140,9 +144,9 @@ export class PicksRepo {
     this.db
       .prepare(
         `UPDATE picks SET status = 'rendered', error = NULL, file_path = ?, thumb_path = ?, size_bytes = ?,
-           duration_sec = ?, steps = ? WHERE id = ?`,
+           duration_sec = ?, steps = ?, clip_id = ? WHERE id = ?`,
       )
-      .run(out.filePath, out.thumbPath, out.sizeBytes, out.durationSec, JSON.stringify(out.steps), id);
+      .run(out.filePath, out.thumbPath, out.sizeBytes, out.durationSec, JSON.stringify(out.steps), out.clipId, id);
     return this.get(id);
   }
 }

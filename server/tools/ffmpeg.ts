@@ -60,12 +60,7 @@ export async function extractAudio(
 }
 
 /** Generates a sample clip (ffmpeg test pattern + sine tone). Used by tests and the fake downloader. */
-export async function generateSample(
-  output: string,
-  durationSec = 10,
-  signal?: AbortSignal,
-  size = "640x360",
-): Promise<void> {
+export async function generateSample(output: string, durationSec = 10, signal?: AbortSignal, size = "640x360"): Promise<void> {
   await run(
     "ffmpeg",
     [
