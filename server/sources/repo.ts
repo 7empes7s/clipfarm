@@ -1,5 +1,5 @@
 import type { Db } from "../db/index.js";
-import type { NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
+import type { FaceCam, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
 import { PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { permissionState, requireActivePermission } from "./permission.js";
@@ -22,6 +22,7 @@ interface SourceRow {
   creator_name: string;
   channel_urls: string;
   banned_content: string;
+  face_cam: string | null;
   created_at: string;
 }
 
@@ -105,6 +106,22 @@ export function parseNewSource(body: unknown): NewSourceInput {
   };
 }
 
+/** Checks a face cam rectangle (fractions of the frame) and rounds it; throws a plain ValidationError. */
+export function parseFaceCam(body: unknown): FaceCam {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const [x, y, w, h] = [b.x, b.y, b.w, b.h].map((v) => (typeof v === "number" && Number.isFinite(v) ? v : NaN)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+  if ([x, y, w, h].some(Number.isNaN)) throw new ValidationError("Drag a box around the face cam first.");
+  const round = (v: number) => Math.round(v * 10000) / 10000;
+  if (x < 0 || y < 0 || x + w > 1.0001 || y + h > 1.0001) throw new ValidationError("The face cam box must stay inside the frame.");
+  if (w < 0.05 || h < 0.05) throw new ValidationError("The face cam box is too small. Drag a bigger box.");
+  return { x: round(x), y: round(y), w: round(Math.min(w, 1 - x)), h: round(Math.min(h, 1 - y)) };
+}
+
 export class SourcesRepo {
   constructor(
     private db: Db,
@@ -155,6 +172,12 @@ export class SourcesRepo {
     return this.hydrate(row);
   }
 
+  setFaceCam(id: number, faceCam: FaceCam | null): Source {
+    this.get(id);
+    this.db.prepare("UPDATE sources SET face_cam = ? WHERE id = ?").run(faceCam ? JSON.stringify(faceCam) : null, id);
+    return this.get(id);
+  }
+
   /** Throws a PermissionError unless the source may be used right now (optionally on one platform). */
   assertCanUse(sourceId: number, platform?: Platform): Permission {
     const source = this.get(sourceId);
@@ -170,6 +193,7 @@ export class SourcesRepo {
       creatorName: r.creator_name,
       channelUrls: JSON.parse(r.channel_urls) as string[],
       bannedContent: r.banned_content,
+      faceCam: r.face_cam ? (JSON.parse(r.face_cam) as FaceCam) : null,
       createdAt: r.created_at,
       permissions,
       permissionState: permissionState(permissions, this.now()),
