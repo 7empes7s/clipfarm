@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { Permission } from "../../shared/types.js";
 import { campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
+import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { FakePostingService } from "../publish/fake.js";
+import { Publisher } from "../publish/publisher.js";
+import { PostsRepo } from "../publish/repo.js";
 import { VodsRepo } from "../vods/repo.js";
 import { PermissionError, permissionState, requireActivePermission } from "./permission.js";
 import { parseNewSource, SourcesRepo } from "./repo.js";
@@ -81,7 +85,10 @@ describe("POST /api/vods (server-side permission gate)", () => {
     // No handler runs: the queue is never started, we only check what gets enqueued.
     const queue = new JobQueue(db, { handlers: { ingest: async () => {} } });
     queue.stop();
-    return { db, sources, app: createApp({ sources, vods, queue }) };
+    const clips = new ClipsRepo(db, () => NOW);
+    const posts = new PostsRepo(db, () => NOW);
+    const publisher = new Publisher({ sources, clips, posts, service: new FakePostingService(), now: () => NOW });
+    return { db, sources, app: createApp({ sources, vods, queue, clips, posts, publisher }) };
   }
 
   it("refuses a source without any permission record, with a plain error", async () => {

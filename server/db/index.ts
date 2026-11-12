@@ -64,6 +64,44 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX jobs_status ON jobs(status, id);
   `,
+  `
+  CREATE TABLE clips (
+    id INTEGER PRIMARY KEY,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    vod_id INTEGER REFERENCES vods(id),
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    duration_sec REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE posts (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id),
+    permission_id INTEGER NOT NULL REFERENCES permissions(id),
+    platform TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    service TEXT NOT NULL,
+    external_id TEXT,
+    status TEXT NOT NULL,
+    url TEXT,
+    error TEXT,
+    caption TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    posted_at TEXT,
+    views INTEGER,
+    views_updated_at TEXT,
+    views_source TEXT,
+    whop_submitted_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX posts_account ON posts(account_id, scheduled_at);
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

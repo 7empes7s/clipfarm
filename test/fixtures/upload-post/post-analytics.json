@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "post": {
+    "request_id": "req-1",
+    "profile_username": "gtavimoments",
+    "post_title": "He actually landed the jump",
+    "post_caption": "He actually landed the jump",
+    "media_type": "video",
+    "upload_timestamp": "2026-11-20 10:00:03"
+  },
+  "platforms": {
+    "youtube": {
+      "success": true,
+      "platform_post_id": "dQw4w9WgXcQ",
+      "post_url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+      "post_metrics": { "views": 5200, "likes": 120, "comments": 8, "favorites": 3 },
+      "post_metrics_source": "platform_api"
+    },
+    "tiktok": {
+      "success": true,
+      "platform_post_id": "7123456789",
+      "post_url": "https://tiktok.com/@user/video/7123456789",
+      "post_metrics_error": "TikTok video not found (ID: 7123456789). The token may need to be refreshed."
+    }
+  }
+}

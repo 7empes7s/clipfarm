@@ -1,0 +1,7 @@
+[
+  { "id": "int-yt", "name": "GTA VI Moments", "identifier": "youtube", "picture": "https://uploads.postiz.com/a.jpg", "disabled": false, "profile": "gtavimoments", "customer": null },
+  { "id": "int-tt", "name": "gtavimoments", "identifier": "tiktok", "picture": "https://uploads.postiz.com/b.jpg", "disabled": false, "profile": "gtavimoments", "customer": null },
+  { "id": "int-ig", "name": "gtavi.moments", "identifier": "instagram-standalone", "picture": "https://uploads.postiz.com/c.jpg", "disabled": true, "profile": "gtavi.moments", "customer": null },
+  { "id": "int-x", "name": "GTA VI Moments", "identifier": "x", "picture": "https://uploads.postiz.com/d.jpg", "disabled": false, "profile": "gtavimoments", "customer": null },
+  { "id": "int-li", "name": "Company page", "identifier": "linkedin-page", "picture": "https://uploads.postiz.com/e.jpg", "disabled": false, "profile": "co", "customer": null }
+]

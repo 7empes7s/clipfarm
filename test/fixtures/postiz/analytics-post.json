@@ -1,0 +1,5 @@
+[
+  { "label": "Likes", "data": [{ "total": "150", "date": "2026-11-19" }, { "total": "175", "date": "2026-11-20" }], "percentageChange": 16.7 },
+  { "label": "Views", "data": [{ "total": "4100", "date": "2026-11-19" }, { "total": "12500", "date": "2026-11-20" }], "percentageChange": 204.9 },
+  { "label": "Comments", "data": [{ "total": "25", "date": "2026-11-19" }], "percentageChange": 0 }
+]

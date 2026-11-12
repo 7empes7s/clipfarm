@@ -1,0 +1,32 @@
+{
+  "posts": [
+    {
+      "id": "post-yt-1",
+      "content": "He actually landed the jump",
+      "settings": { "__type": "youtube" },
+      "publishDate": "2026-11-19T12:00:05.000Z",
+      "releaseURL": "https://www.youtube.com/shorts/abc123",
+      "state": "PUBLISHED",
+      "error": null,
+      "integration": { "id": "int-yt", "providerIdentifier": "youtube", "name": "GTA VI Moments", "picture": "" }
+    },
+    {
+      "id": "post-tt-1",
+      "content": "He actually landed the jump",
+      "settings": { "content_posting_method": "DIRECT_POST" },
+      "publishDate": "2026-11-19T12:00:05.000Z",
+      "state": "ERROR",
+      "error": "Account banned from posting, please check TikTok account status",
+      "integration": { "id": "int-tt", "providerIdentifier": "tiktok", "name": "gtavimoments", "picture": "" }
+    },
+    {
+      "id": "post-x-1",
+      "content": "Later",
+      "settings": { "__type": "x" },
+      "publishDate": "2026-11-20T09:00:00.000Z",
+      "state": "QUEUE",
+      "error": null,
+      "integration": { "id": "int-x", "providerIdentifier": "x", "name": "GTA VI Moments", "picture": "" }
+    }
+  ]
+}

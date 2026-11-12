@@ -5,12 +5,21 @@ import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
 import type { Transcriber, TranscribeOptions } from "./pipeline/transcript/types.js";
+import type { Platform } from "../shared/types.js";
+import { PLATFORMS } from "../shared/types.js";
+import { FakePostingService, NoPostingService } from "./publish/fake.js";
+import { PostizService } from "./publish/postiz.js";
+import type { PostingService } from "./publish/types.js";
+import { UploadPostService } from "./publish/uploadPost.js";
 
 export interface Config {
   port: number;
   dbFile: string;
   downloader: AudioDownloader;
   transcriber: Transcriber;
+  postingService: PostingService;
+  /** How often post links and views are read from the posting service. */
+  postingRefreshMinutes: number;
 }
 
 /** Reads settings from env. Keys only ever come from env, never from files in the repo. */
@@ -22,7 +31,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbFile: join(dataDir, "clipfarm.db"),
     downloader: fakes || env.DOWNLOADER === "fake" ? new FakeDownloader() : new YtDlpDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     transcriber: fakes || env.TRANSCRIBER === "fake" ? new FakeTranscriber() : openAiOrMissingKey(env.OPENAI_API_KEY),
+    postingService: fakes ? new FakePostingService() : postingService(env),
+    postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
   };
+}
+
+/** Postiz or Upload-Post from env (POSTING_SERVICE picks when both are set); export only without keys. */
+function postingService(env: NodeJS.ProcessEnv): PostingService {
+  const postiz = env.POSTIZ_URL && env.POSTIZ_API_KEY ? { url: env.POSTIZ_URL, apiKey: env.POSTIZ_API_KEY } : null;
+  const uploadPost =
+    env.UPLOAD_POST_API_KEY && env.UPLOAD_POST_USER
+      ? {
+          apiKey: env.UPLOAD_POST_API_KEY,
+          user: env.UPLOAD_POST_USER,
+          platforms: [...new Set((env.UPLOAD_POST_PLATFORMS ?? "tiktok,youtube,instagram").split(",").map((x) => x.trim()))].filter(
+            (p): p is Platform => PLATFORMS.includes(p as Platform),
+          ),
+        }
+      : null;
+  const choice = env.POSTING_SERVICE ?? (postiz ? "postiz" : uploadPost ? "upload-post" : "none");
+  if (choice === "fake") return new FakePostingService();
+  if (choice === "postiz" && postiz) return new PostizService(postiz);
+  if (choice === "upload-post" && uploadPost) return new UploadPostService(uploadPost);
+  return new NoPostingService();
 }
 
 function openAiOrMissingKey(apiKey: string | undefined): Transcriber {
