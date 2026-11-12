@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Runs after ingest.spec.ts (which needs an empty campaign list). The fake posting service stands in
 // for Postiz: no network calls.
-test("approve a clip, post it on three accounts, export it and see it in Stats (390 px)", async ({ page, request }) => {
+test("approve a clip, post it on four accounts, export it and see it in Stats (390 px)", async ({ page, request }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
   const seeded = await request.post("/api/dev/seed-clip");
@@ -26,6 +26,7 @@ test("approve a clip, post it on three accounts, export it and see it in Stats (
   await expect(sheet.getByRole("checkbox", { name: /GTA VI Moments · YouTube Shorts/ })).toBeChecked();
   await expect(sheet.getByRole("checkbox", { name: /gtavimoments · TikTok/ })).toBeChecked();
   await expect(sheet.getByRole("checkbox", { name: /gtavi\.daily · TikTok/ })).toBeChecked();
+  await expect(sheet.getByRole("checkbox", { name: /gtavi\.moments · Instagram Reels/ })).toBeChecked();
   await expect(sheet.getByText(/private until the posting app passes their review/)).toBeVisible();
   await sheet.getByRole("button", { name: "Post now" }).click();
   await expect(sheet).toBeHidden();
@@ -35,8 +36,8 @@ test("approve a clip, post it on three accounts, export it and see it in Stats (
 
   const posts = clip.getByTestId("post");
   // One clip never goes out on two accounts at once: the first posts now, the others follow later.
-  await expect(posts).toHaveCount(3);
-  await expect(posts.filter({ hasText: /Scheduled/ })).toHaveCount(2);
+  await expect(posts).toHaveCount(4);
+  await expect(posts.filter({ hasText: /Scheduled/ })).toHaveCount(3);
   const posted = posts.filter({ hasText: "Posted" });
   await expect(posted).toHaveCount(1);
   await expect(posted.getByRole("link", { name: /^https:\/\/example\.com\// })).toBeVisible();
