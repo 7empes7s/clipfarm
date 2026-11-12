@@ -45,6 +45,7 @@ export function ClipsTab({
   const [posts, setPosts] = useState<Post[]>([]);
   const [info, setInfo] = useState<PostingInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [skippedNote, setSkippedNote] = useState<string | null>(null);
   const [posting, setPosting] = useState<Clip | null>(null);
   const [exporting, setExporting] = useState<Clip | null>(null);
 
@@ -93,6 +94,11 @@ export function ClipsTab({
       {error && (
         <p className="error" role="alert">
           {error}
+        </p>
+      )}
+      {skippedNote && (
+        <p className="hint" role="status">
+          {skippedNote}
         </p>
       )}
       {clips.length === 0 ? (
@@ -152,11 +158,11 @@ export function ClipsTab({
       {posting && info && (
         <PostSheet
           clip={posting}
-          source={sources.find((s) => s.id === posting.sourceId)}
           info={info}
           onClose={closePost}
-          onPosted={() => {
+          onPosted={(skipped) => {
             setPosting(null);
+            setSkippedNote(skipped.length > 0 ? skipped.map((s) => s.reason).join(" ") : null);
             void refresh();
             void api.posting().then(setInfo);
           }}

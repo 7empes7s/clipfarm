@@ -45,7 +45,10 @@ app shell, so it opens without a network; numbers load once it is back.
   the time each took.
 - **Outputs**: every clip with its status, where it was posted, links and views; filters by
   creator, campaign, platform and date; tap ▶ to play.
-- **Accounts**: one card per account connected in the posting service: followers and growth,
+- **Accounts** (Posting accounts): several accounts per platform, each linked once in the posting
+  service by hand and picked up by "Sync accounts". Settings per account: role (main or burner),
+  niche, posts a day and minutes between posts (empty follows the shared spacing), status
+  (healthy, limited or banned, set by hand) and on/off. One card per account: followers and growth,
   views per day, average views per post, top 5 clips and posts in the last 7 days against the
   spacing plan. Stats are read from Postiz (`/analytics/{integration}`, at most 4 accounts per
   read) or Upload-Post (`/analytics/{profile}`, one call) at most every 6 hours and cached, so
@@ -131,7 +134,10 @@ Rules the server enforces before calling any service: the clip is approved, its 
 active permission record whose brief allows each platform (and is still in force at the post's
 time), the service's daily cap is not passed, and each account keeps the spacing set in Clips >
 "Spacing between posts" (default 3 a day, 90 minutes apart: busy accounts move to the next free
-time). TikTok and YouTube keep API posts private until the posting app passes their review, and
+time; an account's own pace from Dashboard > Accounts wins). One clip never goes out on two of our
+accounts at the same time: each next account follows at least its spacing later. An account that
+is switched off or marked banned is left out with a note. When posting, main accounts whose niche
+fits the clip start ticked; burners are picked by hand. TikTok and YouTube keep API posts private until the posting app passes their review, and
 Instagram needs a Business or Creator account.
 
 Tracking: every post stores clip, platform, account, link, time, permission record and campaign.
@@ -231,7 +237,8 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   desktop an "Up next" grid and keys A / R then 1-5 / E / arrows / Z), Approved and Posted
   (posting, export, views, Whop), Sources (campaigns, face cam), Jobs (progress, cancel, try again)
   and Stats, plus the Dashboard. Rejected clips are one tap away from the Inbox.
-- `server/accounts/`: account stats from the posting service, cached in SQLite behind a guard
+- `server/accounts/`: our posting accounts and their settings (`accountsAllowedFor(permission)`
+  says which a permission may post to), account stats from the posting service, cached in SQLite behind a guard
   (how often, how many accounts per read), plus followers typed in by hand.
 - `server/dashboard/`: builds the dashboard from our records and the cached account stats.
 - `shared/`: types used by both, and `metrics.ts` (growth, averages, cost per approved clip, time
