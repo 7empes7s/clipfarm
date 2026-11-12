@@ -14,9 +14,10 @@ export interface ChecklistInput {
 export function buildChecklist(input: ChecklistInput): SetupChecklist {
   const byId = new Map(input.integrations.map((i) => [i.id, i]));
   const ready = (id: IntegrationId) => byId.get(id)?.configured === true && byId.get(id)?.test?.ok === true;
-  // Posting needs one of the two; the others are each needed.
+  // Posting needs one of the two; the others are each needed. OpenAI is not: the local engine
+  // transcribes and picks, and cloud AI is only an optional speed-up.
   const posting: IntegrationId[] = ready("postiz") || ready("upload-post") ? [] : [byId.get("upload-post")?.configured ? "upload-post" : "postiz"];
-  const needed: IntegrationId[] = ["openai", "twitch", "youtube", ...posting];
+  const needed: IntegrationId[] = ["twitch", "youtube", ...posting];
   const open = needed
     .filter((id) => !ready(id))
     .map((id) => `${byId.get(id)?.label ?? id} (${byId.get(id)?.configured ? "not tested" : "not set"})`);

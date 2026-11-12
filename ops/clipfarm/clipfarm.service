@@ -21,11 +21,14 @@ KillMode=mixed
 TimeoutStopSec=30
 
 # Memory: the box is shared (7.6 GB with Postiz and KEEL). The cap covers node plus the one
-# ffmpeg or yt-dlp job that runs at a time. Above MemoryHigh the service is slowed down and
-# pushed to swap; at MemoryMax the biggest process (ffmpeg) is killed.
-MemoryHigh=1280M
-MemoryMax=1536M
-# When ffmpeg is killed for memory, only that job fails (the queue retries it); the server stays up.
+# heavy job that runs at a time: ffmpeg, yt-dlp, the local speech model (about 0.5 GB) or the
+# local hook writer (about 1.9 GB, the biggest; each step stays under 2.5 GB). The engine also
+# checks free memory itself before it loads a model and refuses when the box is short.
+# Above MemoryHigh the service is slowed down and pushed to swap; at MemoryMax the biggest
+# process is killed.
+MemoryHigh=2816M
+MemoryMax=3072M
+# When a job's program is killed for memory, only that job fails (the queue retries it); the server stays up.
 OOMPolicy=continue
 # Leave the processors to the other services when they need them.
 Nice=5

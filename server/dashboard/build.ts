@@ -37,6 +37,7 @@ const JOB_LABELS: Record<string, string> = {
   "render-clip": "New version",
   "demo-clips": "Demo clips",
   "demo-data": "Demo data",
+  "engine-setup": "Engine setup",
 };
 
 /** The pipeline's job type for each stage of a VOD. */

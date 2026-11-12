@@ -1,10 +1,11 @@
 import { join, resolve } from "node:path";
+import { Engine } from "./engine/engine.js";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
-import type { Transcriber, TranscribeOptions } from "./pipeline/transcript/types.js";
+import type { Transcriber } from "./pipeline/transcript/types.js";
 import { FakePicker } from "./pipeline/picks/fake.js";
 import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
@@ -30,6 +31,11 @@ export interface Config {
   requireAccess: boolean;
   dbFile: string;
   downloader: AudioDownloader;
+  /** clipfarm's own engine: local speech-to-text and picks by default, cloud AI as an option. */
+  engine: Engine;
+  /** True when transcription and picks are test doubles (demos, e2e), so the engine is not used. */
+  fakeEngine: boolean;
+  /** The engine's transcriber and picker, or the fakes. */
   transcriber: Transcriber;
   picker: Picker;
   sectionDownloader: SectionDownloader;
@@ -89,18 +95,21 @@ async function guarded<T>(settings: Settings, call: () => Promise<T>): Promise<T
 const LLM_SETTINGS = ["LLM_API_KEY", "OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL"];
 const POSTING_SETTINGS = ["POSTIZ_URL", "POSTIZ_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER", "UPLOAD_POST_PLATFORMS"];
 
-function liveTranscriber(settings: Settings): Transcriber {
-  const cur = live(settings, ["OPENAI_API_KEY"], (env) => openAiOrMissingKey(env.OPENAI_API_KEY));
-  return { name: "openai", transcribe: (audio, opts) => guarded(settings, () => cur().transcribe(audio, opts)) };
+/** The optional cloud transcriber ("Use cloud AI for speed"); null until an OpenAI key is set. */
+function liveCloudTranscriber(settings: Settings): () => Transcriber | null {
+  const cur = live(settings, ["OPENAI_API_KEY"], (env) => (env.OPENAI_API_KEY ? new OpenAiTranscriber({ apiKey: env.OPENAI_API_KEY }) : null));
+  return () => {
+    const t = cur();
+    return t && { name: t.name, transcribe: (audio, opts) => guarded(settings, () => t.transcribe(audio, opts)) };
+  };
 }
 
-function livePicker(settings: Settings): Picker {
-  const cur = live(settings, LLM_SETTINGS, llmPickerOrMissingKey);
-  return {
-    get name() {
-      return cur().name;
-    },
-    pick: (input, signal) => guarded(settings, () => cur().pick(input, signal)),
+/** The optional cloud picker; null until a key is set. */
+function liveCloudPicker(settings: Settings): () => Picker | null {
+  const cur = live(settings, LLM_SETTINGS, cloudPicker);
+  return () => {
+    const p = cur();
+    return p && { name: p.name, pick: (input, signal) => guarded(settings, () => p.pick(input, signal)) };
   };
 }
 
@@ -148,6 +157,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   const fakes = env.CLIPFARM_FAKES === "1";
   const dataDir = resolve(env.DATA_DIR ?? "data");
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
+  const engine = new Engine({
+    modelsDir: join(dataDir, "models"),
+    whisperBin: env.WHISPER_BIN || undefined,
+    llamaServerBin: env.LLAMA_SERVER_BIN || undefined,
+    cloudTranscriber: liveCloudTranscriber(settings),
+    cloudPicker: liveCloudPicker(settings),
+  });
+  const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
+  const fakePicker = fakes || env.PICKER === "fake";
   return {
     settings,
     fakes,
@@ -158,8 +176,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     downloader: fakeDownloads
       ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))
       : new YtDlpDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
-    transcriber: fakes || env.TRANSCRIBER === "fake" ? new FakeTranscriber() : liveTranscriber(settings),
-    picker: fakes || env.PICKER === "fake" ? new FakePicker() : livePicker(settings),
+    engine,
+    fakeEngine: fakeTranscriber && fakePicker,
+    transcriber: fakeTranscriber ? new FakeTranscriber() : engine.transcriber,
+    picker: fakePicker ? new FakePicker() : engine.picker,
     sectionDownloader: fakeDownloads ? new FakeSectionDownloader() : new YtDlpSectionDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
@@ -182,15 +202,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   };
 }
 
-function llmPickerOrMissingKey(env: NodeJS.ProcessEnv): Picker {
+/** The cloud picker for these settings; null without a key. */
+function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
-  if (!apiKey) {
-    // No signals-only fallback: only the model can flag spoilers and leaks, so picking stops instead.
-    return {
-      name: "llm",
-      pick: () => Promise.reject(new Error("Add your OpenAI key in Settings, so highlights can be picked.")),
-    };
-  }
+  if (!apiKey) return null;
   return new LlmPicker(
     new OpenAiCompatibleChat({
       apiKey,
@@ -221,15 +236,4 @@ function postingService(env: NodeJS.ProcessEnv): PostingService {
   if (choice === "postiz" && postiz) return new PostizService(postiz);
   if (choice === "upload-post" && uploadPost) return new UploadPostService(uploadPost);
   return new NoPostingService();
-}
-
-function openAiOrMissingKey(apiKey: string | undefined): Transcriber {
-  if (apiKey) return new OpenAiTranscriber({ apiKey });
-  // Start anyway so the gallery works; transcription jobs fail with a clear reason.
-  return {
-    name: "openai",
-    transcribe(_audio: string, _opts: TranscribeOptions) {
-      return Promise.reject(new Error("Add your OpenAI key in Settings, so audio can be transcribed."));
-    },
-  };
 }

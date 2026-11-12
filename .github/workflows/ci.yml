@@ -21,6 +21,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - uses: actions/cache@v4
+        with:
+          path: data/engine-test
+          key: engine-${{ hashFiles('server/engine/catalog.ts') }}
+      - name: Local engine on generated speech (real whisper.cpp, no AI service)
+        run: npm run test:engine
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - name: End-to-end tests (fakes only, no network calls)
