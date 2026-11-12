@@ -22,8 +22,8 @@ Why is the helicopter here already. This is crazy. Yes. We made it. Let us go.`;
 export async function realEngine(tmpRoot: string, writer: boolean): Promise<Engine> {
   const engine = new Engine({
     modelsDir: resolve(process.env.ENGINE_TEST_MODELS ?? "data/engine-test/models"),
-    cloudTranscriber: null,
-    cloudPicker: null,
+    cloudTranscriber: () => null,
+    cloudPicker: () => null,
   });
   const db = openDb(":memory:");
   engine.bind(db);

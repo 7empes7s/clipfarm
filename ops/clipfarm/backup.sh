@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Copies clipfarm's SQLite database into /opt/backups/YYYY-MM-DD/clipfarm.db.gz (next to the daily
 # mimule-backup and Postiz's dump) and keeps the 3 newest. Media is not backed up: clips can be
-# rendered again. Run by clipfarm-backup.timer; see RUNBOOK.md. Restore: RUNBOOK.md, "Restore".
+# rendered again. The keys pasted in Settings ($DATA_DIR/secrets.json) are left out on purpose:
+# they are pasted again after a restore. Run by clipfarm-backup.timer; see RUNBOOK.md. Restore: RUNBOOK.md, "Restore".
 set -euo pipefail
 
 BACKUP_ROOT="${BACKUP_ROOT:-/opt/backups}"

@@ -82,8 +82,8 @@ function setup(opts: { availableMb?: number; capRoomMb?: number; cloud?: boolean
   const engine = new Engine({
     modelsDir,
     catalog,
-    cloudTranscriber: opts.cloud ? new FakeTranscriber() : null,
-    cloudPicker: opts.cloud ? new FakePicker() : null,
+    cloudTranscriber: () => (opts.cloud ? new FakeTranscriber() : null),
+    cloudPicker: () => (opts.cloud ? new FakePicker() : null),
     memory: () => ({ freeMb: opts.availableMb ?? 4000, capRoomMb: opts.capRoomMb ?? null }),
   });
   engine.bind(db);
@@ -212,7 +212,7 @@ describe("engine memory guard under the service's own cap", () => {
 describe("engine settings", () => {
   it("keeps cloud AI off unless a key is on the server", () => {
     const { engine } = setup();
-    expect(() => engine.saveSettings({ cloud: true })).toThrow("Cloud AI needs an OpenAI key on the server first");
+    expect(() => engine.saveSettings({ cloud: true })).toThrow("Cloud AI needs an OpenAI key first. Add it in Settings.");
     expect(engine.settings().cloud).toBe(false);
     expect(engine.transcriber.name).toBe("local:base.en");
     expect(engine.picker.name).toBe("local");

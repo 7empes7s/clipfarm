@@ -7,9 +7,11 @@ import type {
   Clip,
   Dashboard,
   Job,
+  PermissionKind,
   Platform,
   Post,
   Source,
+  SetupChecklist,
   VodProgress,
   WatchedCreator,
 } from "../../shared/types";
@@ -18,6 +20,8 @@ import {
   ACCOUNT_HEALTHS,
   ACCOUNT_ROLE_LABELS,
   ACCOUNT_ROLES,
+  PERMISSION_KIND_LABELS,
+  PERMISSION_KINDS,
   PLATFORM_LABELS,
   PLATFORMS,
   WATCH_PLATFORM_LABELS,
@@ -81,10 +85,11 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
           {error}
         </p>
       )}
+      {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
       {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
-      {view === "accounts" && <Accounts />}
+      {view === "accounts" && <Accounts sources={sources} />}
       {dash && view === "earnings" && <Earnings dash={dash} />}
     </section>
   );
@@ -157,7 +162,57 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
           ))}
         </ul>
       )}
+
+      <p className="hint settings-link">
+        <a href="#settings">Keys and connections</a>
+      </p>
     </>
+  );
+}
+
+/** What is left to set up, at the top of the dashboard until every item is done. */
+function Setup({ refreshKey }: { refreshKey: string }) {
+  const [list, setList] = useState<SetupChecklist | null>(null);
+  useEffect(() => {
+    let on = true;
+    api.setup().then(
+      (s) => on && setList(s),
+      () => on && setList(null),
+    );
+    return () => {
+      on = false;
+    };
+  }, [refreshKey]);
+  if (!list || list.done) return null;
+  const left = list.items.filter((i) => !i.done).length;
+  return (
+    <div className="card setup" data-testid="setup">
+      <div className="card-head">
+        <h3>Finish setting up</h3>
+        <span className="hint">{left} of {list.items.length} left</span>
+      </div>
+      <ol className="setup-list">
+        {list.items.map((item) => (
+          <li key={item.id} className={item.done ? "setup-done" : undefined}>
+            <span className="setup-mark" aria-hidden="true">
+              {item.done ? "✓" : ""}
+            </span>
+            <div className="setup-text">
+              <span className="setup-label">
+                {item.label}
+                <span className="visually-hidden">{item.done ? " (done)" : " (to do)"}</span>
+              </span>
+              <span className="hint">{item.line}</span>
+            </div>
+            {!item.done && (
+              <a className="button" href={item.href}>
+                {item.action}
+              </a>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -435,7 +490,7 @@ function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sour
   );
 }
 
-function Accounts() {
+function Accounts({ sources }: { sources: Source[] }) {
   const [info, setInfo] = useState<AccountsInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncNote, setSyncNote] = useState<string | null>(null);
@@ -498,7 +553,7 @@ function Accounts() {
       )}
       <p className="hint">
         {info.service === "none"
-          ? "No posting service is set up, so there are no account stats yet. Set up Postiz or Upload-Post on the server (see the README)."
+          ? "No posting service is set up, so there are no account stats yet. Add Postiz or Upload-Post in Settings."
           : `Stats come from ${info.label}, read every ${info.refreshHours} hours to stay inside its limits.`}
       </p>
       {info.error && (
@@ -519,6 +574,7 @@ function Accounts() {
         <AccountSheet
           card={edited}
           info={info}
+          sources={sources}
           onClose={closeSettings}
           onSaved={(i) => {
             setInfo(i);
@@ -530,15 +586,27 @@ function Accounts() {
   );
 }
 
-/** Role, niche, pace, status and on/off for one posting account. */
+/** Whop campaigns in force, to pin to an account: the permission id and "creator · whop.com". */
+function whopCampaigns(sources: Source[]): { id: number; label: string }[] {
+  const now = Date.now();
+  return sources.flatMap((s) =>
+    s.permissions
+      .filter((p) => p.kind === "whop-campaign" && (!p.expiresAt || new Date(p.expiresAt).getTime() > now))
+      .map((p) => ({ id: p.id, label: p.campaignUrl ? `${s.creatorName} · ${new URL(p.campaignUrl).hostname.replace(/^www\./, "")}` : s.creatorName })),
+  );
+}
+
+/** Role, niche, routing, pace, status and on/off for one posting account. */
 function AccountSheet({
   card,
   info,
+  sources,
   onClose,
   onSaved,
 }: {
   card: AccountCard;
   info: AccountsInfo;
+  sources: Source[];
   onClose: () => void;
   onSaved: (i: AccountsInfo) => void;
 }) {
@@ -549,8 +617,12 @@ function AccountSheet({
   const [gap, setGap] = useState(a.minGapMinutes === null ? "" : String(a.minGapMinutes));
   const [health, setHealth] = useState<AccountHealth>(a.health);
   const [enabled, setEnabled] = useState(a.enabled);
+  const [takes, setTakes] = useState<PermissionKind[]>(a.takes);
+  const [pinned, setPinned] = useState<number[]>(a.pinnedCampaignIds);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const campaigns = whopCampaigns(sources);
+  const flip = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((x) => x !== item) : [...list, item]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -565,6 +637,8 @@ function AccountSheet({
           minGapMinutes: gap === "" ? null : Number(gap),
           health,
           enabled,
+          takes,
+          pinnedCampaignIds: pinned,
         }),
       );
     } catch (err) {
@@ -596,6 +670,38 @@ function AccountSheet({
           <input type="text" maxLength={60} placeholder="GTA VI moments" value={niche} onChange={(e) => setNiche(e.target.value)} />
         </label>
         <p className="hint">Clips that fit the niche are suggested for this account. Empty takes any clip.</p>
+        <fieldset>
+          <legend>Takes clips from</legend>
+          <div className="chips">
+            {PERMISSION_KINDS.map((k) => (
+              <label key={k} className="chip">
+                <input type="checkbox" checked={takes.includes(k)} onChange={() => setTakes(flip(takes, k))} />
+                {PERMISSION_KIND_LABELS[k]}
+              </label>
+            ))}
+          </div>
+          <p className="hint">
+            Clips only post to accounts that take their kind of permission. Tick only Whop campaign to keep this channel for
+            campaign clips.
+          </p>
+        </fieldset>
+        {takes.includes("whop-campaign") && campaigns.length > 0 && (
+          <fieldset>
+            <legend>Whop campaigns pinned here</legend>
+            <div className="chips">
+              {campaigns.map((c) => (
+                <label key={c.id} className="chip">
+                  <input type="checkbox" checked={pinned.includes(c.id)} onChange={() => setPinned(flip(pinned, c.id))} />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+            <p className="hint">
+              A pinned campaign posts on {PLATFORM_LABELS[a.platform]} only from this account. Leave all unticked to share
+              campaigns between the accounts that take them.
+            </p>
+          </fieldset>
+        )}
         <div className="row">
           <label>
             Posts a day
@@ -708,6 +814,9 @@ function AccountCardView({
           {!a.enabled && <span className="state state-none">Off</span>}
           {a.disabled && <span className="state state-none">Disconnected</span>}
           {a.niche && <span className="hint">{a.niche}</span>}
+          {a.takes.length < PERMISSION_KINDS.length && (
+            <span className="hint">Takes only: {a.takes.map((k) => PERMISSION_KIND_LABELS[k]).join(", ")}</span>
+          )}
           <button type="button" className="link" onClick={onSettings}>
             Settings
           </button>

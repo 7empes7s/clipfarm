@@ -18,11 +18,14 @@ export function allowedPlatforms(source: Source | undefined): Platform[] {
 export function PostSheet({
   clip,
   info,
+  gap,
   onClose,
   onPosted,
 }: {
   clip: Clip;
   info: PostingInfo;
+  /** Why no account takes this clip's kind of permission, when that is so. */
+  gap: string | null;
   onClose: () => void;
   onPosted: (skipped: SkippedAccount[]) => void;
 }) {
@@ -95,7 +98,13 @@ export function PostSheet({
                 </label>
               ))}
             </div>
-            <p className="hint">Main accounts whose niche fits this clip start ticked. Change them as you like.</p>
+            {gap ? (
+              <p className="error" role="alert">
+                {gap}
+              </p>
+            ) : (
+              <p className="hint">Main accounts whose niche fits this clip start ticked. Change them as you like.</p>
+            )}
           </fieldset>
         )}
         <fieldset>

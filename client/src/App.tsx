@@ -8,6 +8,7 @@ import { DASH_VIEWS, DashboardTab, type DashView } from "./DashboardTab";
 import { FaceCamSheet } from "./FaceCamSheet";
 import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
+import { SettingsTab } from "./SettingsTab";
 import { StatsTab } from "./StatsTab";
 import { WatchlistTab } from "./WatchlistTab";
 import { Clips } from "./Clips";
@@ -48,16 +49,21 @@ const TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
 ] as const;
-/** "rejected" is reached from the inbox, not the tab bar. */
-type Tab = (typeof TABS)[number]["id"] | "rejected";
+/** "rejected" is reached from the inbox, "settings" from the ⋯ in the header: neither is in the tab bar. */
+type Tab = (typeof TABS)[number]["id"] | "rejected" | "settings";
 // Older links keep working.
 const ALIASES: Record<string, Tab> = { campaigns: "sources", clips: "approved" };
 
 function tabFromHash(): Tab {
   // "#dashboard/outputs" opens a section of the dashboard.
   const h = window.location.hash.slice(1).split("/")[0]!;
-  if (h === "rejected" || TABS.some((t) => t.id === h)) return h as Tab;
+  if (h === "rejected" || h === "settings" || TABS.some((t) => t.id === h)) return h as Tab;
   return ALIASES[h] ?? "inbox";
+}
+
+/** "#settings/twitch" → "twitch". */
+function subFromHash(): string | undefined {
+  return window.location.hash.slice(1).split("/")[1];
 }
 
 function dashViewFromHash(): DashView {
@@ -68,6 +74,7 @@ function dashViewFromHash(): DashView {
 export function App() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [dashView, setDashView] = useState<DashView>(dashViewFromHash);
+  const [sub, setSub] = useState(subFromHash);
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -118,6 +125,7 @@ export function App() {
     const onHash = () => {
       setTab(tabFromHash());
       setDashView(dashViewFromHash());
+      setSub(subFromHash());
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -126,10 +134,15 @@ export function App() {
   return (
     <div className="page">
       <header className="masthead">
-        <h1>
-          <span className="tally" aria-hidden="true" />
-          clipfarm
-        </h1>
+        <div className="masthead-top">
+          <h1>
+            <span className="tally" aria-hidden="true" />
+            clipfarm
+          </h1>
+          <a className="more" href="#settings" aria-label="Settings: keys and connections" title="Settings" aria-current={tab === "settings" ? "page" : undefined}>
+            ⋯
+          </a>
+        </div>
         <p>Streams in, vertical clips out. Only from creators who said yes.</p>
       </header>
 
@@ -154,6 +167,7 @@ export function App() {
         <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />
       )}
       {tab === "stats" && <StatsTab />}
+      {tab === "settings" && <SettingsTab focus={sub} />}
       {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
 
       {tab === "sources" && (

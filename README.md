@@ -48,7 +48,12 @@ app shell, so it opens without a network; numbers load once it is back.
 - **Accounts** (Posting accounts): several accounts per platform, each linked once in the posting
   service by hand and picked up by "Sync accounts". Settings per account: role (main or burner),
   niche, posts a day and minutes between posts (empty follows the shared spacing), status
-  (healthy, limited or banned, set by hand) and on/off. One card per account: followers and growth,
+  (healthy, limited or banned, set by hand), on/off, and routing: which permission kinds the
+  account takes (every kind to start with) and, optionally, the Whop campaigns pinned to it. A
+  clip only posts to accounts that take its permission kind, so ticking only "Whop campaign" on
+  one account and unticking it on the others keeps a channel for campaign clips; a pinned campaign
+  posts on that platform only from its account. With no account for a kind the clip says so ("No
+  account takes “Whop campaign” clips yet") and nothing is posted. One card per account: followers and growth,
   views per day, average views per post, top 5 clips and posts in the last 7 days against the
   spacing plan. Stats are read from Postiz (`/analytics/{integration}`, at most 4 accounts per
   read) or Upload-Post (`/analytics/{profile}`, one call) at most every 6 hours and cached, so
@@ -68,6 +73,14 @@ npm run build && CLIPFARM_FAKES=1 FAKE_VOD_SEC=40 PORT=3000 npm run preview
 
 Export them in your shell or put them in a `.env` you load yourself (never commit it; see
 `.env.example`).
+
+The keys (OpenAI and the picking model, Twitch, YouTube, Postiz, Upload-Post) can also be pasted
+in the app: **⋯ > Settings** (`#settings`). Each row has Save, Test (one cheap read-only call),
+Replace and Remove. A saved key is used on the next call, with no restart, and wins over the env
+variable of the same name, which stays as the fallback. They are kept in `DATA_DIR/secrets.json`
+(mode 600, never in git, logs, answers or the backup); the server never sends a value back, only
+"set, ends in …a1b2". Where the server listens, its folders, the access gate and demo mode stay
+env-only.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -246,7 +259,7 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   (posting, export, views, Whop), Sources (campaigns, face cam), Jobs (progress, cancel, try again)
   and Stats, plus the Dashboard. Rejected clips are one tap away from the Inbox.
 - `server/accounts/`: our posting accounts and their settings (`accountsAllowedFor(permission)`
-  says which a permission may post to), account stats from the posting service, cached in SQLite behind a guard
+  says which a permission may post to; the routing rule itself is `shared/routing.ts`), account stats from the posting service, cached in SQLite behind a guard
   (how often, how many accounts per read), plus followers typed in by hand.
 - `server/dashboard/`: builds the dashboard from our records and the cached account stats.
 - `shared/`: types used by both, and `metrics.ts` (growth, averages, cost per approved clip, time
@@ -255,7 +268,7 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 ## The local engine (no outside AI service)
 
 By default clipfarm transcribes and picks on its own machine; OpenAI is only an optional speed-up
-("Use cloud AI for speed" on the Dashboard, needs `OPENAI_API_KEY`).
+("Use cloud AI for speed" on the Dashboard, once an OpenAI key is set in Settings).
 
 - **Speech-to-text**: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) with
   [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) first, so only speech is transcribed.

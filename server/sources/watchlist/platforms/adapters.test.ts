@@ -37,7 +37,7 @@ describe("Twitch Helix", () => {
   ];
 
   it("says what to set without keys", () => {
-    expect(new TwitchClient({}).missing).toBe("Set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET on the server.");
+    expect(new TwitchClient({}).missing).toBe("Add your Twitch key in Settings.");
   });
 
   it("uses an app token, reads archives and the live stream, and gives the VOD its live category", async () => {
@@ -137,7 +137,7 @@ describe("YouTube Data API", () => {
   });
 
   it("says what to set without a key, and reads ISO durations", () => {
-    expect(new YouTubeClient({}).missing).toBe("Set YOUTUBE_API_KEY on the server.");
+    expect(new YouTubeClient({}).missing).toBe("Add your YouTube key in Settings.");
     expect(parseIsoDuration("PT1H2M3S")).toBe(3723);
     expect(parseIsoDuration("P1DT1S")).toBe(86401);
   });

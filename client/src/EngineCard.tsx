@@ -106,7 +106,7 @@ export function EngineCard({ jobs }: { jobs: Job[] }) {
             />
             Use cloud AI for speed
           </label>
-          {!status.cloudAvailable && <p className="hint">Needs an OpenAI key on the server. Without one, everything runs locally.</p>}
+          {!status.cloudAvailable && <p className="hint">Needs an OpenAI key (add it in Settings). Without one, everything runs locally.</p>}
         </div>
       )}
       {error && (

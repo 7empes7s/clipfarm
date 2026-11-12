@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import type { Clip, Post, PostingInfo, Source } from "../../shared/types";
+import { noAccountReason } from "../../shared/routing";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { ExportSheet } from "./ExportSheet";
@@ -28,6 +29,11 @@ export function postStatusLabel(p: Post): string {
 
 function shortTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/** "No account takes “Whop campaign” clips yet": why an approved clip has nowhere to post, or null. */
+function routingGap(source: Source | undefined, info: PostingInfo | null): string | null {
+  return source && info ? noAccountReason(source.permissions, info.accounts, new Date()) : null;
 }
 
 /** The Approved, Posted and Rejected lists: posting, export, views and Whop tracking. */
@@ -108,6 +114,7 @@ export function ClipsTab({
           {clips.map((clip) => {
             const source = sources.find((s) => s.id === clip.sourceId);
             const clipPosts = posts.filter((p) => p.clipId === clip.id);
+            const gap = clip.status === "approved" ? routingGap(source, info) : null;
             return (
               <li key={clip.id} className="card clip" data-testid="clip">
                 <video className="clip-video" src={clip.videoUrl} controls playsInline preload="metadata" />
@@ -120,6 +127,11 @@ export function ClipsTab({
                     {source?.creatorName ?? "Unknown creator"} · {Math.round(clip.durationSec)} s
                     {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
+                  {gap && (
+                    <p className="hint" data-testid="routing-gap">
+                      {gap}
+                    </p>
+                  )}
                   <div className="actions">
                     {clip.status !== "approved" && (
                       <button type="button" className="primary" onClick={() => void act(() => api.approveClip(clip.id))}>
@@ -159,6 +171,7 @@ export function ClipsTab({
         <PostSheet
           clip={posting}
           info={info}
+          gap={routingGap(sources.find((s) => s.id === posting.sourceId), info)}
           onClose={closePost}
           onPosted={(skipped) => {
             setPosting(null);
@@ -243,7 +256,9 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
       {post.status === "posted" && post.campaignUrl && (
         <div className="meta">
           {post.whopSubmittedAt ? (
-            <span>Sent to Whop on {shortDate(post.whopSubmittedAt)}</span>
+            <span>
+              Sent to Whop on {shortDate(post.whopSubmittedAt)}, posted by {post.accountName}
+            </span>
           ) : (
             <>
               <button type="button" className="link" onClick={() => void copyLink()} disabled={!post.url}>

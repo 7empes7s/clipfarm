@@ -27,7 +27,7 @@ export class YouTubeClient implements PlatformClient {
   private uploads = new Map<string, string>();
 
   constructor(private opts: { apiKey?: string; fetch?: typeof fetch }) {
-    this.missing = opts.apiKey ? null : "Set YOUTUBE_API_KEY on the server.";
+    this.missing = opts.apiKey ? null : "Add your YouTube key in Settings.";
     this.doFetch = opts.fetch ?? fetch;
   }
 

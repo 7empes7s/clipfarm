@@ -43,6 +43,8 @@ describe('ops/clipfarm/backup.sh', () => {
   it('writes a gzipped, consistent copy of the open database and leaves the media out', () => {
     const db = liveDb();
     writeFileSync(join(data, 'media', 'clips', 'pick-1.mp4'), 'video');
+    // Keys pasted in Settings: never copied into the backup folder.
+    writeFileSync(join(data, 'secrets.json'), '{"values":{"OPENAI_API_KEY":{"value":"sk-not-in-the-backup"}}}', { mode: 0o600 });
     run('2026-11-12');
     db.close();
 
@@ -53,6 +55,7 @@ describe('ops/clipfarm/backup.sh', () => {
 
     const restored = join(root, 'restored.db');
     writeFileSync(restored, gunzipSync(readFileSync(join(dayDir, 'clipfarm.db.gz'))));
+    expect(readFileSync(restored).includes('sk-not-in-the-backup')).toBe(false);
     const copy = new Database(restored, { readonly: true });
     expect(copy.prepare('SELECT title FROM clips').all()).toEqual([{ title: 'He did NOT expect that' }]);
     copy.close();

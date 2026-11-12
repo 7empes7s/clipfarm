@@ -20,7 +20,7 @@ export interface ChannelCheck {
 /** One streaming platform. Real ones call its API; tests and CLIPFARM_FAKES use the fake. */
 export interface PlatformClient {
   platform: WatchPlatform;
-  /** What to set on the server when keys are missing; null when it can be called. */
+  /** What to add in Settings when keys are missing; null when it can be called. */
   missing: string | null;
   check(handle: string, signal?: AbortSignal): Promise<ChannelCheck>;
 }

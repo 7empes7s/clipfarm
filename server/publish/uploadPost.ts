@@ -105,7 +105,7 @@ export class UploadPostService implements PostingService {
     this.voice = {
       label: "Upload-Post",
       secret: opts.apiKey,
-      refusedKey: "Upload-Post refused the API key. Check UPLOAD_POST_API_KEY.",
+      refusedKey: "Upload-Post refused the API key. Paste it again in Settings.",
       limited: (detail) => `Upload-Post's limit was reached: ${detail || "try again later."}`,
       unreachable: (reason) => `Cannot reach Upload-Post (${reason}). Try again in a few minutes.`,
     };

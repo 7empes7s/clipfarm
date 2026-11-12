@@ -30,9 +30,9 @@ export interface EngineOptions {
   /** Your own whisper.cpp `whisper-cli` / llama.cpp `llama-server`, instead of the downloaded ones. */
   whisperBin?: string;
   llamaServerBin?: string;
-  /** The optional speed-up; null without an OpenAI key. */
-  cloudTranscriber: Transcriber | null;
-  cloudPicker: Picker | null;
+  /** The optional speed-up, asked for on each use (a key can be added while running); null without an OpenAI key. */
+  cloudTranscriber: () => Transcriber | null;
+  cloudPicker: () => Picker | null;
   /** Free memory and the room under the service's cap; read from the system unless a test gives it. */
   memory?: () => MemoryReading;
   fetchImpl?: typeof fetch;
@@ -61,10 +61,10 @@ export class Engine {
     this.transcriber = {
       get name() {
         const s = settings();
-        return s.cloud ? (opts.cloudTranscriber?.name ?? "openai") : `local:${s.sttModel}`;
+        return s.cloud ? (opts.cloudTranscriber()?.name ?? "openai") : `local:${s.sttModel}`;
       },
       transcribe: async (audio, o) => {
-        if (this.settings().cloud) return this.cloud(opts.cloudTranscriber).transcribe(audio, o);
+        if (this.settings().cloud) return this.cloud(opts.cloudTranscriber()).transcribe(audio, o);
         return transcribeLocally(this.whisperSetup(), audio, o, this.memory());
       },
     };
@@ -72,9 +72,9 @@ export class Engine {
     const local = new LocalPicker(() => (this.settings().writer ? writer : null));
     this.picker = {
       get name() {
-        return settings().cloud ? (opts.cloudPicker?.name ?? "llm") : local.name;
+        return settings().cloud ? (opts.cloudPicker()?.name ?? "llm") : local.name;
       },
-      pick: async (input, signal) => (this.settings().cloud ? this.cloud(opts.cloudPicker) : local).pick(input, signal),
+      pick: async (input, signal) => (this.settings().cloud ? this.cloud(opts.cloudPicker()) : local).pick(input, signal),
     };
   }
 
@@ -96,8 +96,8 @@ export class Engine {
     const body = (raw ?? {}) as Record<string, unknown>;
     const next = { ...this.settings() };
     if (typeof body.cloud === "boolean") {
-      if (body.cloud && !(this.opts.cloudTranscriber && this.opts.cloudPicker)) {
-        throw new ValidationError("Cloud AI needs an OpenAI key on the server first (OPENAI_API_KEY).");
+      if (body.cloud && !this.cloudAvailable()) {
+        throw new ValidationError("Cloud AI needs an OpenAI key first. Add it in Settings.");
       }
       next.cloud = body.cloud;
     }
@@ -113,8 +113,12 @@ export class Engine {
     return next;
   }
 
+  private cloudAvailable(): boolean {
+    return Boolean(this.opts.cloudTranscriber() && this.opts.cloudPicker());
+  }
+
   private cloud<T>(adapter: T | null): T {
-    if (!adapter) throw new EngineNotReadyError("Cloud AI is switched on, but there is no OpenAI key on the server. Switch it off on the Dashboard to use the local engine.");
+    if (!adapter) throw new EngineNotReadyError("Cloud AI is switched on, but there is no OpenAI key. Add it in Settings, or switch cloud AI off on the Dashboard to use the local engine.");
     return adapter;
   }
 
@@ -226,7 +230,7 @@ export class Engine {
     const sttModels = this.catalog
       .filter((p) => p.kind === "stt")
       .map((p) => ({ id: p.id, label: p.label, note: p.note ?? "", bytes: p.bytes, needMb: p.needMb ?? 0, present: this.present(p) }));
-    const cloudAvailable = Boolean(this.opts.cloudTranscriber && this.opts.cloudPicker);
+    const cloudAvailable = this.cloudAvailable();
     const short = stt ? memoryProblem(`the speech model (${stt.id})`, needMb, memory) : null;
     const base = { settings, sttModels, cloudAvailable, memory: { availableMb: memory.freeMb, needMb, ok: short === null } };
     if (mode === "test") {
@@ -238,7 +242,7 @@ export class Engine {
         mode: "cloud",
         ready: cloudAvailable,
         headline: cloudAvailable ? "Cloud AI: on" : "Cloud AI: no key",
-        problems: cloudAvailable ? [] : ["Cloud AI is switched on, but there is no OpenAI key on the server."],
+        problems: cloudAvailable ? [] : ["Cloud AI is switched on, but there is no OpenAI key. Add it in Settings, or switch cloud AI off."],
         downloads: [],
         setupJob: null,
       };

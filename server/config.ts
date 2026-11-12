@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
-import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { Engine } from "./engine/engine.js";
+import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
@@ -10,7 +10,7 @@ import { FakePicker } from "./pipeline/picks/fake.js";
 import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
-import type { Platform } from "../shared/types.js";
+import type { Platform, PostingAccount } from "../shared/types.js";
 import { PLATFORMS } from "../shared/types.js";
 import { FakePostingService, NoPostingService } from "./publish/fake.js";
 import { PostizService } from "./publish/postiz.js";
@@ -21,6 +21,7 @@ import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
+import { Settings } from "./settings/store.js";
 
 export interface Config {
   port: number;
@@ -49,10 +50,110 @@ export interface Config {
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
   watchPollMinutes: number;
+  /** Keys pasted in Settings, on top of the env. */
+  settings: Settings;
+  /** Demo mode: every outside service is a stand-in. */
+  fakes: boolean;
 }
 
-/** Reads settings from env. Keys only ever come from env, never from files in the repo. */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+/** Keys saved from the Settings screen live next to the database: DATA_DIR/secrets.json, mode 600. */
+export function openSettings(env: NodeJS.ProcessEnv = process.env): Settings {
+  return new Settings(join(resolve(env.DATA_DIR ?? "data"), "secrets.json"), env);
+}
+
+/**
+ * Builds a service from the settings it needs, and builds it again when one of those changes:
+ * a key saved in Settings is in use on the next call, with no restart.
+ */
+function live<T>(settings: Settings, names: string[], build: (env: NodeJS.ProcessEnv) => T): () => T {
+  let builtFor: string | null = null;
+  let current: T;
+  return () => {
+    const now = names.map((n) => settings.get(n) ?? "").join("\0");
+    if (now !== builtFor) {
+      current = build(settings.env());
+      builtFor = now;
+    }
+    return current;
+  };
+}
+
+/** Runs a call to an outside service; a key that slipped into its error message is taken out. */
+async function guarded<T>(settings: Settings, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (err instanceof Error) {
+      err.message = settings.scrub(err.message);
+      // The stack repeats the message, and is what a log line prints.
+      if (err.stack) err.stack = settings.scrub(err.stack);
+    }
+    throw err;
+  }
+}
+
+const LLM_SETTINGS = ["LLM_API_KEY", "OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL"];
+const POSTING_SETTINGS = ["POSTIZ_URL", "POSTIZ_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER", "UPLOAD_POST_PLATFORMS"];
+
+/** The optional cloud transcriber ("Use cloud AI for speed"); null until an OpenAI key is set. */
+function liveCloudTranscriber(settings: Settings): () => Transcriber | null {
+  const cur = live(settings, ["OPENAI_API_KEY"], (env) => (env.OPENAI_API_KEY ? new OpenAiTranscriber({ apiKey: env.OPENAI_API_KEY }) : null));
+  return () => {
+    const t = cur();
+    return t && { name: t.name, transcribe: (audio, opts) => guarded(settings, () => t.transcribe(audio, opts)) };
+  };
+}
+
+/** The optional cloud picker; null until a key is set. */
+function liveCloudPicker(settings: Settings): () => Picker | null {
+  const cur = live(settings, LLM_SETTINGS, cloudPicker);
+  return () => {
+    const p = cur();
+    return p && { name: p.name, pick: (input, signal) => guarded(settings, () => p.pick(input, signal)) };
+  };
+}
+
+function livePostingService(settings: Settings): PostingService {
+  const cur = live(settings, POSTING_SETTINGS, postingService);
+  return {
+    get name() {
+      return cur().name;
+    },
+    get label() {
+      return cur().label;
+    },
+    get dailyCaps() {
+      return cur().dailyCaps;
+    },
+    get maxStatsAccountsPerRead() {
+      return cur().maxStatsAccountsPerRead;
+    },
+    get accountStats() {
+      const service = cur();
+      return service.accountStats && ((accounts: PostingAccount[], days: number) => guarded(settings, () => service.accountStats!(accounts, days)));
+    },
+    listAccounts: () => guarded(settings, () => cur().listAccounts()),
+    publish: (video, items) => guarded(settings, () => cur().publish(video, items)),
+    refresh: (posts) => guarded(settings, () => cur().refresh(posts)),
+  };
+}
+
+function liveWatchClient(settings: Settings, names: string[], build: (now: { env: NodeJS.ProcessEnv }) => PlatformClient): PlatformClient {
+  const cur = live(settings, names, (env) => build({ env }));
+  return {
+    platform: cur().platform,
+    get missing() {
+      return cur().missing;
+    },
+    check: (handle, signal) => guarded(settings, () => cur().check(handle, signal)),
+  };
+}
+
+/**
+ * Reads settings from env, with the keys saved in Settings on top (`settings`; left out, only the
+ * env counts). Keys never come from files in the repo.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Settings = new Settings(null, env)): Config {
   const fakes = env.CLIPFARM_FAKES === "1";
   const dataDir = resolve(env.DATA_DIR ?? "data");
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
@@ -60,12 +161,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     modelsDir: join(dataDir, "models"),
     whisperBin: env.WHISPER_BIN || undefined,
     llamaServerBin: env.LLAMA_SERVER_BIN || undefined,
-    cloudTranscriber: env.OPENAI_API_KEY ? new OpenAiTranscriber({ apiKey: env.OPENAI_API_KEY }) : null,
-    cloudPicker: cloudPicker(env),
+    cloudTranscriber: liveCloudTranscriber(settings),
+    cloudPicker: liveCloudPicker(settings),
   });
   const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
   const fakePicker = fakes || env.PICKER === "fake";
   return {
+    settings,
+    fakes,
     port: Number(env.PORT ?? 3000),
     host: env.HOST || undefined,
     requireAccess: env.CLIPFARM_REQUIRE_ACCESS === "1",
@@ -81,21 +184,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
     renderPreset: env.RENDER_PRESET || "veryfast",
-    postingService: fakes ? new FakePostingService() : postingService(env),
+    postingService: fakes ? new FakePostingService() : livePostingService(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
     watchClients: fakes
       ? [new FakePlatformClient("twitch"), new FakePlatformClient("kick"), new FakePlatformClient("youtube")]
       : [
-          new TwitchClient({ clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET }),
+          liveWatchClient(
+            settings,
+            ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
+            (now) => new TwitchClient({ clientId: now.env.TWITCH_CLIENT_ID, clientSecret: now.env.TWITCH_CLIENT_SECRET }),
+          ),
           new KickClient(),
-          new YouTubeClient({ apiKey: env.YOUTUBE_API_KEY }),
+          liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
   };
 }
 
-/** The optional cloud picker ("Use cloud AI for speed"); null without a key. */
+/** The cloud picker for these settings; null without a key. */
 function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -110,7 +217,7 @@ function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
   );
 }
 
-/** Postiz or Upload-Post from env (POSTING_SERVICE picks when both are set); export only without keys. */
+/** Postiz or Upload-Post from the settings (POSTING_SERVICE picks when both are set); export only without keys. */
 function postingService(env: NodeJS.ProcessEnv): PostingService {
   const postiz = env.POSTIZ_URL && env.POSTIZ_API_KEY ? { url: env.POSTIZ_URL, apiKey: env.POSTIZ_API_KEY } : null;
   const uploadPost =
