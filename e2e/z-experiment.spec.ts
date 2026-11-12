@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test";
 
 // Runs last (ingest.spec.ts needs the empty database), at 390 px and again on the desktop project.
 // Fake downloader, picker and posting service: nothing leaves the machine. Each run makes its own
-// creator and puts the X account back to main at the end, so the other specs find it as they left it.
-const MAIN = { role: "main", niche: "", maxPerDay: null, minGapMinutes: null, enabled: true, health: "healthy" };
+// creator and puts the X account back as it was at the end, so the other specs find it as they left it.
 
 test("experiment: a creator without proof, a badge on the clip, burner accounts only, and what the platforms did", async ({ page, request }) => {
   test.setTimeout(150_000);
@@ -41,9 +40,10 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
   expect(clip.experiment).toBe(true);
   expect((await request.post(`/api/clips/${clip.id}/approve`)).status()).toBe(200);
 
+  const { accounts } = (await (await request.get("/api/posting")).json()) as { accounts: ({ id: string } & Record<string, unknown>)[] };
+  const x = accounts.find((a) => a.id === "fake-x")!;
   try {
-    await request.get("/api/posting");
-    expect((await request.put("/api/accounts/fake-x", { data: { ...MAIN, role: "burner" } })).status()).toBe(200);
+    expect((await request.put("/api/accounts/fake-x", { data: { ...x, role: "burner", enabled: true } })).status()).toBe(200);
 
     // The gallery: a badge, no Export, and only the burner in the picker.
     await page.goto("/#approved");
@@ -73,7 +73,7 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
     await expect(account.getByTestId("account-tags")).toContainText("Off");
     await fits();
   } finally {
-    await request.put("/api/accounts/fake-x", { data: MAIN });
+    await request.put("/api/accounts/fake-x", { data: x });
   }
   expect(errors).toEqual([]);
 });

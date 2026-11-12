@@ -13,7 +13,8 @@ import type {
   StatsRow,
 } from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types.js";
-import { accountsAllowedFor, AccountsRepo, nicheMatches } from "../accounts/repo.js";
+import { noAccountReason, routingBlock, routingBlockText } from "../../shared/routing.js";
+import { AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
 import { isActive, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
@@ -113,12 +114,20 @@ export class Publisher {
     const source = sources.get(clip.sourceId);
     const now = this.now();
     const experiment = isExperimentOnly(source.permissions, now);
-    const accounts = (await this.knownAccounts()).filter((a) => !experiment || a.role === "burner");
-    const allowed = new Set(
-      source.permissions.filter((p) => isActive(p, now)).flatMap((p) => accountsAllowedFor(p, accounts).map((a) => a.id)),
-    );
+    const accounts = await this.knownAccounts();
+    const active = source.permissions.filter((p) => isActive(p, now));
+    // Why routing keeps the clip off an account: the kind or pin when the brief is not the reason.
+    const routed = (account: ChannelAccount): string | null => {
+      const blocks = active.map((p) => ({ p, block: routingBlock(p, account, accounts) }));
+      if (blocks.some((b) => b.block === null)) return null;
+      const specific = blocks.find((b) => b.block !== "brief");
+      if (!specific) return "Not in the brief";
+      const text = routingBlockText(specific.block!, specific.p);
+      return specific.block === "pinned" ? "This campaign is pinned to another account" : text.charAt(0).toUpperCase() + text.slice(1);
+    };
     const text = [clip.title, clip.hook, source.creatorName, clip.vodId === null ? null : vodTitle?.(clip.vodId)].join(" ");
-    return accounts.map((account) => {
+    // An experiment clip is offered burner accounts only: main accounts are not in its list at all.
+    return accounts.filter((a) => !experiment || a.role === "burner").map((account) => {
       const blocked = account.disabled
         ? `Disconnected in ${service.label}`
         : !account.enabled
@@ -127,9 +136,7 @@ export class Publisher {
             : "Switched off"
           : account.health === "banned"
             ? "Marked banned, so it is skipped"
-            : !allowed.has(account.id)
-              ? "Not in the brief"
-              : null;
+            : routed(account);
       return {
         account,
         canPost: blocked === null,
@@ -164,9 +171,9 @@ export class Publisher {
 
   /**
    * Posts an approved clip on the chosen accounts, now or at `when`. Every check (approval,
-   * permission, brief, the permission's end date, daily caps) runs before the service is asked
+   * permission, brief, routing, the permission's end date, daily caps) runs before the service is asked
    * to post; posts on a busy account are moved to its next free slot. Accounts that are switched
-   * off or marked banned are left out and named in `skipped`.
+   * off, marked banned or that do not take the clip's permission kind are left out and named in `skipped`.
    */
   async post(clipId: number, accountIds: string[], when: Date | null): Promise<PostOutcome> {
     const { clips, posts, service } = this.deps;
@@ -251,10 +258,29 @@ export class Publisher {
       targets: chosen,
       now,
     });
+    // Routing: a clip only goes to accounts that take its permission kind (and its pin, if any).
+    // A real permission wins over an experiment, so a burner posts under the experiment only when nothing else covers it.
+    const routedAt = (account: ChannelAccount, at: Date) => {
+      const routes = source.permissions.filter((p) => isActive(p, at) && routingBlock(p, account, known) === null);
+      return routes.find((p) => p.kind !== "experiment") ?? routes[0];
+    };
+    const routingReason = (account: ChannelAccount, at: Date): string => {
+      const p = requireActivePermission(source.creatorName, source.permissions, at, account.platform, account.role);
+      return `${account.name} ${routingBlockText(routingBlock(p, account, known) ?? "kind", p)}, so nothing was sent to it.`;
+    };
+    const routed = chosen.filter((account) => {
+      if (routedAt(account, now)) return true;
+      skipped.push({ accountId: account.id, accountName: account.name, reason: routingReason(account, now) });
+      return false;
+    });
+    if (routed.length === 0) {
+      const gap = noAccountReason(source.permissions, known, now);
+      throw new ValidationError(`${gap ?? skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
+    }
 
     for (const platform of PLATFORMS) {
       const cap = service.dailyCaps[platform];
-      const wanted = chosen.filter((a) => a.platform === platform).length;
+      const wanted = routed.filter((a) => a.platform === platform).length;
       if (cap === undefined || wanted === 0) continue;
       const used = posts.countToday(service.name, platform);
       if (used + wanted > cap) {
@@ -267,12 +293,13 @@ export class Publisher {
     const wantedAt = when ?? now;
     // Where this clip already is, or is about to be: each account keeps its distance from the others.
     const clipTimes = posts.clipTimes(clip.id);
-    const planned = chosen.map((account) => {
+    const planned = routed.map((account) => {
       const elsewhere = clipTimes.filter((c) => c.accountId !== account.id).map((c) => c.at);
       const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, account.pace, elsewhere);
       clipTimes.push({ accountId: account.id, at });
       // The covering permission must still be in force when the post goes out.
-      const permission = requireActivePermission(source.creatorName, source.permissions, at, account.platform, account.role);
+      const permission = routedAt(account, at);
+      if (!permission) throw new ValidationError(`${routingReason(account, at)} Nothing was posted.`);
       const item: PublishItem = {
         account,
         title: clip.title,

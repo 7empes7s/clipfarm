@@ -4,6 +4,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AccountChoice, ChannelAccount, ChannelSettings, Permission, PostingAccount } from "../../shared/types.js";
+import { PERMISSION_KINDS } from "../../shared/types.js";
 import { campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
@@ -31,7 +32,16 @@ const CHANNELS: PostingAccount[] = [
   { id: "yt-a", platform: "youtube", name: "GTA VI Moments", disabled: false },
   { id: "yt-b", platform: "youtube", name: "Stream Bits", disabled: false },
 ];
-const DEFAULTS: ChannelSettings = { role: "main", niche: "", maxPerDay: null, minGapMinutes: null, enabled: true, health: "healthy" };
+const DEFAULTS: ChannelSettings = {
+  role: "main",
+  niche: "",
+  maxPerDay: null,
+  minGapMinutes: null,
+  enabled: true,
+  health: "healthy",
+  takes: [...PERMISSION_KINDS],
+  pinnedCampaignIds: [],
+};
 const NOON = "2026-11-19T12:00:00.000Z";
 
 function setup(listed: PostingAccount[] = CHANNELS) {
@@ -212,7 +222,7 @@ describe("accountsAllowedFor", () => {
     pausedReason: null,
     ...o,
   });
-  const permission = { allowedPlatforms: ["tiktok", "youtube"] } as Permission;
+  const permission = { id: 1, kind: "whop-campaign", allowedPlatforms: ["tiktok", "youtube"] } as Permission;
 
   it("returns every account that is switched on, on the platforms the permission allows, main or burner", () => {
     const accounts = [

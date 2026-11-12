@@ -3,13 +3,13 @@ import type {
   AccountRole,
   ChannelAccount,
   ChannelSettings,
-  Permission,
+  PermissionKind,
   Platform,
   PostingAccount,
   PostingRules,
   PostingServiceName,
 } from "../../shared/types.js";
-import { ACCOUNT_HEALTHS, ACCOUNT_ROLES } from "../../shared/types.js";
+import { ACCOUNT_HEALTHS, ACCOUNT_ROLES, PERMISSION_KINDS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import type { PostsRepo } from "../publish/repo.js";
 
@@ -26,22 +26,13 @@ interface Row {
   min_gap_minutes: number | null;
   enabled: number;
   health: AccountHealth;
+  /** JSON list of permission kinds; NULL takes every kind, also ones added later. */
+  takes: string | null;
+  pinned_campaigns: string;
   paused_reason: string | null;
 }
 
-/**
- * The accounts a permission may post to: every account that is switched on, on the platforms the
- * permission allows. An "experiment" permission is held to burner accounts.
- */
-export function accountsAllowedFor(permission: Permission, accounts: ChannelAccount[]): ChannelAccount[] {
-  return accounts.filter(
-    (a) =>
-      a.enabled &&
-      !a.disabled &&
-      permission.allowedPlatforms.includes(a.platform) &&
-      (permission.kind !== "experiment" || a.role === "burner"),
-  );
-}
+export { accountsAllowedFor } from "../../shared/routing.js";
 
 // Words that say nothing about the topic of a channel.
 const FILLER = new Set(["moments", "clips", "highlights", "shorts", "best", "daily", "funny", "the", "and", "of", "a"]);
@@ -72,6 +63,14 @@ export function parseChannelSettings(body: unknown): ChannelSettings {
     if (!Number.isInteger(n) || n < min || n > max) throw new ValidationError(message);
     return n;
   };
+  if (!Array.isArray(b.takes) || !b.takes.every((k) => PERMISSION_KINDS.includes(k as PermissionKind))) {
+    throw new ValidationError("Say which kinds of clips this account takes.");
+  }
+  if (b.takes.length === 0) throw new ValidationError("Tick at least one kind of clip, or switch the account off.");
+  if (!Array.isArray(b.pinnedCampaignIds) || !b.pinnedCampaignIds.every((id) => Number.isInteger(id) && id > 0)) {
+    throw new ValidationError("Say which campaigns are pinned to this account.");
+  }
+  const takes = PERMISSION_KINDS.filter((k) => (b.takes as unknown[]).includes(k));
   return {
     role: b.role as AccountRole,
     niche,
@@ -79,6 +78,9 @@ export function parseChannelSettings(body: unknown): ChannelSettings {
     minGapMinutes: optional(b.minGapMinutes, 0, 1440, "Minutes between posts must be a whole number from 0 to 1440, or empty."),
     enabled: b.enabled,
     health: b.health as AccountHealth,
+    takes,
+    // A pin only means something on an account that takes Whop campaigns.
+    pinnedCampaignIds: takes.includes("whop-campaign") ? [...new Set(b.pinnedCampaignIds as number[])] : [],
   };
 }
 
@@ -103,6 +105,8 @@ export class AccountsRepo {
       minGapMinutes: r.min_gap_minutes,
       enabled: r.enabled === 1,
       health: r.health,
+      takes: r.takes === null ? [...PERMISSION_KINDS] : PERMISSION_KINDS.filter((k) => (JSON.parse(r.takes!) as string[]).includes(k)),
+      pinnedCampaignIds: JSON.parse(r.pinned_campaigns) as number[],
       pace: { maxPerDay: r.max_per_day ?? shared.maxPerDay, minGapMinutes: r.min_gap_minutes ?? shared.minGapMinutes },
       pausedReason: r.paused_reason,
     };
@@ -138,12 +142,14 @@ export class AccountsRepo {
 
   /** Switching an account on again clears the reason it was paused. */
   update(id: string, s: ChannelSettings): ChannelAccount {
+    // Every kind ticked is stored as "everything", so a kind added later is taken too.
+    const takes = PERMISSION_KINDS.every((k) => s.takes.includes(k)) ? null : JSON.stringify(s.takes);
     const { changes } = this.posts.db
       .prepare(
-        `UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ?,
-           paused_reason = CASE WHEN ? = 1 THEN NULL ELSE paused_reason END WHERE account_id = ? AND listed = 1`,
+        `UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ?, takes = ?,
+           pinned_campaigns = ?, paused_reason = CASE WHEN ? = 1 THEN NULL ELSE paused_reason END WHERE account_id = ? AND listed = 1`,
       )
-      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, s.enabled ? 1 : 0, id);
+      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, takes, JSON.stringify(s.pinnedCampaignIds), s.enabled ? 1 : 0, id);
     if (changes === 0) throw new NotFoundError("That account was not found.");
     return this.list().find((a) => a.id === id)!;
   }

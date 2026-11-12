@@ -4,6 +4,8 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AccountChoice, ChannelSettings, Dashboard, NewPermissionInput, Post, PostingAccount } from "../../shared/types.js";
+import { accountsAllowedFor, noAccountReason, routingBlock, routingBlockText } from "../../shared/routing.js";
+import { PERMISSION_KINDS } from "../../shared/types.js";
 import { campaignInput } from "../../test/helpers.js";
 import { AccountStatsStore } from "../accounts/stats.js";
 import { createApp } from "../app.js";
@@ -29,7 +31,16 @@ const CHANNELS: PostingAccount[] = [
   { id: "yt-main", platform: "youtube", name: "GTA VI Moments", disabled: false },
   { id: "yt-burner", platform: "youtube", name: "Stream Bits", disabled: false },
 ];
-const DEFAULTS: ChannelSettings = { role: "main", niche: "", maxPerDay: null, minGapMinutes: null, enabled: true, health: "healthy" };
+const DEFAULTS: ChannelSettings = {
+  role: "main",
+  niche: "",
+  maxPerDay: null,
+  minGapMinutes: null,
+  enabled: true,
+  health: "healthy",
+  takes: [...PERMISSION_KINDS],
+  pinnedCampaignIds: [],
+};
 const BURNER: ChannelSettings = { ...DEFAULTS, role: "burner" };
 const NOON = new Date("2026-11-19T12:00:00.000Z");
 const EXPERIMENT: NewPermissionInput = { kind: "experiment", note: "Does Content ID claim a 20 s reaction clip?", allowedPlatforms: ["tiktok", "youtube"] };
@@ -162,6 +173,30 @@ describe("posting an experiment clip", () => {
       ["tt-main", real.id, false],
       ["tt-burner", real.id, false],
     ]);
+  });
+});
+
+describe("routing (shared with the gallery)", () => {
+  it("never routes an experiment to a main account, whatever kinds it takes, and says why", async () => {
+    const { publisher, source, ready } = setup(["tt-burner"]);
+    await ready();
+    const accounts = publisher.accounts.list();
+    const experiment = source.permissions[0]!;
+    const block = (id: string) => routingBlock(experiment, accounts.find((a) => a.id === id)!, accounts);
+    expect(accounts.find((a) => a.id === "tt-main")!.takes).toContain("experiment");
+    expect([block("tt-main"), block("tt-burner"), block("yt-main")]).toEqual(["burner", null, "burner"]);
+    expect(accountsAllowedFor(experiment, accounts).map((a) => a.id)).toEqual(["tt-burner"]);
+    expect(routingBlockText("burner", experiment)).toBe("is a main account, and experiment clips go to burner accounts only");
+  });
+
+  it("tells the gallery when an experiment clip has no burner to go to", async () => {
+    const { publisher, source, set, ready } = setup(["tt-burner"]);
+    await ready();
+    expect(noAccountReason(source.permissions, publisher.accounts.list(), NOON)).toBeNull();
+    await set("tt-burner", { ...BURNER, enabled: false });
+    expect(noAccountReason(source.permissions, publisher.accounts.list(), NOON)).toBe(
+      "Experiment clips post only to burner accounts, and none is switched on. Mark an account as Burner in Dashboard, Posting accounts.",
+    );
   });
 });
 
