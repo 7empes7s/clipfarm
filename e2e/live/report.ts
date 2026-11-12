@@ -74,6 +74,8 @@ export default class StepTableReporter implements Reporter {
   }
 
   onEnd(): void {
-    console.log(`\n${stepTable({ target: this.target, projects: this.projects, rows: this.rows, linkToClipsMs: this.linkToClipsMs })}\n`);
+    // --project=phone leaves the other screen out of the table.
+    const projects = this.projects.filter((p) => this.rows.some((r) => r.project === p));
+    console.log(`\n${stepTable({ target: this.target, projects, rows: this.rows, linkToClipsMs: this.linkToClipsMs })}\n`);
   }
 }
