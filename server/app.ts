@@ -33,10 +33,11 @@ function idParam(raw: string | string[] | undefined): number {
   return id;
 }
 
-function sendMedia(res: express.Response, file: string | null): void {
+function sendMedia(res: express.Response, next: express.NextFunction, file: string | null): void {
   if (!file || !existsSync(file)) throw new NotFoundError("That file is not there (yet).");
   // Paths come from the server, never the request; they may sit under a dot-folder (e.g. ~/.cubefarm).
-  res.sendFile(file, { dotfiles: "allow" });
+  // A player that stops a range request mid-way is not an error worth answering.
+  res.sendFile(file, { dotfiles: "allow" }, (err) => err && !res.headersSent && next(err));
 }
 
 function platformParam(raw: unknown): Platform {
@@ -66,8 +67,8 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
     res.json(sources.setFaceCam(idParam(req.params.id), parseCropRect(body.faceCam)));
   });
 
-  app.get("/api/sources/:id/frame", (req, res) => {
-    sendMedia(res, sources.framePath(idParam(req.params.id)));
+  app.get("/api/sources/:id/frame", (req, res, next) => {
+    sendMedia(res, next, sources.framePath(idParam(req.params.id)));
   });
 
   app.get("/api/vods/:id/picks", (req, res) => {
@@ -80,12 +81,12 @@ export function createApp({ sources, vods, picks, queue, clips, posts, publisher
     res.json(picks.list());
   });
 
-  app.get("/api/picks/:id/video", (req, res) => {
-    sendMedia(res, picks.files(idParam(req.params.id)).video);
+  app.get("/api/picks/:id/video", (req, res, next) => {
+    sendMedia(res, next, picks.files(idParam(req.params.id)).video);
   });
 
-  app.get("/api/picks/:id/thumb", (req, res) => {
-    sendMedia(res, picks.files(idParam(req.params.id)).thumb);
+  app.get("/api/picks/:id/thumb", (req, res, next) => {
+    sendMedia(res, next, picks.files(idParam(req.params.id)).thumb);
   });
 
   app.get("/api/vods", (_req, res) => {
