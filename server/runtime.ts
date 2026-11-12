@@ -4,6 +4,8 @@ import { type Config, loadConfig, openSettings } from "./config.js";
 import { type Db, openDb } from "./db/index.js";
 import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
+import { ENGINE_SETUP_JOB } from "./engine/engine.js";
+import { engineSetupHandler } from "./engine/setup.js";
 import { JobQueue } from "./jobs/queue.js";
 import { PicksRepo } from "./picks/repo.js";
 import { pipelineOnFinished } from "./pipeline/chain.js";
@@ -39,6 +41,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const settings = openSettings(env);
   const config = loadConfig(env, settings);
   const db = openDb(config.dbFile);
+  config.engine.bind(db);
   const sources = new SourcesRepo(db);
   const vods = new VodsRepo(db);
   const picks = new PicksRepo(db);
@@ -63,6 +66,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         preset: config.renderPreset,
       }),
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
+      [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
       [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir }),
     },

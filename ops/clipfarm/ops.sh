@@ -5,7 +5,7 @@
 # the service's user with the service's settings:
 #
 #   systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet \
-#     -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true \
+#     -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true \
 #     /usr/local/sbin/clipfarm-ops <command>
 #
 # Commands: clipfarm-ops help
@@ -15,7 +15,7 @@ ROOT="${CLIPFARM_ROOT:-/opt/clipfarm-live}"
 APP_USER="${CLIPFARM_USER:-clipfarm}"
 ENV_FILE="${CLIPFARM_ENV_FILE:-/etc/clipfarm/clipfarm.env}"
 NODE="${CLIPFARM_NODE:-/usr/bin/node}"
-HOW="systemd-run --uid=$APP_USER --gid=$APP_USER --pipe --wait --collect --quiet -p EnvironmentFile=$ENV_FILE -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true $0 $*"
+HOW="systemd-run --uid=$APP_USER --gid=$APP_USER --pipe --wait --collect --quiet -p EnvironmentFile=$ENV_FILE -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true $0 $*"
 
 die() { echo "clipfarm-ops: $*" >&2; exit 2; }
 

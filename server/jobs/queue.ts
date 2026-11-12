@@ -215,6 +215,10 @@ export class JobQueue {
     if (!this.draining) {
       this.draining = this.drainLoop().finally(() => {
         this.draining = null;
+        // A job added after the loop saw an empty queue but before this ran (for example
+        // enqueue() right after start()) found the old drain still set: pick it up now.
+        // Only while this queue is the worker: another process's jobs are found by the timer.
+        if (!this.stopped && this.holdsLease && this.hasQueued()) void this.kick();
       });
     }
     return this.draining;
@@ -223,6 +227,10 @@ export class JobQueue {
   /** Resolves when the queue has nothing left to run. */
   async idle(): Promise<void> {
     while (this.draining) await this.draining;
+  }
+
+  private hasQueued(): boolean {
+    return this.db.prepare("SELECT 1 FROM jobs WHERE status = 'queued' LIMIT 1").get() !== undefined;
   }
 
   private async drainLoop(): Promise<void> {

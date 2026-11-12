@@ -23,6 +23,7 @@ function perm(overrides: Partial<Permission> = {}): Permission {
     kind: "whop-campaign",
     campaignUrl: "https://whop.com/x",
     briefRules: "",
+    note: "",
     cpmRateUsd: 1,
     minViews: 3000,
     allowedPlatforms: ["tiktok"],

@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clientBuildProblem, createApp } from "./app.js";
 import { demoClipSeeder } from "./dev/seed.js";
+import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { openRuntime } from "./runtime.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
@@ -37,6 +38,7 @@ const app = createApp({
   publisher,
   accountStats,
   watchlist: { repo: watchRepo, poller },
+  engine: { engine: config.engine, fake: config.fakeEngine },
   settings: { store: settings, demo: config.fakes },
   seedDemoClip,
   clientDir,
@@ -44,6 +46,11 @@ const app = createApp({
 });
 
 queue.start();
+// Zero-touch: when the local engine is the one in use and something is missing, fetch it now.
+if (!config.fakeEngine && !config.engine.settings().cloud && config.engine.missing().length > 0) {
+  const waiting = queue.list(200).some((j) => j.type === ENGINE_SETUP_JOB && (j.status === "queued" || j.status === "running"));
+  if (!waiting) queue.enqueue(ENGINE_SETUP_JOB, {});
+}
 // Post links and views, read on a timer within the service's API limits.
 // Account stats follow their own, longer interval (the guard skips them until due).
 const refreshTimer = setInterval(() => {

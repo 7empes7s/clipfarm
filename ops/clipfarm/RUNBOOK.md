@@ -41,8 +41,15 @@ open to the internet, not even for a minute.
 | systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
 | Backups | `/opt/backups/YYYY-MM-DD/clipfarm.db.gz`, newest 3 kept, database only |
 
-Memory: the service is capped at 1536 MiB (`MemoryMax`), which covers the server plus the one
-ffmpeg or yt-dlp job that runs at a time. Idle it uses about 100 MiB.
+Memory: the service is capped at 3072 MiB (`MemoryMax`), which covers the server plus the one
+heavy job that runs at a time (ffmpeg, yt-dlp, the local speech model at about 0.5 GiB, or the
+local hook writer at about 1.9 GiB). Idle it uses about 100 MiB. Before it loads a model the
+engine checks that the box has that much free plus 1 GiB spare, and refuses with the reason if not.
+
+Engine: clipfarm transcribes and picks highlights on this box, with no outside AI service. On
+its first start it downloads its programs and models into `/var/lib/clipfarm/models` (about
+1.3 GB, each file checked against a pinned SHA-256) as a job called "Engine setup". The
+Dashboard shows "Local engine: ready", or what is missing with a button that fetches it.
 
 ---
 
@@ -79,8 +86,8 @@ Install only what is missing:
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 
-# ffmpeg and git
-apt-get install -y --no-install-recommends ffmpeg git
+# ffmpeg and git (libgomp1 is what the local engine's programs need; ffmpeg usually brings it)
+apt-get install -y --no-install-recommends ffmpeg git libgomp1
 
 # yt-dlp: the release binary (the apt one is too old for Twitch and YouTube)
 curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
@@ -132,8 +139,8 @@ The file explains every line. The ones that matter:
 |---|---|
 | `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
 | `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | leave as they are: the server finds the Cloudflare team and application by itself from the public address (an env file without these lines works the same) |
-| `OPENAI_API_KEY` | for transcripts (and for picking highlights, unless `LLM_API_KEY` is set) |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | only if highlights are picked by another provider |
+| `OPENAI_API_KEY` | optional: only for "Use cloud AI for speed" on the Dashboard. Empty = everything runs on this box |
+| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | optional: only if cloud picks should use another provider |
 | `POSTIZ_API_KEY` | step 11 |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | watchlist; empty skips that platform |
 
@@ -155,7 +162,7 @@ systemctl enable clipfarm
 systemctl cat clipfarm | grep -E '^(User|ExecStart|MemoryMax)='
 ```
 
-You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` and `MemoryMax=1536M`.
+You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` and `MemoryMax=3072M`.
 
 ## 5. First deploy (IT)
 
@@ -481,7 +488,7 @@ install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/ops.sh /usr/
 Every command is run the same way, as one `systemd-run` (as root). Only the last words change:
 
 ```bash
-systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops test-keys
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops test-keys
 ```
 
 You should see one line per connection: `OpenAI: Working`, `Twitch: Working`, `YouTube: Not set`...
@@ -492,9 +499,9 @@ manager fixes a key in the app under **⋯ > Settings**; nothing to restart.
 id on whop.com):
 
 ```bash
-systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops source add kick.com/tjr --kind whop-campaign --campaign <campaign> --name TJR --rules "Caption must include #TJR. English only. Made without AI voices or added logos. Submit within 30 minutes of posting."
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops source add kick.com/tjr --kind whop-campaign --campaign <campaign> --name TJR --rules "Caption must include #TJR. English only. Made without AI voices or added logos. Submit within 30 minutes of posting."
 
-systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops run latest kick.com/tjr
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops run latest kick.com/tjr
 ```
 
 `source add` prints `Added. Source 1: TJR (https://kick.com/tjr), Whop campaign …, permission active`
@@ -520,7 +527,7 @@ command, ever: posting stays a tap in the app.
 | Command (the last words of the line) | What it does |
 |---|---|
 | `test-keys` | Tests each saved key, the same test as the Test button in Settings |
-| `source add <channel link> --campaign <link or Whop id> [--name … --rules "…" --banned "…" --platforms tiktok,youtube,instagram --rate 1.5 --min-views 3000 --expires 2026-12-31]` | Adds a creator with its permission record. `--kind direct-permission` or `own-content` for the other kinds |
+| `source add <channel link> --campaign <link or Whop id> [--name … --rules "…" --banned "…" --platforms tiktok,youtube,instagram --rate 1.5 --min-views 3000 --expires 2026-12-31]` | Adds a creator with its permission record. `--kind direct-permission` or `own-content` for the other kinds; `--kind experiment --note "<what is tested>"` (no `--campaign`) for an experiment, whose clips post to burner accounts only |
 | `source list`, `source remove <id>` | Shows the sources; removes one with everything made from it (refused once its clips were posted) |
 | `run latest <channel link or source id> [--count N]` | The channel's newest finished video → clips. Says `Nothing new` when that video was already done |
 | `run <video link> [--source <id or channel link>] [--count N]` | One video → clips. `--source` when the link does not start with the channel (Twitch and YouTube video links) |
@@ -532,7 +539,10 @@ Good to know:
 
 - One heavy job at a time still holds: while the service is up it does the work and `run` only
   follows it. If the service is down, `run` does the work itself (that is why the line caps
-  memory), and gives the queue back when it ends.
+  memory, at the service's own 3072 MiB), and gives the queue back when it ends.
+- Transcripts and picks run on the box's own engine unless cloud AI is switched on in the
+  Dashboard. If the engine is not downloaded yet, `run` fails with that reason; the service
+  fetches it by itself after a start (`status` shows the `engine-setup` job).
 - `run` waits up to 3 hours (`--timeout <minutes>`). Stopping it (Ctrl+C) does not cancel the
   job: `status` shows it, and the clips still arrive in the gallery.
 - Exit code 0: done. 1: it failed, the last line says why (`clipfarm-ops: The permission for TJR
@@ -547,6 +557,15 @@ Good to know:
 ```bash
 systemctl start clipfarm-backup.service              # fresh backup first
 clipfarm-deploy origin/main
+```
+
+If `systemctl cat clipfarm | grep MemoryMax` still shows `MemoryMax=1536M` (a box set up before
+the local engine), install the new unit once, before the deploy. Until then the hook writer is
+refused for memory and hooks come from the transcript:
+
+```bash
+install -m 644 /opt/clipfarm-live/repo/ops/clipfarm/clipfarm.service /etc/systemd/system/clipfarm.service
+systemctl daemon-reload
 ```
 
 `origin/main` is the newest merged commit; a commit id (`clipfarm-deploy 460bfc0`) or a tag works too.
@@ -617,7 +636,7 @@ Common problems:
 | Phone shows "Sign in through Cloudflare Access to use clipfarm." | The request did not come through Access: a bypass was added for a path it should not cover (step 7), or someone called the port directly |
 | Everyone gets that message, and the log has a line starting `Access gate:` | The server could not find the Cloudflare team's keys to check sign-ins with; the line says why (the public address does not lead to the Access login: steps 7 and 8, or no connection to Cloudflare). It tries again every minute and recovers by itself. To pin the values instead: `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` in the env file, then `systemctl restart clipfarm` |
 | `NRestarts` keeps growing | `journalctl -u clipfarm -n 50`: a bad setting in the env file, or the port is taken (step 1) |
-| A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 1536 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
+| A render job fails with "killed" / the log shows an out-of-memory kill | ffmpeg hit the 3072 MiB cap. The job is retried. If it keeps happening, tell the manager before raising `MemoryMax` (the box is shared) |
 | Downloads fail for every link | `yt-dlp -U`, then retry the job in the app |
 | Disk filling up | `du -sh /var/lib/clipfarm/media`; lower `MEDIA_KEEP_REJECTED_DAYS`, `systemctl start clipfarm-media-cleanup.service` |
 

@@ -29,6 +29,7 @@ interface Row {
   /** JSON list of permission kinds; NULL takes every kind, also ones added later. */
   takes: string | null;
   pinned_campaigns: string;
+  paused_reason: string | null;
 }
 
 export { accountsAllowedFor } from "../../shared/routing.js";
@@ -107,6 +108,7 @@ export class AccountsRepo {
       takes: r.takes === null ? [...PERMISSION_KINDS] : PERMISSION_KINDS.filter((k) => (JSON.parse(r.takes!) as string[]).includes(k)),
       pinnedCampaignIds: JSON.parse(r.pinned_campaigns) as number[],
       pace: { maxPerDay: r.max_per_day ?? shared.maxPerDay, minGapMinutes: r.min_gap_minutes ?? shared.minGapMinutes },
+      pausedReason: r.paused_reason,
     };
   }
 
@@ -138,14 +140,16 @@ export class AccountsRepo {
     return rows.map((r) => this.toAccount(r, shared));
   }
 
+  /** Switching an account on again clears the reason it was paused. */
   update(id: string, s: ChannelSettings): ChannelAccount {
     // Every kind ticked is stored as "everything", so a kind added later is taken too.
     const takes = PERMISSION_KINDS.every((k) => s.takes.includes(k)) ? null : JSON.stringify(s.takes);
     const { changes } = this.posts.db
       .prepare(
-        "UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ?, takes = ?, pinned_campaigns = ? WHERE account_id = ? AND listed = 1",
+        `UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ?, takes = ?,
+           pinned_campaigns = ?, paused_reason = CASE WHEN ? = 1 THEN NULL ELSE paused_reason END WHERE account_id = ? AND listed = 1`,
       )
-      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, takes, JSON.stringify(s.pinnedCampaignIds), id);
+      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, takes, JSON.stringify(s.pinnedCampaignIds), s.enabled ? 1 : 0, id);
     if (changes === 0) throw new NotFoundError("That account was not found.");
     return this.list().find((a) => a.id === id)!;
   }

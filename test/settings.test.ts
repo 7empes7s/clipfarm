@@ -97,6 +97,7 @@ function setup(extraEnv: NodeJS.ProcessEnv = {}, access?: AccessVerifier) {
   const settings = openSettings(env);
   const config = loadConfig(env, settings);
   const db = openDb(":memory:");
+  config.engine.bind(db);
   const sources = new SourcesRepo(db);
   const vods = new VodsRepo(db);
   const clips = new ClipsRepo(db);
@@ -262,13 +263,20 @@ describe("Settings: Test", () => {
 
 describe("Settings: a saved key is in use at once, with no restart", () => {
   it("the next transcription job uses an OpenAI key saved while the env has none", async () => {
-    const { call, sources, vods, queue } = setup({ OPENAI_API_KEY: "" });
+    const { call, config, sources, vods, queue } = setup({ OPENAI_API_KEY: "" });
     const source = sources.create(campaignInput());
+    // Cloud AI is the option here ("Use cloud AI for speed"); it was switched on, then the key was removed.
+    await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    config.engine.saveSettings({ cloud: true });
+    await call("delete", "/api/settings/openai");
 
     const before = vods.create(source.id, "https://www.twitch.tv/videos/1");
     const failed = queue.enqueue(INGEST_JOB, { vodId: before.id }, { vodId: before.id, maxAttempts: 1 });
     await queue.idle();
-    expect(queue.get(failed.id)).toMatchObject({ status: "failed", error: "Add your OpenAI key in Settings, so audio can be transcribed." });
+    expect(queue.get(failed.id)).toMatchObject({
+      status: "failed",
+      error: "Cloud AI is switched on, but there is no OpenAI key. Add it in Settings, or switch cloud AI off on the Dashboard to use the local engine.",
+    });
     expect(outside.calls).toEqual([]);
 
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
@@ -312,13 +320,14 @@ describe("Settings: a saved key is in use at once, with no restart", () => {
 
 describe("Settings: who may see what", () => {
   it("no saved value is in any answer or log line", async () => {
-    const { call, sources, vods, queue, repo } = setup();
+    const { call, config, sources, vods, queue, repo } = setup();
     repo.create({ name: "Test Streamer", channels: [{ platform: "twitch", handle: "teststreamer" }], language: "en", games: [], program: "none", programUrl: null, note: "", sourceId: null });
     const source = sources.create(campaignInput());
     const everyKey = Object.values(KEYS);
 
     // Wrong keys first: the stand-in services repeat them in their refusals, as real ones may.
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openaiBad }));
+    config.engine.saveSettings({ cloud: true });
     await call("put", ...save("twitch", { TWITCH_CLIENT_ID: KEYS.twitchId, TWITCH_CLIENT_SECRET: KEYS.twitchBadSecret }));
     await call("put", ...save("postiz", { POSTIZ_URL: "http://postiz.test", POSTIZ_API_KEY: "wrongpostizkey0000000000000000o5p6" }));
     for (const id of ["openai", "twitch", "youtube", "postiz", "upload-post"]) await call("post", `/api/settings/${id}/test`);
@@ -351,6 +360,7 @@ describe("Settings: who may see what", () => {
   it("a service's error that repeats the key is cleaned, message and stack, before anyone can log it", async () => {
     const { call, config } = setup();
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openaiBad }));
+    config.engine.saveSettings({ cloud: true });
     const audio = join(dir, "a.mp3");
     writeFileSync(audio, "small");
     const err = await config.transcriber.transcribe(audio, { durationSec: 1, tmpDir: dir }).catch((e: Error) => e);
@@ -385,7 +395,7 @@ describe("Setup checklist", () => {
     const start = (await call("get", "/api/setup")).body as SetupChecklist;
     expect(start.done).toBe(false);
     expect(start.items.map((i) => [i.id, i.done])).toEqual([["keys", false], ["accounts", false], ["permission", false], ["clip", false], ["post", false]]);
-    expect(start.items[0]!.line).toBe("Paste each key, then tap Test. Still open: OpenAI (not set), Twitch (not set), YouTube (not set), Postiz (not set).");
+    expect(start.items[0]!.line).toBe("Paste each key, then tap Test. Still open: Twitch (not set), YouTube (not set), Postiz (not set).");
 
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
     await call("put", ...save("twitch", { TWITCH_CLIENT_ID: KEYS.twitchId, TWITCH_CLIENT_SECRET: KEYS.twitchSecret }));

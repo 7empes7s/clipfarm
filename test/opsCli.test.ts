@@ -222,10 +222,11 @@ describe("clipfarm-ops run, clips and status (fakes; real ffmpeg on a generated 
 
   it("exits non-zero with the step's reason when the pipeline fails", async () => {
     await addTjr();
-    // Not demo mode: the transcript needs an OpenAI key, and none is saved.
+    // Not demo mode: the transcript needs the local engine, and it is not downloaded here.
     const { code, out, err } = await ops(["run", "https://kick.com/tjr/videos/some-stream"], { DATA_DIR: dir, MEDIA_DIR: join(dir, "media"), DOWNLOADER: "fake", FAKE_VOD_SEC: "10" });
     expect(code).toBe(1);
-    expect(err).toEqual(["clipfarm-ops: The ingest step failed: Add your OpenAI key in Settings, so audio can be transcribed."]);
+    expect(err).toHaveLength(1);
+    expect(err[0]).toMatch(/^clipfarm-ops: The ingest step failed: The local engine is not set up yet\. /);
     expect(out.some((l) => l.startsWith("Done in"))).toBe(false);
   });
 });

@@ -44,7 +44,7 @@ describe('ops/clipfarm/ops.sh (installed as clipfarm-ops)', () => {
     expect(run.status).toBe(2);
     expect(run.out).toBe('');
     expect(run.err).toContain('DATA_DIR is not set');
-    expect(run.err).toContain(`-p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=1536M -p UMask=0027 -p PrivateTmp=true ${script} test-keys`);
+    expect(run.err).toContain(`-p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true ${script} test-keys`);
   });
 
   it('refuses to run as another user than the service (root would leave files the service cannot read)', () => {

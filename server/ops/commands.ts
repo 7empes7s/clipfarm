@@ -34,7 +34,8 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
                           [--name <creator>] [--rules <brief>] [--banned <off limits>]
                           [--platforms tiktok,youtube,instagram] [--rate <USD per 1,000 views>]
                           [--min-views <n>] [--expires <date>]
-      Adds a creator with its permission record. --kind: whop-campaign, direct-permission, own-content.
+      Adds a creator with its permission record. --kind: whop-campaign, direct-permission, own-content,
+      or experiment (burner accounts only; needs --note "<what is tested>" instead of --campaign).
   clipfarm-ops source list
   clipfarm-ops source remove <id>
   clipfarm-ops run latest <source id or channel link> [--count N]
@@ -119,6 +120,7 @@ function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
       name: { type: "string" },
       rules: { type: "string" },
       banned: { type: "string" },
+      note: { type: "string" },
       platforms: { type: "string", default: "tiktok,youtube,instagram" },
       rate: { type: "string" },
       "min-views": { type: "string" },
@@ -159,6 +161,7 @@ function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
         kind: values.kind,
         campaignUrl,
         briefRules: values.rules,
+        note: values.note,
         cpmRateUsd: number(values.rate),
         minViews: number(values["min-views"]),
         allowedPlatforms: values.platforms.split(",").map((p) => p.trim()),

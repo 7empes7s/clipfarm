@@ -32,6 +32,7 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
 
 const JOB_TYPE_LABEL: Record<string, string> = {
   ingest: "Transcript",
+  "engine-setup": "Engine setup",
   picks: "Picking highlights",
   render: "Cutting a clip",
   "render-clip": "New version",
@@ -81,6 +82,7 @@ export function App() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [permissionFor, setPermissionFor] = useState<Source | null>(null);
   const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
   // Bumped on every local change to the clips, so a poll that started earlier cannot undo it.
   const clipsEdits = useRef(0);
@@ -116,7 +118,10 @@ export function App() {
     };
   }, [refresh, busy]);
 
-  const closeForm = useCallback(() => setFormOpen(false), []);
+  const closeForm = useCallback(() => {
+    setFormOpen(false);
+    setPermissionFor(null);
+  }, []);
   const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
   const counts = tabCounts(clips, sources, jobs);
 
@@ -191,6 +196,7 @@ export function App() {
                   picks={picks}
                   onChange={refresh}
                   onFaceCam={() => setFaceCamFor(s)}
+                  onAddPermission={() => setPermissionFor(s)}
                 />
               ))}
             </ul>
@@ -219,11 +225,12 @@ export function App() {
         </section>
       )}
 
-      {formOpen && (
+      {(formOpen || permissionFor) && (
         <CampaignForm
+          source={permissionFor ?? undefined}
           onClose={closeForm}
           onSaved={() => {
-            setFormOpen(false);
+            closeForm();
             void refresh();
           }}
         />
@@ -249,12 +256,14 @@ function SourceCard({
   picks,
   onChange,
   onFaceCam,
+  onAddPermission,
 }: {
   source: Source;
   vods: Vod[];
   picks: Pick[];
   onChange: () => void;
   onFaceCam: () => void;
+  onAddPermission: () => void;
 }) {
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
@@ -312,6 +321,12 @@ function SourceCard({
             <dt>Post to</dt>
             <dd>{perm.allowedPlatforms.map((p) => PLATFORM_LABELS[p]).join(", ")}</dd>
           </div>
+          {perm.note && (
+            <div className="wide">
+              <dt>Testing</dt>
+              <dd>{perm.note}</dd>
+            </div>
+          )}
         </dl>
       )}
       {source.bannedContent && <p className="banned">Off limits: {source.bannedContent}</p>}
@@ -319,6 +334,9 @@ function SourceCard({
         <span>{source.faceCam ? "Face cam set" : "No face cam set"}</span>
         <button type="button" className="link" onClick={onFaceCam}>
           {source.faceCam ? "Change face cam" : "Set face cam"}
+        </button>
+        <button type="button" className="link" onClick={onAddPermission}>
+          Add a permission
         </button>
       </div>
 
