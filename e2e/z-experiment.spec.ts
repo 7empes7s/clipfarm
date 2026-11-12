@@ -45,7 +45,9 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
   const { accounts } = (await (await request.get("/api/posting")).json()) as { accounts: ({ id: string } & Record<string, unknown>)[] };
   const x = accounts.find((a) => a.id === "fake-x")!;
   try {
-    expect((await request.put("/api/accounts/fake-x", { data: { ...x, role: "burner", enabled: true } })).status()).toBe(200);
+    // Its own pace with no gap, so the desktop run's post also goes out at once instead of queuing behind the phone run's.
+    const burner = { ...x, role: "burner", enabled: true, maxPerDay: 50, minGapMinutes: 0 };
+    expect((await request.put("/api/accounts/fake-x", { data: burner })).status()).toBe(200);
 
     // The gallery: a badge, no Export, and only the burner in the picker.
     await page.goto("/#approved");
