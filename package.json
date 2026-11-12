@@ -1,0 +1,46 @@
+{
+  "name": "clipfarm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"tsx watch server/index.ts\" \"vite\"",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "preview": "node dist/server/index.js",
+    "start": "node dist/server/index.js",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.1.1",
+    "express": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/supertest": "^7.2.1",
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "supertest": "^7.3.2",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
