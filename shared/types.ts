@@ -1,6 +1,10 @@
 // Types and constants shared by the server and the gallery client.
 
-export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content"] as const;
+/**
+ * "experiment": a test of what the platforms do to clips posted without the creator's permission.
+ * It needs no proof, and its clips go to burner accounts only: never to a main account, an export or Whop.
+ */
+export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content", "experiment"] as const;
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
 export const PLATFORMS = ["tiktok", "youtube", "instagram", "x"] as const;
@@ -17,7 +21,11 @@ export const PERMISSION_KIND_LABELS: Record<PermissionKind, string> = {
   "whop-campaign": "Whop campaign",
   "direct-permission": "Direct permission",
   "own-content": "Our own content",
+  experiment: "Experiment (burner only)",
 };
+
+/** Days an experiment record runs when no end date is given. */
+export const EXPERIMENT_DAYS = 30;
 
 export interface Permission {
   id: number;
@@ -25,6 +33,8 @@ export interface Permission {
   kind: PermissionKind;
   campaignUrl: string | null;
   briefRules: string;
+  /** What an experiment is testing; empty for the other kinds. */
+  note: string;
   cpmRateUsd: number | null;
   minViews: number | null;
   allowedPlatforms: Platform[];
@@ -56,19 +66,23 @@ export interface Source {
   permissionState: PermissionState;
 }
 
+export interface NewPermissionInput {
+  kind: PermissionKind;
+  campaignUrl?: string | null;
+  briefRules?: string;
+  /** Needed for an experiment: what is being tested. */
+  note?: string;
+  cpmRateUsd?: number | null;
+  minViews?: number | null;
+  allowedPlatforms: Platform[];
+  expiresAt?: string | null;
+}
+
 export interface NewSourceInput {
   creatorName: string;
   channelUrls: string[];
   bannedContent?: string;
-  permission: {
-    kind: PermissionKind;
-    campaignUrl?: string | null;
-    briefRules?: string;
-    cpmRateUsd?: number | null;
-    minViews?: number | null;
-    allowedPlatforms: Platform[];
-    expiresAt?: string | null;
-  };
+  permission: NewPermissionInput;
 }
 
 export const JOB_STATUSES = ["queued", "running", "done", "failed", "cancelled"] as const;
@@ -223,6 +237,8 @@ export interface Clip {
   /** Caption words, timed in master seconds. */
   captionWords: Word[];
   postCount: number;
+  /** The creator has only an experiment record in force: the clip goes to burner accounts only. */
+  experiment: boolean;
   /** Where the gallery plays and downloads the MP4. */
   videoUrl: string;
   /** The source section, for trimming and the face cam frame. */
@@ -284,13 +300,15 @@ export interface ChannelAccount extends PostingAccount, ChannelSettings {
   avatarUrl: string | null;
   /** The pace in force: its own numbers, else the shared spacing. */
   pace: PostingRules;
+  /** Why the account was switched off by itself (a strike); cleared when it is switched on again. */
+  pausedReason: string | null;
 }
 
 /** One account in the picker for a clip. */
 export interface AccountChoice {
   account: ChannelAccount;
   canPost: boolean;
-  /** Ticked to start with: a main account whose niche fits the clip. */
+  /** Ticked to start with: a main account whose niche fits the clip (a burner, for an experiment clip). */
   suggested: boolean;
   /** Why it cannot be picked, or a warning, in plain words. */
   note: string | null;
@@ -332,6 +350,12 @@ export interface PostingInfo {
 
 export type PostStatus = "scheduled" | "posted" | "failed";
 
+/** What a platform did to a post: a copyright claim, a removal, a strike on the account. */
+export const POST_FLAGS = ["claim", "removal", "strike"] as const;
+export type PostFlag = (typeof POST_FLAGS)[number];
+
+export const POST_FLAG_LABELS: Record<PostFlag, string> = { claim: "Claim", removal: "Removed", strike: "Strike" };
+
 export interface Post {
   id: number;
   clipId: number;
@@ -354,6 +378,10 @@ export interface Post {
   viewsUpdatedAt: string | null;
   viewsSource: "service" | "manual" | null;
   whopSubmittedAt: string | null;
+  /** Posted under an experiment record (always on a burner account). */
+  experiment: boolean;
+  /** When each claim, removal or strike was recorded; null when there is none. */
+  flags: Record<PostFlag, string | null>;
   /** Views × the campaign's pay per 1,000, or 0 under its minimum views. */
   estimatedEarningsUsd: number;
 }
@@ -513,6 +541,28 @@ export interface DashboardToday {
   costPerApprovedClipUsd: number | null;
 }
 
+/** Experiment posts added up for one burner account or one creator. */
+export interface ExperimentRow {
+  key: string;
+  label: string;
+  posts: number;
+  views: number;
+  claims: number;
+  removals: number;
+  strikes: number;
+  /** Seconds from a post going out to its claim, for the earliest claim; null without a claim. */
+  firstClaimSec: number | null;
+  /** Accounts only: why it is paused, or null while it is on. */
+  pausedReason: string | null;
+}
+
+/** What the platforms did to the experiment posts. */
+export interface ExperimentReport {
+  total: ExperimentRow;
+  byAccount: ExperimentRow[];
+  byCreator: ExperimentRow[];
+}
+
 export interface Dashboard {
   /** No clips, VODs or posts yet: the app offers "Load demo data". */
   empty: boolean;
@@ -522,6 +572,7 @@ export interface Dashboard {
   vods: VodProgress[];
   goals: Goal[];
   earnings: { rows: EarningsRow[]; weekUsd: number; totalUsd: number };
+  experiment: ExperimentReport;
 }
 
 export const WATCH_PLATFORMS = ["twitch", "kick", "youtube"] as const;

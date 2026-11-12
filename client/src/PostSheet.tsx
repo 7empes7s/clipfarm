@@ -78,7 +78,9 @@ export function PostSheet({
           !error && <p className="hint">Loading accounts…</p>
         ) : choices.length === 0 && !info.accountsError ? (
           <p className="empty">
-            {info.service === "none"
+            {clip.experiment && info.accounts.length > 0
+              ? "This is an experiment clip and there is no burner account yet. Mark an account as Burner in Dashboard, Accounts."
+              : info.service === "none"
               ? "No posting service is set up yet. Use Export to post by hand."
               : `No accounts are connected in ${info.label} yet. Connect them there first.`}
           </p>
@@ -95,7 +97,11 @@ export function PostSheet({
                 </label>
               ))}
             </div>
-            <p className="hint">Main accounts whose niche fits this clip start ticked. Change them as you like.</p>
+            <p className="hint">
+              {clip.experiment
+                ? "This is an experiment clip, so only burner accounts are listed."
+                : "Main accounts whose niche fits this clip start ticked. Change them as you like."}
+            </p>
           </fieldset>
         )}
         <fieldset>

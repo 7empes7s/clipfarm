@@ -26,15 +26,21 @@ interface Row {
   min_gap_minutes: number | null;
   enabled: number;
   health: AccountHealth;
+  paused_reason: string | null;
 }
 
 /**
- * The accounts a permission may post to. Today: every account that is switched on, on the
- * platforms the permission allows. The role is stored so an "experiment" permission can later be
- * held to burner accounts here, in one place.
+ * The accounts a permission may post to: every account that is switched on, on the platforms the
+ * permission allows. An "experiment" permission is held to burner accounts.
  */
 export function accountsAllowedFor(permission: Permission, accounts: ChannelAccount[]): ChannelAccount[] {
-  return accounts.filter((a) => a.enabled && !a.disabled && permission.allowedPlatforms.includes(a.platform));
+  return accounts.filter(
+    (a) =>
+      a.enabled &&
+      !a.disabled &&
+      permission.allowedPlatforms.includes(a.platform) &&
+      (permission.kind !== "experiment" || a.role === "burner"),
+  );
 }
 
 // Words that say nothing about the topic of a channel.
@@ -98,6 +104,7 @@ export class AccountsRepo {
       enabled: r.enabled === 1,
       health: r.health,
       pace: { maxPerDay: r.max_per_day ?? shared.maxPerDay, minGapMinutes: r.min_gap_minutes ?? shared.minGapMinutes },
+      pausedReason: r.paused_reason,
     };
   }
 
@@ -129,10 +136,14 @@ export class AccountsRepo {
     return rows.map((r) => this.toAccount(r, shared));
   }
 
+  /** Switching an account on again clears the reason it was paused. */
   update(id: string, s: ChannelSettings): ChannelAccount {
     const { changes } = this.posts.db
-      .prepare("UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ? WHERE account_id = ? AND listed = 1")
-      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, id);
+      .prepare(
+        `UPDATE posting_accounts SET role = ?, niche = ?, max_per_day = ?, min_gap_minutes = ?, enabled = ?, health = ?,
+           paused_reason = CASE WHEN ? = 1 THEN NULL ELSE paused_reason END WHERE account_id = ? AND listed = 1`,
+      )
+      .run(s.role, s.niche, s.maxPerDay, s.minGapMinutes, s.enabled ? 1 : 0, s.health, s.enabled ? 1 : 0, id);
     if (changes === 0) throw new NotFoundError("That account was not found.");
     return this.list().find((a) => a.id === id)!;
   }

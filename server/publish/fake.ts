@@ -1,4 +1,4 @@
-import type { DailyPoint, Platform, PostingAccount } from "../../shared/types.js";
+import type { DailyPoint, Platform, PostFlag, PostingAccount } from "../../shared/types.js";
 import { PostingServiceError } from "./errors.js";
 import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
 
@@ -21,6 +21,8 @@ export class FakePostingService implements PostingService {
   /** Views every posted post reports on refresh; null reports none. */
   views: number | null = 12_000;
   failWith: string | null = null;
+  /** What refresh reports per post id (a claim, a strike…), as a platform would. */
+  flags = new Map<string, PostFlag[]>();
   /** The last day account stats end on. */
   today: () => Date = () => new Date();
   private n = 0;
@@ -74,6 +76,8 @@ export class FakePostingService implements PostingService {
         const update: PostUpdate = { externalId: p.externalId, accountId: p.accountId };
         // Scheduled posts stay scheduled; posted ones report views.
         if (this.postedIds.has(p.externalId) && this.views !== null) update.views = this.views;
+        const flags = this.flags.get(p.externalId);
+        if (flags) update.flags = flags;
         return update;
       }),
     );

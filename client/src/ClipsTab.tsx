@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import type { Clip, Post, PostingInfo, Source } from "../../shared/types";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
+import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
 import { shortDate } from "./format";
@@ -120,6 +121,11 @@ export function ClipsTab({
                     {source?.creatorName ?? "Unknown creator"} · {Math.round(clip.durationSec)} s
                     {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
+                  {clip.experiment && (
+                    <p className="hint exp-line">
+                      <ExperimentBadge /> Burner accounts only, no export.
+                    </p>
+                  )}
                   <div className="actions">
                     {clip.status !== "approved" && (
                       <button type="button" className="primary" onClick={() => void act(() => api.approveClip(clip.id))}>
@@ -131,9 +137,11 @@ export function ClipsTab({
                         <button type="button" className="primary" onClick={() => setPosting(clip)} disabled={!info}>
                           Post
                         </button>
-                        <button type="button" onClick={() => setExporting(clip)}>
-                          Export
-                        </button>
+                        {!clip.experiment && (
+                          <button type="button" onClick={() => setExporting(clip)}>
+                            Export
+                          </button>
+                        )}
                       </>
                     )}
                     {clip.status !== "rejected" && clip.postCount === 0 && (

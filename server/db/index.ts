@@ -225,6 +225,13 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE account_stats ADD COLUMN claims INTEGER;
   `,
+  `
+  ALTER TABLE permissions ADD COLUMN note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE posts ADD COLUMN claim_at TEXT;
+  ALTER TABLE posts ADD COLUMN removal_at TEXT;
+  ALTER TABLE posts ADD COLUMN strike_at TEXT;
+  ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

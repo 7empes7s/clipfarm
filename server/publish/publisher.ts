@@ -16,7 +16,7 @@ import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared
 import { accountsAllowedFor, AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
-import { isActive, requireActivePermission } from "../sources/permission.js";
+import { isActive, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildCaption } from "./caption.js";
 import { assertCanPost } from "./gate.js";
@@ -68,6 +68,7 @@ export interface PublisherDeps {
 
 /** Why a picked account gets no post, or null when it can take one. */
 function skipReason(a: ChannelAccount): string | null {
+  if (!a.enabled && a.pausedReason) return `${a.name} is paused after a strike, so nothing was sent to it.`;
   if (!a.enabled) return `${a.name} is switched off in Posting accounts, so nothing was sent to it.`;
   if (a.health === "banned") return `${a.name} is marked banned, so it was skipped.`;
   return null;
@@ -103,14 +104,16 @@ export class Publisher {
 
   /**
    * The picker for a clip: every account, whether it can take the clip, and which are ticked to
-   * start with (main accounts whose niche fits the clip).
+   * start with (main accounts whose niche fits the clip). An experiment clip is offered burner
+   * accounts only: main accounts are not in its list at all.
    */
   async choices(clipId: number): Promise<AccountChoice[]> {
     const { clips, sources, service, vodTitle } = this.deps;
     const clip = clips.get(clipId);
     const source = sources.get(clip.sourceId);
-    const accounts = await this.knownAccounts();
     const now = this.now();
+    const experiment = isExperimentOnly(source.permissions, now);
+    const accounts = (await this.knownAccounts()).filter((a) => !experiment || a.role === "burner");
     const allowed = new Set(
       source.permissions.filter((p) => isActive(p, now)).flatMap((p) => accountsAllowedFor(p, accounts).map((a) => a.id)),
     );
@@ -119,7 +122,9 @@ export class Publisher {
       const blocked = account.disabled
         ? `Disconnected in ${service.label}`
         : !account.enabled
-          ? "Switched off"
+          ? account.pausedReason
+            ? "Paused after a strike"
+            : "Switched off"
           : account.health === "banned"
             ? "Marked banned, so it is skipped"
             : !allowed.has(account.id)
@@ -128,7 +133,7 @@ export class Publisher {
       return {
         account,
         canPost: blocked === null,
-        suggested: blocked === null && account.role === "main" && nicheMatches(account.niche, text),
+        suggested: blocked === null && (experiment || account.role === "main") && nicheMatches(account.niche, text),
         note: blocked ?? (account.health === "limited" ? "Marked limited" : null),
       };
     });
@@ -218,9 +223,14 @@ export class Publisher {
     const clip = clips.get(clipId);
     const source = sources.get(clip.sourceId);
     // First pass without platforms: refuses missing or expired records before any service call.
-    assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, platforms: [], now });
+    assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
 
     const known = await this.knownAccounts();
+    if (isExperimentOnly(source.permissions, now) && !known.some((a) => a.role === "burner" && a.enabled && !a.disabled)) {
+      throw new PermissionError(
+        `${source.creatorName} is an experiment, which posts only to burner accounts, and no burner account is switched on. Mark an account as Burner in Dashboard, Accounts first.`,
+      );
+    }
     const picked = accountIds.map((id) => {
       const account = known.find((a) => a.id === id);
       if (!account) throw new ValidationError("One of the accounts is no longer connected. Reload and pick again.");
@@ -238,7 +248,7 @@ export class Publisher {
       clipStatus: clip.status,
       creatorName: source.creatorName,
       permissions: source.permissions,
-      platforms: chosen.map((a) => a.platform),
+      targets: chosen,
       now,
     });
 
@@ -262,7 +272,7 @@ export class Publisher {
       const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, account.pace, elsewhere);
       clipTimes.push({ accountId: account.id, at });
       // The covering permission must still be in force when the post goes out.
-      const permission = requireActivePermission(source.creatorName, source.permissions, at, account.platform);
+      const permission = requireActivePermission(source.creatorName, source.permissions, at, account.platform, account.role);
       const item: PublishItem = {
         account,
         title: clip.title,
@@ -298,16 +308,19 @@ export class Publisher {
     }
   }
 
-  /** MP4 + caption to post by hand; held to the same permission and brief as posting. */
+  /**
+   * MP4 + caption to post by hand; held to the same permission and brief as posting on a main
+   * account, so an experiment clip is never exported.
+   */
   exportPack(clipId: number, platform: Platform): ExportPack {
     const { clips, sources } = this.deps;
     const clip = clips.get(clipId);
     const source = sources.get(clip.sourceId);
-    const covering = assertCanPost({
+    const [covering] = assertCanPost({
       clipStatus: clip.status,
       creatorName: source.creatorName,
       permissions: source.permissions,
-      platforms: [platform],
+      targets: [{ platform, role: "main" }],
       now: this.now(),
     });
     return {
@@ -319,7 +332,7 @@ export class Publisher {
         title: clip.title,
         creatorName: source.creatorName,
         channelUrl: source.channelUrls[0] ?? null,
-        briefRules: covering[platform]!.briefRules,
+        briefRules: covering!.briefRules,
         platform,
       }),
     };

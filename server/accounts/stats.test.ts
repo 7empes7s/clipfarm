@@ -58,6 +58,8 @@ const post = (o: Partial<Post>): Post => ({
   viewsUpdatedAt: null,
   viewsSource: null,
   whopSubmittedAt: null,
+  experiment: false,
+  flags: { claim: null, removal: null, strike: null },
   estimatedEarningsUsd: 0,
   ...o,
 });
