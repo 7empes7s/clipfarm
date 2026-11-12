@@ -11,7 +11,8 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
   page.on("pageerror", (e) => errors.push(e.message));
   const width = page.viewportSize()!.width;
   const fits = async () => expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-  const creator = `Experiment Streamer ${width}`;
+  // A name of its own per run, so a retry or the desktop run never meets an older one.
+  const creator = `Experiment Streamer ${width}-${Date.now() % 1_000_000}`;
 
   await page.goto("/#sources");
   await page.getByRole("button", { name: "Add a campaign" }).click();
@@ -22,6 +23,7 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
   await expect(form.getByLabel("Whop campaign link")).toHaveCount(0);
   await form.getByLabel("What this tests").fill("Does TikTok remove a 20 s reaction clip?");
   await form.getByLabel("Creator").fill(creator);
+  await form.getByRole("checkbox", { name: "X", exact: true }).check();
   await fits();
   await form.getByRole("button", { name: "Save campaign" }).click();
   await expect(form).toBeHidden();
@@ -32,7 +34,7 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
   // A stream becomes clips as for any other permission.
   const sources = (await (await request.get("/api/sources")).json()) as { id: number; creatorName: string }[];
   const sourceId = sources.find((s) => s.creatorName === creator)!.id;
-  expect((await request.post("/api/vods", { data: { sourceId, url: `https://www.twitch.tv/videos/26${width}` } })).status()).toBe(201);
+  expect((await request.post("/api/vods", { data: { sourceId, url: `https://www.twitch.tv/videos/26${Date.now()}` } })).status()).toBe(201);
   type ClipInfo = { id: number; sourceId: number; title: string; experiment: boolean };
   const mine = async () => ((await (await request.get("/api/clips")).json()) as ClipInfo[]).filter((c) => c.sourceId === sourceId);
   await expect.poll(async () => (await mine()).length, { timeout: 120_000 }).toBeGreaterThan(0);
@@ -54,8 +56,16 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
     await item.getByRole("button", { name: "Post", exact: true }).click();
     const picker = page.getByRole("dialog", { name: "Post this clip" });
     await expect(picker.getByText("only burner accounts are listed")).toBeVisible();
-    await expect(picker.getByTestId("account-picker").getByRole("checkbox")).toHaveCount(1);
     await expect(picker.getByRole("checkbox", { name: /GTA VI Moments · X/ })).toBeChecked();
+    // Main accounts are not offered at all (an earlier spec may have made another burner).
+    await expect(picker.getByRole("checkbox", { name: /gtavimoments · TikTok/ })).toHaveCount(0);
+    await expect(picker.getByRole("checkbox", { name: /GTA VI Moments · YouTube Shorts/ })).toHaveCount(0);
+    for (const box of await picker.getByTestId("account-picker").getByRole("checkbox").all()) {
+      await expect(box).toHaveAccessibleName(/Burner/);
+    }
+    // Post on the X burner only, so this run makes exactly one post.
+    const other = picker.getByRole("checkbox", { name: /gtavi\.daily/ });
+    if ((await other.count()) > 0 && (await other.isChecked())) await other.uncheck();
     await fits();
     await picker.getByRole("button", { name: "Post now" }).click();
     await expect(picker).toBeHidden();
