@@ -69,6 +69,14 @@ npm run build && CLIPFARM_FAKES=1 FAKE_VOD_SEC=40 PORT=3000 npm run preview
 Export them in your shell or put them in a `.env` you load yourself (never commit it; see
 `.env.example`).
 
+The keys (OpenAI and the picking model, Twitch, YouTube, Postiz, Upload-Post) can also be pasted
+in the app: **⋯ > Settings** (`#settings`). Each row has Save, Test (one cheap read-only call),
+Replace and Remove. A saved key is used on the next call, with no restart, and wins over the env
+variable of the same name, which stays as the fallback. They are kept in `DATA_DIR/secrets.json`
+(mode 600, never in git, logs, answers or the backup); the server never sends a value back, only
+"set, ends in …a1b2". Where the server listens, its folders, the access gate and demo mode stay
+env-only.
+
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `3000` | Port for the API and, in preview, the client |

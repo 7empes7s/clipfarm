@@ -47,7 +47,7 @@ export class TwitchClient implements PlatformClient {
   private streamGames = new Map<string, string>();
 
   constructor(private opts: TwitchOptions) {
-    this.missing = opts.clientId && opts.clientSecret ? null : "Set TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET on the server.";
+    this.missing = opts.clientId && opts.clientSecret ? null : "Add your Twitch key in Settings.";
     this.doFetch = opts.fetch ?? fetch;
   }
 

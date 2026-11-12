@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { AccountStatsStore } from "./accounts/stats.js";
 import { clientBuildProblem, createApp } from "./app.js";
 import { ClipsRepo } from "./clips/repo.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, openSettings } from "./config.js";
 import { openDb } from "./db/index.js";
 import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
@@ -23,7 +23,8 @@ import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 import { VodsRepo } from "./vods/repo.js";
 
-const config = loadConfig();
+const settings = openSettings();
+const config = loadConfig(process.env, settings);
 const db = openDb(config.dbFile);
 const sources = new SourcesRepo(db);
 const vods = new VodsRepo(db);
@@ -61,6 +62,12 @@ const queue: JobQueue = new JobQueue(db, {
 const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
 const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
+// A key saved in Settings is tried at once, not after the next wait.
+settings.onChange(() => {
+  poller.retryNow();
+  // The posting service may have just changed: read its accounts now, not at the next restart.
+  publisher.syncAccounts().catch(() => undefined);
+});
 
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
 const here = fileURLToPath(import.meta.url);
@@ -68,7 +75,7 @@ const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : u
 const clientProblem = clientDir ? clientBuildProblem(clientDir) : null;
 if (clientProblem) console.error(`ERROR: ${clientProblem}`);
 const seedDemoClip =
-  process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
+  config.fakes ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
 const app = createApp({
   sources,
   vods,
@@ -79,6 +86,7 @@ const app = createApp({
   publisher,
   accountStats,
   watchlist: { repo: watchRepo, poller },
+  settings: { store: settings, demo: config.fakes },
   seedDemoClip,
   clientDir,
   requireAccess: config.requireAccess,

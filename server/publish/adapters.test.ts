@@ -139,12 +139,12 @@ describe("PostizService", () => {
   it("explains a refused key, the hourly limit and an unreachable server in plain words", async () => {
     const refused = new PostizService({ url: base, apiKey: "bad", fetch: fakeFetch([[/integrations/, 401, '{"msg":"Invalid API key"}']]).fn });
     await expect(refused.listAccounts()).rejects.toThrow(
-      new PostingServiceError("Postiz refused the API key. Copy it again from Postiz > Settings > Public API into POSTIZ_API_KEY."),
+      new PostingServiceError("Postiz refused the API key. Copy it again from Postiz > Settings > Public API and paste it in Settings."),
     );
     const limited = new PostizService({ url: base, apiKey: "k", fetch: fakeFetch([[/integrations/, 429, "{}"]]).fn });
     await expect(limited.listAccounts()).rejects.toThrow("Postiz's hourly limit was reached. Try again in an hour.");
     const down = new PostizService({ url: base, apiKey: "k", fetch: fakeFetch([]).fn });
-    await expect(down.listAccounts()).rejects.toThrow("Cannot reach Postiz at https://postiz.example.com (ECONNREFUSED). Is it running, and is POSTIZ_URL right?");
+    await expect(down.listAccounts()).rejects.toThrow("Cannot reach Postiz at https://postiz.example.com (ECONNREFUSED). Is it running, and is its address in Settings right?");
   });
 
   it("never puts the key in an error message", async () => {
@@ -216,7 +216,7 @@ describe("UploadPostService", () => {
   it("explains a refused key and the monthly limit", async () => {
     const refused = new UploadPostService({ apiKey: "k", user: "u", platforms: ["youtube"], fetch: fakeFetch([[/upload$/, 401, '{"success":false,"error":"Unauthorized"}']]).fn });
     const [acc] = await refused.listAccounts();
-    await expect(refused.publish(video, [item(acc!)])).rejects.toThrow("Upload-Post refused the API key. Check UPLOAD_POST_API_KEY.");
+    await expect(refused.publish(video, [item(acc!)])).rejects.toThrow("Upload-Post refused the API key. Paste it again in Settings.");
     const limited = new UploadPostService({ apiKey: "k", user: "u", platforms: ["youtube"], fetch: fakeFetch([[/upload$/, 429, '{"success":false,"error":"Monthly limit exceeded"}']]).fn });
     await expect(limited.publish(video, [item(acc!)])).rejects.toThrow("Upload-Post's limit was reached: Monthly limit exceeded");
   });

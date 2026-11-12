@@ -10,6 +10,7 @@ import type {
   Platform,
   Post,
   Source,
+  SetupChecklist,
   VodProgress,
   WatchedCreator,
 } from "../../shared/types";
@@ -80,6 +81,7 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
           {error}
         </p>
       )}
+      {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
       {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
@@ -154,7 +156,57 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
           ))}
         </ul>
       )}
+
+      <p className="hint settings-link">
+        <a href="#settings">Keys and connections</a>
+      </p>
     </>
+  );
+}
+
+/** What is left to set up, at the top of the dashboard until every item is done. */
+function Setup({ refreshKey }: { refreshKey: string }) {
+  const [list, setList] = useState<SetupChecklist | null>(null);
+  useEffect(() => {
+    let on = true;
+    api.setup().then(
+      (s) => on && setList(s),
+      () => on && setList(null),
+    );
+    return () => {
+      on = false;
+    };
+  }, [refreshKey]);
+  if (!list || list.done) return null;
+  const left = list.items.filter((i) => !i.done).length;
+  return (
+    <div className="card setup" data-testid="setup">
+      <div className="card-head">
+        <h3>Finish setting up</h3>
+        <span className="hint">{left} of {list.items.length} left</span>
+      </div>
+      <ol className="setup-list">
+        {list.items.map((item) => (
+          <li key={item.id} className={item.done ? "setup-done" : undefined}>
+            <span className="setup-mark" aria-hidden="true">
+              {item.done ? "✓" : ""}
+            </span>
+            <div className="setup-text">
+              <span className="setup-label">
+                {item.label}
+                <span className="visually-hidden">{item.done ? " (done)" : " (to do)"}</span>
+              </span>
+              <span className="hint">{item.line}</span>
+            </div>
+            {!item.done && (
+              <a className="button" href={item.href}>
+                {item.action}
+              </a>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -495,7 +547,7 @@ function Accounts() {
       )}
       <p className="hint">
         {info.service === "none"
-          ? "No posting service is set up, so there are no account stats yet. Set up Postiz or Upload-Post on the server (see the README)."
+          ? "No posting service is set up, so there are no account stats yet. Add Postiz or Upload-Post in Settings."
           : `Stats come from ${info.label}, read every ${info.refreshHours} hours to stay inside its limits.`}
       </p>
       {info.error && (

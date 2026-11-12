@@ -15,6 +15,6 @@ describe("picker settings", () => {
         title: null, durationSec: 0, chapters: [], words: [], signals: { loudness: [], chat: null },
         creatorName: "x", briefRules: "", bannedContent: "", maxPicks: 1,
       }),
-    ).rejects.toThrow("LLM_API_KEY is not set");
+    ).rejects.toThrow("Add your OpenAI key in Settings, so highlights can be picked.");
   });
 });

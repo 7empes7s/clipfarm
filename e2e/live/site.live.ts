@@ -112,7 +112,8 @@ test.afterAll(async ({ playwright }, info) => {
 });
 
 test("The gallery loads and the server is healthy", async ({ page, request }) => {
-  expect(await get<{ ok: boolean }>(request, "/api/health")).toEqual({ ok: true });
+  // Newer servers also say which connections are set up; "ok" is what counts here.
+  expect(await get<{ ok: boolean }>(request, "/api/health")).toMatchObject({ ok: true });
   await get<Source[]>(request, "/api/sources");
   // Before anything is made: a server without the removal route could not be tidied up afterwards.
   const removal = await request.delete("/api/sources/0");
