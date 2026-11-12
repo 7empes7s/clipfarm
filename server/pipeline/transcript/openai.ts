@@ -45,6 +45,7 @@ export class OpenAiTranscriber implements Transcriber {
       return { words, costUsd: cost(opts.durationSec) };
     }
 
+    if (!(opts.durationSec > 0)) throw new Error("Could not read the length of the audio, so it cannot be split.");
     // Size the chunks from the file's bitrate so each one fits the upload limit.
     const bytesPerSec = size / opts.durationSec;
     const maxChunkSec = Math.max(OVERLAP_SEC * 3, Math.floor((this.maxUploadBytes * 0.9) / bytesPerSec));

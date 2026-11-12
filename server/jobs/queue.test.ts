@@ -158,6 +158,20 @@ describe("JobQueue", () => {
     expect(seen).toEqual([0.5]);
   });
 
+  it("puts a job interrupted by shutdown back in the queue without using up a try", async () => {
+    const { queue } = makeQueue({
+      long: ({ signal }) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    });
+    const job = queue.enqueue("long", {}, { maxAttempts: 1 });
+    await new Promise((r) => setTimeout(r, 20));
+    queue.stop();
+    await queue.idle();
+    expect(queue.get(job.id)).toMatchObject({ status: "queued", attempts: 0 });
+  });
+
   it("puts jobs left running by a crash back in the queue on start", async () => {
     const { db, queue } = makeQueue({ work: async () => {} });
     queue.stop();

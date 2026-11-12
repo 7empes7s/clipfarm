@@ -51,6 +51,15 @@ describe("OpenAiTranscriber", () => {
     await expect(t.transcribe(file, { durationSec: 1, tmpDir: dir })).rejects.toThrow("(429): quota exceeded");
   });
 
+  it("refuses to chunk a large file whose length is unknown instead of returning no words", async () => {
+    const file = join(dir, "a.mp3");
+    await writeFile(file, "x".repeat(100));
+    const api = fakeApi();
+    const t = new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl: api.fetchImpl, maxUploadBytes: 10 });
+    await expect(t.transcribe(file, { durationSec: 0, tmpDir: dir })).rejects.toThrow("length of the audio");
+    expect(api.calls).toHaveLength(0);
+  });
+
   it("splits audio over the upload limit into chunks and shifts word times by each offset", async () => {
     const video = join(dir, "sample.mp4");
     const audio = join(dir, "speech.mp3");

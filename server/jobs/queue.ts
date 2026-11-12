@@ -183,8 +183,10 @@ export class JobQueue {
       const message = err instanceof Error ? err.message : String(err);
       if (this.cancelRequested(row.id) || this.stopped) {
         if (this.stopped && !this.cancelRequested(row.id)) {
-          // Server shutting down: leave it for the next start().
-          this.db.prepare("UPDATE jobs SET status = 'queued' WHERE id = ?").run(row.id);
+          // Server shutting down: leave it for the next start(), without counting this try.
+          this.db
+            .prepare("UPDATE jobs SET status = 'queued', attempts = ?, message = 'Waiting', updated_at = ? WHERE id = ?")
+            .run(row.attempts, this.now().toISOString(), row.id);
         } else {
           this.finish(row.id, "cancelled", { message: "Cancelled" });
         }
