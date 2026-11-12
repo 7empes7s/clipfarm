@@ -314,7 +314,8 @@ export class HookLab {
   }
 
   info(): HookLabInfo {
-    const byPlatform = PLATFORMS.map((p) => this.deps.publisher.accounts.list().filter((a) => a.platform === p && usable(a)).length);
+    const burners = this.deps.publisher.accounts.list().filter(usable);
+    const byPlatform = PLATFORMS.map((p) => burners.filter((a) => a.platform === p).length);
     const tests: HookTest[] = this.tests()
       .reverse()
       .slice(0, 30)

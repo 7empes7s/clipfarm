@@ -42,7 +42,7 @@ test("trends: what is working today, the quota, and the boost for picks", async 
   expect(errors).toEqual([]);
 });
 
-test("hook lab: off by default, a switch on the Dashboard, and what it needs", async ({ page }) => {
+test("hook lab: off by default, a switch on the Dashboard, and what it needs", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   page.on("pageerror", (e) => errors.push(e.message));
@@ -58,13 +58,21 @@ test("hook lab: off by default, a switch on the Dashboard, and what it needs", a
   await expect(view.getByText("No finished tests yet.")).toBeVisible();
   await fits();
 
-  await toggle.check();
-  await expect(view.getByText("On: it runs by itself.")).toBeVisible();
-  await expect(view.getByRole("button", { name: "Check now" })).toBeVisible();
-  await page.reload();
-  await expect(page.getByTestId("hook-lab").getByRole("switch")).toBeChecked();
-  await page.getByTestId("hook-lab").getByRole("switch").uncheck();
-  await expect(page.getByTestId("hook-lab").getByText("Off: clips are posted only when you post them.")).toBeVisible();
-  await fits();
+  try {
+    // The switch saves first and shows the new state when the server has it.
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await expect(view.getByText("On: it runs by itself.")).toBeVisible();
+    await expect(view.getByRole("button", { name: "Check now" })).toBeVisible();
+    await page.reload();
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(view.getByText("Off: clips are posted only when you post them.")).toBeVisible();
+    await fits();
+  } finally {
+    // Whatever happened above, the lab is off for the specs that follow (and for a retry).
+    await request.put("/api/hooklab/settings", { data: { on: false } });
+  }
   expect(errors).toEqual([]);
 });
