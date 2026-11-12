@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-// Runs after posting.spec.ts, which leaves an approved clip in Posted. The fake posting service
-// holds two TikTok accounts; this marks one as a burner and checks the picker follows.
+// Runs after posting.spec.ts (by file name), which leaves an approved clip in Posted. The fake
+// posting service holds two TikTok accounts; this marks one as a burner and checks the picker
+// follows. It runs again on the desktop project, so it does not depend on the settings it starts with.
 test("posting accounts: sync, mark one as burner with its own pace, and the picker follows", async ({ page }) => {
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
@@ -13,7 +14,6 @@ test("posting accounts: sync, mark one as burner with its own pace, and the pick
   await expect(page.getByText("Accounts are up to date.")).toBeVisible();
 
   const card = page.getByTestId("account-card").filter({ hasText: "gtavi.daily" });
-  await expect(card.getByTestId("account-tags")).toContainText("Healthy");
   await card.getByRole("button", { name: "Settings" }).click();
   const sheet = page.getByRole("dialog", { name: "Account settings" });
   await expect(sheet.getByRole("button", { name: "Close" })).toBeVisible();
