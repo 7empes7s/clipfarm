@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/
+secrets.json
 media/
 out/
 .e2e-data/

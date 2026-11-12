@@ -13,6 +13,9 @@ import type {
   Pick,
   Platform,
   RejectReason,
+  IntegrationId,
+  SettingsInfo,
+  SetupChecklist,
   Post,
   PostingInfo,
   PostingRules,
@@ -90,6 +93,13 @@ export const api = {
   updateWatched: (id: number, input: WatchedCreatorInput) =>
     call<WatchedCreator>(`/api/watchlist/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   removeWatched: (id: number) => call<unknown>(`/api/watchlist/${id}`, { method: "DELETE" }),
+  settings: () => call<SettingsInfo>("/api/settings"),
+  saveSettings: (id: IntegrationId, values: Record<string, string>) =>
+    call<SettingsInfo>(`/api/settings/${id}`, { method: "PUT", body: JSON.stringify({ values }) }),
+  removeSettings: (id: IntegrationId) => call<SettingsInfo>(`/api/settings/${id}`, { method: "DELETE" }),
+  testSettings: (id: IntegrationId) =>
+    call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
+  setup: () => call<SetupChecklist>("/api/setup"),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };
