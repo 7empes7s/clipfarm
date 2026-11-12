@@ -4,4 +4,5 @@ Description=Back up clipfarm's SQLite database into /opt/backups
 
 [Service]
 Type=oneshot
-ExecStart=/opt/clipfarm-live/current/ops/clipfarm/backup.sh
+# A root-owned copy of ops/clipfarm/backup.sh (RUNBOOK.md step 3): root never runs a file the app's user can change.
+ExecStart=/usr/local/sbin/clipfarm-backup

@@ -32,6 +32,7 @@ open to the internet, not even for a minute.
 |---|---|
 | Code | `/opt/clipfarm-live/`: `repo/` (git clone), `releases/<time>-<commit>/` (last 2 kept), `current` → the live release |
 | Settings and keys | `/etc/clipfarm/clipfarm.env` (mode 600, never in git) |
+| Scripts root runs | `/usr/local/sbin/clipfarm-deploy`, `/usr/local/sbin/clipfarm-backup` (root-owned copies of `deploy.sh`, `backup.sh`) |
 | Data | `/var/lib/clipfarm/`: `clipfarm.db` (SQLite) and `media/` (final clips) |
 | Web app | `127.0.0.1:5310` only, published through Caddy (`:80`) and the Cloudflare tunnel |
 | systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
@@ -97,10 +98,14 @@ install -d -o clipfarm -g clipfarm -m 750 /var/lib/clipfarm /var/lib/clipfarm/me
 install -d -o clipfarm -g clipfarm -m 755 /opt/clipfarm-live /opt/clipfarm-live/releases
 install -d -o root -g root -m 700 /etc/clipfarm
 runuser -u clipfarm -- git clone https://github.com/7empes7s/clipfarm.git /opt/clipfarm-live/repo
-ls /opt/clipfarm-live
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/deploy.sh /usr/local/sbin/clipfarm-deploy
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/backup.sh /usr/local/sbin/clipfarm-backup
+ls /opt/clipfarm-live /usr/local/sbin/clipfarm-*
 ```
 
-You should see: `releases repo`.
+You should see `releases repo` and the two scripts. They are copied to `/usr/local/sbin` on
+purpose: root runs them, so they must be files only root can change (everything under
+`/opt/clipfarm-live` belongs to the `clipfarm` user).
 
 (If the repository is private, the clone asks for a login: use a read-only GitHub token as the
 password.)
@@ -141,7 +146,7 @@ You should see `User=clipfarm`, `ExecStart=/usr/bin/node dist/server/index.js` a
 ## 5. First deploy (IT)
 
 ```bash
-/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh origin/main
+clipfarm-deploy origin/main
 ```
 
 It takes 2-4 minutes: it builds the newest commit of `main` in a fresh folder under
@@ -356,10 +361,10 @@ that rule is in the app and does not depend on this setup.
 
 ```bash
 systemctl start clipfarm-backup.service              # fresh backup first
-/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh origin/main
+clipfarm-deploy origin/main
 ```
 
-`origin/main` is the newest merged commit; a commit id (`deploy.sh 460bfc0`) or a tag works too.
+`origin/main` is the newest merged commit; a commit id (`clipfarm-deploy 460bfc0`) or a tag works too.
 The script fetches from GitHub, builds in a new folder while the old release keeps running,
 then switches and restarts (a few seconds of downtime; a job that was running goes back in the
 queue and starts again).
@@ -370,10 +375,13 @@ queue and starts again).
   output of `journalctl -u clipfarm -n 80 --no-pager`.
 - The build fails (an `npm` error): nothing was switched or restarted. Same: send the output.
 
-To update `deploy.sh` and the other ops files themselves (when a release changed them):
+To update the deploy and backup scripts and the unit files themselves (when a release changed
+something under `ops/clipfarm/`):
 
 ```bash
 runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull --ff-only
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/deploy.sh /usr/local/sbin/clipfarm-deploy
+install -o root -g root -m 755 /opt/clipfarm-live/repo/ops/clipfarm/backup.sh /usr/local/sbin/clipfarm-backup
 ```
 
 then install any changed `.service` / `.timer` file again as in steps 4 and 10, and
@@ -387,13 +395,13 @@ To the release that was live before the last update (no build, a few seconds):
 
 ```bash
 ls /opt/clipfarm-live/releases/            # two folders: the live one and the one before
-/opt/clipfarm-live/repo/ops/clipfarm/deploy.sh --rollback
+clipfarm-deploy --rollback
 ```
 
 It switches `current` to the other release, restarts and checks health; if that release does
 not answer, it switches back by itself. Running `--rollback` again returns to the newer one.
 
-To any older commit: `deploy.sh <commit id>` (builds it again).
+To any older commit: `clipfarm-deploy <commit id>` (builds it again).
 
 If the newer version changed the database and the older one fails on it (its log says so),
 also restore the backup taken before the update ("Restore" below).
@@ -464,7 +472,8 @@ This deletes the clips and the database on the box. Take a backup and copy it of
 systemctl start clipfarm-backup.service
 systemctl disable --now clipfarm clipfarm-backup.timer clipfarm-media-cleanup.timer
 rm /etc/systemd/system/clipfarm.service /etc/systemd/system/clipfarm-backup.service /etc/systemd/system/clipfarm-backup.timer \
-   /etc/systemd/system/clipfarm-media-cleanup.service /etc/systemd/system/clipfarm-media-cleanup.timer
+   /etc/systemd/system/clipfarm-media-cleanup.service /etc/systemd/system/clipfarm-media-cleanup.timer \
+   /usr/local/sbin/clipfarm-deploy /usr/local/sbin/clipfarm-backup
 systemctl daemon-reload
 ```
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Deploys clipfarm on the live box. Run as root; see RUNBOOK.md ("First deploy", "Update", "Roll back").
+# Deploys clipfarm on the live box. Run as root, from the root-owned copy that RUNBOOK.md step 3
+# installs as /usr/local/sbin/clipfarm-deploy; see RUNBOOK.md ("First deploy", "Update", "Roll back").
 #
-#   deploy.sh [commit]     build that commit (default origin/main) into a fresh folder under
-#                          releases/, point "current" at it, restart, check /api/health.
-#                          If the check fails, "current" goes back to the release that was live.
-#   deploy.sh --rollback   switch to the other kept release without building.
+#   clipfarm-deploy [commit]     build that commit (default origin/main) into a fresh folder under
+#                                releases/, point "current" at it, restart, check /api/health.
+#                                If the check fails, "current" goes back to the release that was live.
+#   clipfarm-deploy --rollback   switch to the other kept release without building.
 #
 # The last 2 releases are kept. Layout under /opt/clipfarm-live:
 #   repo/                 git clone, only read (git archive)
@@ -39,7 +40,7 @@ port="$(sed -n 's/^PORT=\([0-9][0-9]*\)[[:space:]]*$/\1/p' "$ENV_FILE" 2>/dev/nu
 HEALTH_URL="http://127.0.0.1:${port:-5310}/api/health"
 
 live_release() { # name of the release "current" points at, or nothing
-  [ -L "$ROOT/current" ] && basename "$(readlink "$ROOT/current")" || true
+  if [ -L "$ROOT/current" ]; then basename "$(readlink "$ROOT/current")"; fi
 }
 
 point_current_at() { # atomic: the link is replaced in one rename
@@ -80,7 +81,7 @@ go_live() {
   return 1
 }
 
-[ "$#" -le 1 ] || die "Usage: deploy.sh [commit] | deploy.sh --rollback"
+[ "$#" -le 1 ] || die "Usage: clipfarm-deploy [commit] | clipfarm-deploy --rollback"
 [ -d "$REPO" ] || die "$REPO is missing. Do RUNBOOK.md step 3 first."
 previous="$(live_release)"
 
@@ -90,7 +91,7 @@ if [ "${1:-}" = "--rollback" ]; then
     name="$(basename "$dir")"
     [ "$name" = "$previous" ] || target="$name"
   done
-  [ -n "$target" ] && [ -d "$RELEASES/$target" ] || die "there is no other release to switch to."
+  if [ -z "$target" ] || [ ! -d "$RELEASES/$target" ]; then die "there is no other release to switch to."; fi
   say "switching from ${previous:-nothing} to $target"
   go_live "$target" "$previous" || exit 1
   say "$target is live. The release it replaced is kept: run --rollback again to return to it."
@@ -98,7 +99,7 @@ if [ "${1:-}" = "--rollback" ]; then
 fi
 
 ref="${1:-origin/main}"
-[[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "'$ref' is not a commit. Usage: deploy.sh [commit] | deploy.sh --rollback"
+[[ "$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || die "'$ref' is not a commit. Usage: clipfarm-deploy [commit] | clipfarm-deploy --rollback"
 if [ -n "$(as_app git -C "$REPO" remote)" ]; then
   as_app git -C "$REPO" fetch --quiet --prune origin
 fi
@@ -120,7 +121,9 @@ as_app git -C "$REPO" archive "$sha" | as_app tar -x -C "$release"
   as_app npm run build
   as_app npm ci --omit=dev  # then only what the server needs at run time
 )
-[ -f "$release/dist/server/index.js" ] && [ -f "$release/dist/client/index.html" ] || die "the build left no dist/server/index.js or dist/client/index.html."
+if [ ! -f "$release/dist/server/index.js" ] || [ ! -f "$release/dist/client/index.html" ]; then
+  die "the build left no dist/server/index.js or dist/client/index.html."
+fi
 
 if ! go_live "$new" "$previous"; then
   exit 1 # the trap removes the failed release
