@@ -31,8 +31,8 @@ const vods = new VodsRepo(db);
 const picks = new PicksRepo(db);
 const clips = new ClipsRepo(db);
 const posts = new PostsRepo(db);
-const publisher = new Publisher({ sources, clips, posts, service: config.postingService });
-const accountStats = new AccountStatsStore(db, config.postingService, posts);
+const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
+const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
 const mediaDir = config.mediaDir;
 const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
 const clipRenderFinished = onRenderFinished(clips);
@@ -63,7 +63,11 @@ const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
 const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
 // A key saved in Settings is tried at once, not after the next wait.
-settings.onChange(() => poller.retryNow());
+settings.onChange(() => {
+  poller.retryNow();
+  // The posting service may have just changed: read its accounts now, not at the next restart.
+  publisher.syncAccounts().catch(() => undefined);
+});
 
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
 const here = fileURLToPath(import.meta.url);

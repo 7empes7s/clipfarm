@@ -1,6 +1,6 @@
-import { type FormEvent, useState } from "react";
-import type { Clip, Platform, PostingInfo, Source } from "../../shared/types";
-import { PLATFORM_LABELS } from "../../shared/types";
+import { type FormEvent, useEffect, useState } from "react";
+import type { AccountChoice, Clip, Platform, PostingInfo, SkippedAccount, Source } from "../../shared/types";
+import { ACCOUNT_ROLE_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { Sheet } from "./Sheet";
 
@@ -11,26 +11,42 @@ export function allowedPlatforms(source: Source | undefined): Platform[] {
   return [...new Set(active.flatMap((p) => p.allowedPlatforms))];
 }
 
-/** "Post": pick accounts and a time; the server checks permission, brief, caps and spacing. */
+/**
+ * "Post": pick accounts and a time; the server checks permission, brief, caps and spacing.
+ * Main accounts whose niche fits the clip start ticked.
+ */
 export function PostSheet({
   clip,
-  source,
   info,
   onClose,
   onPosted,
 }: {
   clip: Clip;
-  source: Source | undefined;
   info: PostingInfo;
   onClose: () => void;
-  onPosted: () => void;
+  onPosted: (skipped: SkippedAccount[]) => void;
 }) {
-  const allowed = allowedPlatforms(source);
+  const [choices, setChoices] = useState<AccountChoice[] | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [later, setLater] = useState(false);
   const [at, setAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    api.clipAccounts(clip.id).then(
+      (c) => {
+        if (!live) return;
+        setChoices(c);
+        setPicked(c.filter((x) => x.suggested).map((x) => x.account.id));
+      },
+      (err: Error) => live && setError(err.message),
+    );
+    return () => {
+      live = false;
+    };
+  }, [clip.id]);
 
   const toggle = (id: string) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
@@ -39,8 +55,8 @@ export function PostSheet({
     setError(null);
     setSending(true);
     try {
-      await api.postClip(clip.id, picked, later && at ? new Date(at).toISOString() : null);
-      onPosted();
+      const { skipped } = await api.postClip(clip.id, picked, later && at ? new Date(at).toISOString() : null);
+      onPosted(skipped);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -53,12 +69,14 @@ export function PostSheet({
     <Sheet id="post-sheet-title" title="Post this clip" onClose={onClose}>
       <form className="form" onSubmit={submit}>
         <p className="hint">{clip.title}</p>
-        {info.accountsError && (
+        {info.accountsError && !error && (
           <p className="error" role="alert">
             {info.accountsError}
           </p>
         )}
-        {info.accounts.length === 0 && !info.accountsError ? (
+        {!choices ? (
+          !error && <p className="hint">Loading accounts…</p>
+        ) : choices.length === 0 && !info.accountsError ? (
           <p className="empty">
             {info.service === "none"
               ? "No posting service is set up yet. Use Export to post by hand."
@@ -67,24 +85,17 @@ export function PostSheet({
         ) : (
           <fieldset>
             <legend>Accounts</legend>
-            <div className="chips">
-              {info.accounts.map((a) => {
-                const notAllowed = !allowed.includes(a.platform);
-                return (
-                  <label key={a.id} className="chip">
-                    <input
-                      type="checkbox"
-                      checked={picked.includes(a.id)}
-                      disabled={a.disabled || notAllowed}
-                      onChange={() => toggle(a.id)}
-                    />
-                    {a.name} · {PLATFORM_LABELS[a.platform]}
-                    {a.disabled && <span className="hint">disconnected</span>}
-                    {notAllowed && !a.disabled && <span className="hint">not in the brief</span>}
-                  </label>
-                );
-              })}
+            <div className="chips" data-testid="account-picker">
+              {choices.map(({ account: a, canPost, note }) => (
+                <label key={a.id} className="chip">
+                  <input type="checkbox" checked={picked.includes(a.id)} disabled={!canPost} onChange={() => toggle(a.id)} />
+                  {a.name} · {PLATFORM_LABELS[a.platform]}
+                  {a.role === "burner" && <span className="state role-burner">{ACCOUNT_ROLE_LABELS.burner}</span>}
+                  {note && <span className="hint">{note}</span>}
+                </label>
+              ))}
             </div>
+            <p className="hint">Main accounts whose niche fits this clip start ticked. Change them as you like.</p>
           </fieldset>
         )}
         <fieldset>
@@ -107,8 +118,9 @@ export function PostSheet({
           </label>
         )}
         <p className="hint">
-          Each account posts at most {info.rules.maxPerDay} times a day, {info.rules.minGapMinutes} minutes apart. Posts
-          on a busy account move to its next free time.
+          Unless it has its own pace, each account posts at most {info.rules.maxPerDay} times a day,{" "}
+          {info.rules.minGapMinutes} minutes apart. Posts on a busy account move to its next free time, and the same clip
+          never goes out on two accounts at once: each next account follows at least its spacing later.
         </p>
         {caps.length > 0 && (
           <p className="hint">

@@ -96,6 +96,7 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
         expect.objectContaining({ accountId: YT, platform: "youtube", permissionId: source.permissions[0]!.id, scheduledAt: "2026-11-19T12:00:00.000Z" }),
         expect.objectContaining({ accountId: TT, platform: "tiktok", caption: expect.stringContaining("Credit: Test Streamer") }),
       ],
+      skipped: [],
     });
     expect(service.calls.filter((c) => c === "publish")).toEqual([]);
     expect(posts.list()).toEqual([]);
@@ -126,8 +127,9 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
     const res = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] });
     expect(res.status).toBe(201);
     expect(service.published.map((i) => i.account.id)).toEqual([YT, TT]);
-    expect(res.body).toHaveLength(2);
-    expect(res.body[0]).toMatchObject({
+    expect(res.body.skipped).toEqual([]);
+    expect(res.body.posts).toHaveLength(2);
+    expect(res.body.posts[0]).toMatchObject({
       clipId: clip.id,
       platform: "youtube",
       accountName: "GTA VI Moments",
@@ -143,8 +145,9 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
     const { app, clip } = setup();
     await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201);
     const second = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] }).expect(201);
-    expect(second.body[0]).toMatchObject({ platform: "youtube", status: "scheduled", scheduledAt: "2026-11-19T13:30:00.000Z" });
-    expect(second.body[1]).toMatchObject({ platform: "tiktok", status: "posted", scheduledAt: "2026-11-19T12:00:00.000Z" });
+    expect(second.body.posts[0]).toMatchObject({ platform: "youtube", status: "scheduled", scheduledAt: "2026-11-19T13:30:00.000Z" });
+    // TikTok is free, but the clip is on YouTube at 12:00 and 13:30: it keeps 90 minutes from both.
+    expect(second.body.posts[1]).toMatchObject({ platform: "tiktok", status: "scheduled", scheduledAt: "2026-11-19T15:00:00.000Z" });
   });
 
   it("uses the spacing settings", async () => {
@@ -152,7 +155,7 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
     await request(app).put("/api/posting/rules").send({ maxPerDay: 1, minGapMinutes: 30 }).expect(200);
     await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201);
     const second = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201);
-    expect(second.body[0].scheduledAt).toBe("2026-11-20T00:00:00.000Z");
+    expect(second.body.posts[0].scheduledAt).toBe("2026-11-20T00:00:00.000Z");
     const bad = await request(app).put("/api/posting/rules").send({ maxPerDay: 0, minGapMinutes: 30 });
     expect(bad.status).toBe(400);
   });
@@ -179,7 +182,7 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
 describe("tracking, Whop and stats", () => {
   it("reads views on refresh, takes views by hand, marks Whop submission and estimates earnings over the minimum", async () => {
     const { app, clip } = setup({ cpmRateUsd: 1.5, minViews: 3000 });
-    const [yt, tt] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] }).expect(201)).body;
+    const [yt, tt] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] }).expect(201)).body.posts;
 
     await request(app).post("/api/posts/refresh").expect(200);
     let list = (await request(app).get("/api/posts")).body;
@@ -206,7 +209,7 @@ describe("tracking, Whop and stats", () => {
 
   it("does not let a later refresh overwrite views entered by hand with nothing", async () => {
     const { app, clip, service } = setup();
-    const [yt] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201)).body;
+    const [yt] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201)).body.posts;
     service.views = null;
     await request(app).post(`/api/posts/${yt.id}/views`).send({ views: 900 }).expect(200);
     await request(app).post("/api/posts/refresh").expect(200);

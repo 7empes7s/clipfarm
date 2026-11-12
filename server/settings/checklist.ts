@@ -2,7 +2,7 @@ import type { IntegrationId, IntegrationStatus, SetupChecklist, SetupItem } from
 
 export interface ChecklistInput {
   integrations: IntegrationStatus[];
-  /** Accounts linked in the posting service; null when it could not be asked. */
+  /** Accounts linked in the posting service; null when there is none or it could not be asked. */
   postingAccounts: number | null;
   postingLabel: string;
   activePermissions: number;
@@ -37,9 +37,11 @@ export function buildChecklist(input: ChecklistInput): SetupChecklist {
       line:
         (input.postingAccounts ?? 0) > 0
           ? `${input.postingAccounts} account${input.postingAccounts === 1 ? "" : "s"} linked in ${input.postingLabel}.`
-          : "Link TikTok, YouTube or Instagram in Postiz, then paste its key in Settings.",
-      href: "#settings/postiz",
-      action: "How to link one",
+          : input.postingAccounts === null
+            ? "Link TikTok, YouTube or Instagram in Postiz, then paste its key in Settings."
+            : `No account is linked in ${input.postingLabel} yet. Link one there, then tap Sync accounts.`,
+      href: input.postingAccounts === null ? "#settings/postiz" : "#dashboard/accounts",
+      action: input.postingAccounts === null ? "How to link one" : "Open accounts",
     },
     {
       id: "permission",

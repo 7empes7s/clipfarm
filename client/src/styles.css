@@ -1739,6 +1739,56 @@ button.danger {
   overflow: visible;
 }
 
+/* Posting accounts: who it is, then its role and status as tags. */
+.account-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-weight: 700;
+  object-fit: cover;
+}
+.account-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.account-tags .link {
+  margin-left: auto;
+  min-height: 44px;
+}
+.role-main {
+  border: 1px solid var(--line);
+}
+.role-burner {
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+}
+.health-healthy {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.health-limited {
+  border: 1px solid var(--work);
+}
+.health-banned {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+
 /* Settings: keys and connections, and the setup list on the dashboard */
 .masthead-top {
   display: flex;

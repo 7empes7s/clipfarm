@@ -1,9 +1,10 @@
-import type { AccountCard, AccountsInfo, DailyPoint, Platform, Post, PostingAccount, PostingRules } from "../../shared/types.js";
+import type { AccountCard, AccountsInfo, ChannelAccount, DailyPoint, Platform, Post, PostingAccount, PostingRules } from "../../shared/types.js";
 import { average, dayOf, growth, mergeSeries } from "../../shared/metrics.js";
 import type { Db } from "../db/index.js";
 import { NotFoundError } from "../errors.js";
 import type { PostsRepo } from "../publish/repo.js";
 import type { AccountStats, PostingService } from "../publish/types.js";
+import { AccountsRepo } from "./repo.js";
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -17,6 +18,7 @@ export interface AccountStatsRow {
   followers: DailyPoint[];
   views: DailyPoint[];
   manualFollowers: DailyPoint[];
+  claims: number | null;
   fetchedAt: string | null;
   demo: boolean;
 }
@@ -28,6 +30,7 @@ interface DbRow {
   followers: string;
   views: string;
   manual_followers: string;
+  claims: number | null;
   fetched_at: string | null;
   demo: number;
 }
@@ -40,6 +43,7 @@ function toRow(r: DbRow): AccountStatsRow {
     followers: JSON.parse(r.followers) as DailyPoint[],
     views: JSON.parse(r.views) as DailyPoint[],
     manualFollowers: JSON.parse(r.manual_followers) as DailyPoint[],
+    claims: r.claims,
     fetchedAt: r.fetched_at,
     demo: r.demo === 1,
   };
@@ -74,6 +78,7 @@ export function toCard(
   posts: Post[],
   rules: PostingRules,
   now: Date,
+  channel: ChannelAccount | null = null,
 ): AccountCard {
   const fromService = stats?.followers ?? [];
   const manual = stats?.manualFollowers ?? [];
@@ -106,7 +111,10 @@ export function toCard(
       const t = new Date(p.scheduledAt).getTime();
       return t > weekAgo && t <= now.getTime();
     }).length,
-    plannedLast7Days: rules.maxPerDay * 7,
+    plannedLast7Days: (channel?.pace ?? rules).maxPerDay * 7,
+    account: channel,
+    estimatedEarningsUsd: Math.round(mine.reduce((s, p) => s + p.estimatedEarningsUsd, 0) * 100) / 100,
+    claims: stats?.claims ?? null,
     updatedAt: stats?.fetchedAt ?? null,
     demo: stats?.demo ?? false,
   };
@@ -118,6 +126,8 @@ export interface AccountStatsOptions {
   refreshHours?: number;
   /** Days of history asked for. */
   days?: number;
+  /** Our settings per posting account; made over the posts database when left out. */
+  accounts?: AccountsRepo;
 }
 
 /**
@@ -128,6 +138,7 @@ export class AccountStatsStore {
   private now: () => Date;
   readonly refreshHours: number;
   private days: number;
+  private accounts: AccountsRepo;
   private retryAt = 0;
   private reading: Promise<number> | null = null;
   lastError: string | null = null;
@@ -141,6 +152,7 @@ export class AccountStatsStore {
     this.now = opts.now ?? (() => new Date());
     this.refreshHours = opts.refreshHours ?? 6;
     this.days = opts.days ?? 30;
+    this.accounts = opts.accounts ?? new AccountsRepo(posts, this.now);
   }
 
   rows(): AccountStatsRow[] {
@@ -167,8 +179,14 @@ export class AccountStatsStore {
     const row = this.row(s.accountId);
     if (!row) return;
     this.db
-      .prepare("UPDATE account_stats SET followers = ?, views = ?, fetched_at = ? WHERE account_id = ?")
-      .run(JSON.stringify(mergeSeries(row.followers, s.followers)), JSON.stringify(mergeSeries(row.views, s.views)), fetchedAt, s.accountId);
+      .prepare("UPDATE account_stats SET followers = ?, views = ?, claims = ?, fetched_at = ? WHERE account_id = ?")
+      .run(
+        JSON.stringify(mergeSeries(row.followers, s.followers)),
+        JSON.stringify(mergeSeries(row.views, s.views)),
+        s.claims ?? row.claims,
+        fetchedAt,
+        s.accountId,
+      );
   }
 
   /** Follower count typed in by hand, for accounts the service has no numbers for. */
@@ -209,6 +227,7 @@ export class AccountStatsStore {
       let accounts: PostingAccount[];
       if (isDue(listedAt, now, interval)) {
         accounts = await service.listAccounts();
+        this.accounts.sync(service.name, accounts);
         for (const a of accounts) this.upsertAccount({ accountId: a.id, platform: a.platform, name: a.name });
         this.setSetting("accounts_listed_at", now.toISOString());
       } else {
@@ -241,14 +260,22 @@ export class AccountStatsStore {
     const posts = this.posts.list();
     const rows = this.rows();
     const seen = new Set(rows.map((r) => r.accountId));
-    const cards = rows.map((r) => toCard(r, r, posts, rules, now));
+    const channels = this.accounts.list();
+    const channel = (id: string) => channels.find((c) => c.id === id) ?? null;
+    const cards = rows.map((r) => toCard(r, r, posts, rules, now, channel(r.accountId)));
+    // Accounts synced since the last stats read have a card before their first numbers.
+    for (const c of channels) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      cards.push(toCard({ accountId: c.id, platform: c.platform, name: c.name }, null, posts, rules, now, c));
+    }
     // Accounts we posted to that the service no longer lists keep a card.
     for (const p of posts) {
       if (seen.has(p.accountId)) continue;
       seen.add(p.accountId);
       cards.push(toCard({ accountId: p.accountId, platform: p.platform, name: p.accountName }, null, posts, rules, now));
     }
-    return { service: this.service.name, label: this.service.label, cards, error: this.lastError, refreshHours: this.refreshHours };
+    return { service: this.service.name, label: this.service.label, cards, rules, error: this.lastError, refreshHours: this.refreshHours };
   }
 
   private setting(key: string): string | null {

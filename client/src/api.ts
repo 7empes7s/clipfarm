@@ -1,5 +1,7 @@
 import type {
+  AccountChoice,
   AccountsInfo,
+  ChannelSettings,
   Clip,
   Dashboard,
   ClipEditInput,
@@ -16,6 +18,7 @@ import type {
   Post,
   PostingInfo,
   PostingRules,
+  PostOutcome,
   Source,
   Stats,
   Vod,
@@ -58,7 +61,8 @@ export const api = {
   loadDemo: () => call<Job>("/api/demo", { method: "POST" }),
   exportPack: (id: number, platform: Platform) => call<ExportPack>(`/api/clips/${id}/export?platform=${platform}`),
   postClip: (id: number, accountIds: string[], when: string | null) =>
-    call<Post[]>(`/api/clips/${id}/posts`, { method: "POST", body: JSON.stringify({ accountIds, when }) }),
+    call<PostOutcome>(`/api/clips/${id}/posts`, { method: "POST", body: JSON.stringify({ accountIds, when }) }),
+  clipAccounts: (id: number) => call<AccountChoice[]>(`/api/clips/${id}/accounts`),
   posting: () => call<PostingInfo>("/api/posting"),
   saveRules: (rules: PostingRules) => call<PostingRules>("/api/posting/rules", { method: "PUT", body: JSON.stringify(rules) }),
   posts: () => call<Post[]>("/api/posts"),
@@ -68,6 +72,9 @@ export const api = {
   stats: () => call<Stats>("/api/stats"),
   dashboard: () => call<Dashboard>("/api/dashboard"),
   accounts: () => call<AccountsInfo>("/api/accounts"),
+  syncAccounts: () => call<AccountsInfo>("/api/accounts/sync", { method: "POST" }),
+  saveAccount: (accountId: string, settings: ChannelSettings) =>
+    call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}`, { method: "PUT", body: JSON.stringify(settings) }),
   setFollowers: (accountId: string, followers: number) =>
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
   loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),

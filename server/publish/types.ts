@@ -44,6 +44,8 @@ export interface AccountStats {
   accountId: string;
   followers: DailyPoint[];
   views: DailyPoint[];
+  /** Claims or strikes on the account, when the service reports them. */
+  claims?: number | null;
 }
 
 export interface VideoFile {

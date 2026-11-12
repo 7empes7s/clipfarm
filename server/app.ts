@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Platform, RejectReason } from "../shared/types.js";
 import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
 import { accessGate } from "./access.js";
+import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
 import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
@@ -243,7 +244,12 @@ export function createApp({
   // Its own path, so a server too old to know dry runs answers 404 instead of posting.
   app.post("/api/clips/:id/posts/dry-run", async (req, res) => {
     const { accountIds, when } = postRequest(req.body);
-    res.json({ dryRun: true, wouldPost: await publisher.dryRun(idParam(req.params.id), accountIds, when) });
+    res.json({ dryRun: true, ...(await publisher.dryRun(idParam(req.params.id), accountIds, when)) });
+  });
+
+  // The account picker for a clip: who can take it and who is suggested.
+  app.get("/api/clips/:id/accounts", async (req, res) => {
+    res.json(await publisher.choices(idParam(req.params.id)));
   });
 
   app.get("/api/posting", async (_req, res) => {
@@ -345,7 +351,8 @@ export function createApp({
       let postingAccounts: number | null = null;
       if (publisher.service.name !== "none") {
         try {
-          postingAccounts = (await publisher.service.listAccounts()).filter((a) => !a.disabled).length;
+          // The same sync the Posting accounts screen runs, so a newly linked account shows up there too.
+          postingAccounts = (await publisher.syncAccounts()).filter((a) => !a.disabled).length;
         } catch {
           // Not reachable or a bad key: the Settings row says why when it is tested.
         }
@@ -387,6 +394,17 @@ export function createApp({
     // Reads the posting service only when the cached stats are due (see AccountStatsStore).
     app.get("/api/accounts", async (_req, res) => {
       await accountStats.refresh();
+      res.json(accountStats.info(posts.rules()));
+    });
+
+    // Reads the connected accounts from the posting service now (stats keep their own interval).
+    app.post("/api/accounts/sync", async (_req, res) => {
+      await publisher.syncAccounts();
+      res.json(accountStats.info(posts.rules()));
+    });
+
+    app.put("/api/accounts/:id", (req, res) => {
+      publisher.accounts.update(String(req.params.id), parseChannelSettings(req.body));
       res.json(accountStats.info(posts.rules()));
     });
 
