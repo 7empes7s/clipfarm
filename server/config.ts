@@ -23,6 +23,10 @@ import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 
 export interface Config {
   port: number;
+  /** Address to listen on; unset means every interface (dev). The live box uses 127.0.0.1. */
+  host: string | undefined;
+  /** Refuse requests without Cloudflare Access's header (the live box has no other login). */
+  requireAccess: boolean;
   dbFile: string;
   downloader: AudioDownloader;
   transcriber: Transcriber;
@@ -48,6 +52,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
   return {
     port: Number(env.PORT ?? 3000),
+    host: env.HOST || undefined,
+    requireAccess: env.CLIPFARM_REQUIRE_ACCESS === "1",
     dbFile: join(dataDir, "clipfarm.db"),
     downloader: fakeDownloads
       ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))

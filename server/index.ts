@@ -81,6 +81,7 @@ const app = createApp({
   watchlist: { repo: watchRepo, poller },
   seedDemoClip,
   clientDir,
+  requireAccess: config.requireAccess,
 });
 
 queue.start();
@@ -91,9 +92,9 @@ const refreshTimer = setInterval(() => {
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 poller.start(config.watchPollMinutes * 60_000);
-const server = app.listen(config.port, () => {
+const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
-    `clipfarm on http://localhost:${config.port} (downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
+    `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
   );
 });
 
