@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Word } from "../../../shared/types.js";
-import { extractAudio } from "../../media/ffmpeg.js";
+import { extractAudio } from "../../tools/ffmpeg.js";
 import { type ChunkWords, mergeChunkWords, planChunks } from "./chunking.js";
 import type { TranscribeOptions, Transcriber, Transcript } from "./types.js";
 

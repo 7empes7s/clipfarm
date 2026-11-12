@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { generateSample } from "../../media/ffmpeg.js";
+import { generateSample } from "../../tools/ffmpeg.js";
 import type { AudioDownloader, DownloadedAudio } from "./downloader.js";
 
 /** Stands in for yt-dlp in tests and demos: no network, it generates a short sample clip instead. */

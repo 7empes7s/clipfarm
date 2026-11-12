@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Chapter } from "../../../shared/types.js";
-import { run } from "../../media/exec.js";
+import { run } from "../../tools/exec.js";
 import type { AudioDownloader, DownloadedAudio, VodMeta } from "./downloader.js";
 
 /** yt-dlp arguments for an audio-only download (~60 MB per hour) plus an info JSON with metadata. */

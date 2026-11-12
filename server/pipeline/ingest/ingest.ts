@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Job } from "../../../shared/types.js";
 import type { JobHandler } from "../../jobs/queue.js";
-import { extractAudio, probeDuration } from "../../media/ffmpeg.js";
+import { extractAudio, probeDuration } from "../../tools/ffmpeg.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import type { VodsRepo } from "../../vods/repo.js";
 import type { Transcriber } from "../transcript/types.js";

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "../server/db/index.js";
 import { JobQueue } from "../server/jobs/queue.js";
-import { probeDuration } from "../server/media/ffmpeg.js";
+import { probeDuration } from "../server/tools/ffmpeg.js";
 import { FakeDownloader } from "../server/pipeline/ingest/fakeDownloader.js";
 import { INGEST_JOB, ingestHandler, onIngestFinished } from "../server/pipeline/ingest/ingest.js";
 import { FakeTranscriber } from "../server/pipeline/transcript/fake.js";
