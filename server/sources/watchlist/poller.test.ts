@@ -9,6 +9,7 @@ import { JobQueue } from "../../jobs/queue.js";
 import { FakePostingService } from "../../publish/fake.js";
 import { Publisher } from "../../publish/publisher.js";
 import { PostsRepo } from "../../publish/repo.js";
+import { PicksRepo } from "../../picks/repo.js";
 import { VodsRepo } from "../../vods/repo.js";
 import { SourcesRepo } from "../repo.js";
 import { NEEDS_PERMISSION } from "./match.js";
@@ -207,8 +208,9 @@ describe("watchlist API", () => {
     const ctx = setup([new FakePlatformClient("twitch", () => NOW), new FakePlatformClient("kick", () => NOW)]);
     const clips = new ClipsRepo(ctx.db, () => NOW);
     const posts = new PostsRepo(ctx.db, () => NOW);
+    const picks = new PicksRepo(ctx.db);
     const publisher = new Publisher({ sources: ctx.sources, clips, posts, service: new FakePostingService(), now: () => NOW });
-    const http = createApp({ ...ctx, clips, posts, publisher, watchlist: { repo: ctx.repo, poller: ctx.poller } });
+    const http = createApp({ ...ctx, clips, posts, picks, publisher, watchlist: { repo: ctx.repo, poller: ctx.poller } });
     return { ...ctx, http };
   }
 
