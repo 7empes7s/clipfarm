@@ -230,6 +230,54 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posting_accounts ADD COLUMN takes TEXT;
   ALTER TABLE posting_accounts ADD COLUMN pinned_campaigns TEXT NOT NULL DEFAULT '[]';
   `,
+  `
+  -- Live mode: jobs with a higher priority run first; streams recorded in rolling segments.
+  ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX jobs_next ON jobs(status, priority DESC, id);
+  ALTER TABLE clips ADD COLUMN live_stream_sec REAL;
+  ALTER TABLE clips ADD COLUMN live_moment_at TEXT;
+  ALTER TABLE clips ADD COLUMN live_latency_sec REAL;
+  CREATE TABLE live_captures (
+    id INTEGER PRIMARY KEY,
+    creator_id INTEGER NOT NULL,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    vod_id INTEGER NOT NULL REFERENCES vods(id),
+    platform TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    game TEXT,
+    rank INTEGER NOT NULL,
+    -- Seconds the stream had already run when the recording began.
+    stream_offset_sec REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    end_reason TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    first_clip_at TEXT
+  );
+  CREATE INDEX live_captures_creator ON live_captures(creator_id, id);
+  CREATE TABLE live_segments (
+    id INTEGER PRIMARY KEY,
+    capture_id INTEGER NOT NULL REFERENCES live_captures(id) ON DELETE CASCADE,
+    idx INTEGER NOT NULL,
+    -- Seconds from the start of the recording to the start of this segment.
+    start_sec REAL NOT NULL,
+    duration_sec REAL,
+    file_path TEXT,
+    status TEXT NOT NULL,
+    note TEXT,
+    job_id INTEGER,
+    started_at TEXT NOT NULL,
+    deleted_at TEXT
+  );
+  CREATE INDEX live_segments_capture ON live_segments(capture_id, idx);
+  CREATE TABLE push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    keys TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

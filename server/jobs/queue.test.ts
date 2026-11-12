@@ -45,6 +45,46 @@ describe("JobQueue", () => {
     expect(queue.list().map((j) => j.status)).toEqual(["done", "done", "done"]);
   });
 
+  it("runs waiting jobs with a higher priority first, still one at a time, without interrupting the running one", async () => {
+    let running = 0;
+    let maxRunning = 0;
+    const order: string[] = [];
+    const { queue } = makeQueue({
+      work: async ({ payload }) => {
+        running++;
+        maxRunning = Math.max(maxRunning, running);
+        await new Promise((r) => setTimeout(r, 20));
+        order.push((payload as { n: string }).n);
+        running--;
+      },
+    });
+    // The first VOD job starts at once; the rest wait.
+    queue.enqueue("work", { n: "vod 1" });
+    queue.enqueue("work", { n: "vod 2" });
+    queue.enqueue("work", { n: "vod 3" });
+    queue.enqueue("work", { n: "live, small creator" }, { priority: 1000 });
+    queue.enqueue("work", { n: "live, big creator" }, { priority: 1500 });
+    queue.enqueue("work", { n: "live clip" }, { priority: 2000 });
+    queue.enqueue("work", { n: "live, small creator, later" }, { priority: 1000 });
+    await queue.idle();
+    expect(maxRunning).toBe(1);
+    expect(order).toEqual(["vod 1", "live clip", "live, big creator", "live, small creator", "live, small creator, later", "vod 2", "vod 3"]);
+  });
+
+  it("skips a waiting job with a reason the job list shows, and leaves a running one alone", async () => {
+    let release!: () => void;
+    const { queue, finished } = makeQueue({ work: () => new Promise<void>((r) => (release = r)) });
+    const running = queue.enqueue("work", {});
+    const waiting = queue.enqueue("work", {});
+    await new Promise((r) => setTimeout(r, 10));
+    expect(queue.queued("work").map((j) => j.id)).toEqual([waiting.id]);
+    expect(queue.skip(waiting.id, "Skipped: the server fell behind.")).toMatchObject({ status: "cancelled", error: "Skipped: the server fell behind." });
+    expect(queue.skip(running.id, "no")).toMatchObject({ status: "running", error: null });
+    release();
+    await queue.idle();
+    expect(finished).toEqual([`${waiting.id}:cancelled`, `${running.id}:done`]);
+  });
+
   it("retries a failing job, then succeeds", async () => {
     let calls = 0;
     const { queue } = makeQueue({

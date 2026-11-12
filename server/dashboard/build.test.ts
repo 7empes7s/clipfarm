@@ -75,6 +75,7 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   videoUrl: "",
   masterUrl: "",
   createdAt: "2026-11-19T00:00:00.000Z",
+  live: null,
   ...o,
 });
 
@@ -104,6 +105,7 @@ const job = (o: Partial<Job> & Pick<Job, "type">): Job => ({
   maxAttempts: 3,
   vodId: 1,
   clipId: null,
+  priority: 0,
   createdAt: "2026-11-18T10:00:00.000Z",
   updatedAt: "2026-11-18T10:00:00.000Z",
   startedAt: null,
@@ -194,6 +196,23 @@ describe("vodProgress and goals", () => {
 
     for (const r of renders) Object.assign(r, { status: "done", startedAt: "2026-11-18T10:20:00.000Z", finishedAt: "2026-11-18T10:23:00.000Z" });
     expect(vodProgress(vod(), listed, [], "Streamer 1").stages[2]).toEqual({ stage: "render", state: "done", seconds: 540, progress: 1 });
+  });
+
+  it("shows a stream recorded live by its segment jobs, leaving out skipped ones", () => {
+    const live = [
+      job({ type: "render", startedAt: "2026-11-18T10:14:00.000Z", finishedAt: "2026-11-18T10:15:00.000Z" }),
+      job({ type: "live-segment", status: "running", progress: 0.5, startedAt: "2026-11-18T10:13:00.000Z" }),
+      job({ type: "live-segment", status: "cancelled", error: "Skipped" }),
+      job({ type: "live-segment", startedAt: "2026-11-18T10:10:00.000Z", finishedAt: "2026-11-18T10:12:00.000Z" }),
+    ];
+    expect(vodProgress(vod(), live, [], "Streamer 1").stages).toEqual([
+      { stage: "transcript", state: "running", seconds: null, progress: 0.75 },
+      { stage: "picks", state: "running", seconds: null, progress: 0.75 },
+      { stage: "render", state: "done", seconds: 60, progress: 1 },
+    ]);
+    Object.assign(live[1]!, { status: "done", finishedAt: "2026-11-18T10:14:00.000Z" });
+    // The segment job's time is counted once.
+    expect(vodProgress(vod(), live, [], "Streamer 1").stages.map((s) => [s.state, s.seconds])).toEqual([["done", 180], ["done", 0], ["done", 60]]);
   });
 
   it("measures O1 and O2 against their targets", () => {

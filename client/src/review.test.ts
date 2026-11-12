@@ -22,6 +22,7 @@ function clip(id: number, patch: Partial<Clip> = {}): Clip {
     postCount: 0,
     videoUrl: `/api/clips/${id}/video?v=1`,
     masterUrl: `/api/clips/${id}/master`,
+    live: null,
     createdAt: "2026-11-12T00:00:00Z",
     ...patch,
   };
