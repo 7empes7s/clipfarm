@@ -32,19 +32,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 3000),
     dbFile: join(dataDir, "clipfarm.db"),
     downloader: fakeDownloads
-      ? new FakeDownloader(Number(env.FAKE_VOD_SEC ?? 10))
+      ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))
       : new YtDlpDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     transcriber: fakes || env.TRANSCRIBER === "fake" ? new FakeTranscriber() : openAiOrMissingKey(env.OPENAI_API_KEY),
     picker: fakes || env.PICKER === "fake" ? new FakePicker() : llmPickerOrMissingKey(env),
     sectionDownloader: fakeDownloads ? new FakeSectionDownloader() : new YtDlpSectionDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
-    maxPicks: Number(env.MAX_PICKS ?? 15),
-    renderPreset: env.RENDER_PRESET ?? "veryfast",
+    maxPicks: Number(env.MAX_PICKS || 15),
+    renderPreset: env.RENDER_PRESET || "veryfast",
   };
 }
 
 function llmPickerOrMissingKey(env: NodeJS.ProcessEnv): Picker {
-  const apiKey = env.LLM_API_KEY ?? env.OPENAI_API_KEY;
+  const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
   if (!apiKey) {
     // No signals-only fallback: only the model can flag spoilers and leaks, so picking stops instead.
     return {
@@ -55,8 +55,8 @@ function llmPickerOrMissingKey(env: NodeJS.ProcessEnv): Picker {
   return new LlmPicker(
     new OpenAiCompatibleChat({
       apiKey,
-      baseUrl: env.LLM_BASE_URL ?? "https://api.openai.com/v1",
-      model: env.LLM_MODEL ?? "gpt-4o-mini",
+      baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
+      model: env.LLM_MODEL || "gpt-4o-mini",
       usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
       usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
     }),
