@@ -9,6 +9,7 @@ import { createApp } from "../server/app.js";
 import { ClipsRepo } from "../server/clips/repo.js";
 import { openDb } from "../server/db/index.js";
 import { JobQueue } from "../server/jobs/queue.js";
+import { PicksRepo } from "../server/picks/repo.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClip, renderClipHandler } from "../server/pipeline/rerender/render.js";
 import { FakePostingService } from "../server/publish/fake.js";
 import { Publisher } from "../server/publish/publisher.js";
@@ -89,7 +90,7 @@ describe("re-render an edited clip (real ffmpeg on a generated sample)", () => {
     });
     queue.stop();
     const publisher = new Publisher({ sources, clips, posts, service: new FakePostingService() });
-    const app = createApp({ sources, vods: new VodsRepo(db), queue, clips, posts, publisher });
+    const app = createApp({ sources, vods: new VodsRepo(db), picks: new PicksRepo(db), queue, clips, posts, publisher });
 
     const master = join(dir, "master.mp4");
     await generateSample(master, 8, undefined, "640x360");

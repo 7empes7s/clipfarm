@@ -28,13 +28,9 @@ test("add a campaign, add a VOD link, watch the job run and read the transcript 
   await campaign.getByLabel("Stream or video link").fill("https://www.twitch.tv/videos/123456");
   await campaign.getByRole("button", { name: "Add", exact: true }).click();
 
-  await page.getByRole("link", { name: /^Jobs/ }).click();
-  const job = page.getByTestId("job").first();
-  await expect(job.locator(".job-status")).toHaveText("Done", { timeout: 30_000 });
-  await page.getByRole("link", { name: /^Sources/ }).click();
   const vod = campaign.getByTestId("vod");
-  await expect(vod.getByText("Transcript ready")).toBeVisible();
-  await expect(vod.getByText("20 words")).toBeVisible();
+  await expect(vod.getByText("Transcript ready")).toBeVisible({ timeout: 30_000 });
+  await expect(vod.getByText("80 words")).toBeVisible();
 
   await vod.getByRole("button", { name: "Show transcript" }).click();
   await expect(vod.getByTestId("transcript")).toContainText("no way he actually did that");

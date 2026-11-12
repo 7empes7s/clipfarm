@@ -59,7 +59,10 @@ test("approve, reject with a reason, undo, edit a trim and set a face cam", asyn
   await expect(page.getByTestId("clip").filter({ hasText: first }).first()).toContainText("Spoiler");
   await page.getByRole("link", { name: /^Inbox/ }).click();
 
-  // Edit: trim the end by 0.5 s and retitle; saving queues a new render.
+  // Edit: trim the end by 0.5 s and retitle; saving queues a new render. The inbox may also hold
+  // pipeline clips from the earlier specs, so compare with this clip's own length.
+  const editId = Number(await head.getAttribute("data-clip"));
+  const before = ((await (await request.get("/api/clips")).json()) as { id: number; durationSec: number }[]).find((c) => c.id === editId)!;
   await decide.getByRole("button", { name: /^Edit/ }).click();
   const sheet = page.getByRole("dialog", { name: "Edit clip" });
   await expect(sheet.getByRole("button", { name: "Close" })).toBeVisible();
@@ -77,7 +80,9 @@ test("approve, reject with a reason, undo, edit a trim and set a face cam", asyn
   const job = page.getByTestId("job").filter({ hasText: `New version: ${newTitle}` });
   await expect(job.locator(".job-status")).toHaveText("Done", { timeout: 60_000 });
   const clips = (await (await request.get("/api/clips")).json()) as { title: string; status: string; durationSec: number }[];
-  expect(clips.find((c) => c.title === newTitle)).toMatchObject({ status: "pending", durationSec: 4.5 });
+  const edited = clips.find((c) => c.title === newTitle)!;
+  expect(edited.status).toBe("pending");
+  expect(edited.durationSec).toBeCloseTo(before.durationSec - 0.5, 1);
 
   // Face cam: drag a box on a frame of Demo Streamer B (no face cam yet).
   await page.getByRole("link", { name: /^Sources/ }).click();

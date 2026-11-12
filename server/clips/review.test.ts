@@ -9,6 +9,7 @@ import { createApp } from "../app.js";
 import { openDb } from "../db/index.js";
 import { ValidationError } from "../errors.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { FakePostingService } from "../publish/fake.js";
 import { Publisher } from "../publish/publisher.js";
 import { PostsRepo } from "../publish/repo.js";
@@ -31,7 +32,7 @@ function setup() {
   const publisher = new Publisher({ sources, clips, posts, service });
   const queue = new JobQueue(db, { handlers: { "render-clip": async () => {}, "demo-clips": async () => {} } });
   queue.stop();
-  const app = createApp({ sources, vods: new VodsRepo(db), queue, clips, posts, publisher });
+  const app = createApp({ sources, vods: new VodsRepo(db), picks: new PicksRepo(db), queue, clips, posts, publisher });
   const source = sources.create(campaignInput());
   const make = (title: string) => clips.create({ sourceId: source.id, vodId: null, title, filePath: videoPath, durationSec: 20 });
   return { db, app, clips, sources, source, service, queue, make };

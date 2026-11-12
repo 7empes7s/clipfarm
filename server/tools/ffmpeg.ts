@@ -14,6 +14,34 @@ export async function probeDuration(file: string, signal?: AbortSignal): Promise
   return d;
 }
 
+export interface VideoInfo {
+  width: number;
+  height: number;
+  durationSec: number;
+  hasAudio: boolean;
+}
+
+/** Size, length and whether there is an audio track, from ffprobe. */
+export async function probeVideo(file: string, signal?: AbortSignal): Promise<VideoInfo> {
+  const { stdout } = await run(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file],
+    { signal },
+  );
+  const info = JSON.parse(stdout) as {
+    streams?: { codec_type?: string; width?: number; height?: number }[];
+    format?: { duration?: string };
+  };
+  const video = info.streams?.find((s) => s.codec_type === "video");
+  if (!video?.width || !video.height) throw new Error(`No video track in ${file}`);
+  return {
+    width: video.width,
+    height: video.height,
+    durationSec: Number.parseFloat(info.format?.duration ?? "NaN"),
+    hasAudio: info.streams?.some((s) => s.codec_type === "audio") ?? false,
+  };
+}
+
 /** Width and height of the first video stream, from ffprobe. */
 export async function probeVideoSize(file: string, signal?: AbortSignal): Promise<{ width: number; height: number }> {
   const { stdout } = await run(

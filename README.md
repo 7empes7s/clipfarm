@@ -3,8 +3,8 @@
 Turns other creators' streams and VODs (with their permission, through clipping programs such as
 Whop Content Rewards) into short vertical clips for TikTok, YouTube Shorts and Instagram Reels.
 
-This first version covers the foundation: campaigns with permission records, a one-at-a-time job
-queue, and **link → audio → word-timed transcript**.
+It covers campaigns with permission records, a one-at-a-time job queue, and
+**link → audio → word-timed transcript → ranked picks → captioned 9:16 clips**.
 
 ## Requirements
 
@@ -25,11 +25,11 @@ On an empty gallery, the Inbox has a **Load demo clips** button: a queued job ma
 creators and ten clips from generated test patterns (about 20 s), so the review can be tried right
 away. Demo campaigns allow no platform, so demo clips can be exported but never posted.
 
-Try it without network or API keys (fake downloader makes a 10 s test clip, fake transcriber
-returns fixed words):
+Try it without network or API keys (fake downloader makes a test clip, fake transcriber returns
+fixed words, fake picker takes the loudest moments). Use a 40 s fake VOD so a 15-60 s clip fits:
 
 ```sh
-npm run build && CLIPFARM_FAKES=1 PORT=3000 npm run preview
+npm run build && CLIPFARM_FAKES=1 FAKE_VOD_SEC=40 PORT=3000 npm run preview
 ```
 
 ## Settings (env vars)
@@ -45,7 +45,16 @@ Export them in your shell or put them in a `.env` you load yourself (never commi
 | `TRANSCRIBER` | `openai` | `openai` or `fake` |
 | `DOWNLOADER` | `yt-dlp` | `yt-dlp` or `fake` |
 | `YT_DLP_BIN` | `yt-dlp` | Path to the yt-dlp binary |
-| `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, posting) and adds a demo-clip button for e2e |
+| `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, picker, posting) and adds a demo-clip button for e2e |
+| `FAKE_VOD_SEC` | `10` | Length of the fake downloader's test clip |
+| `PICKER` | `llm` | `llm` or `fake` (loudest moments, no AI: demos only, it cannot flag spoilers) |
+| `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the picking model. Without one, picking jobs fail with a clear message |
+| `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API, e.g. `https://openrouter.ai/api/v1`, `https://api.cerebras.ai/v1` |
+| `LLM_MODEL` | `gpt-4o-mini` | Model name at that API (must support JSON-schema answers) |
+| `LLM_USD_PER_MTOK_IN` / `_OUT` | `0` | Model list prices per million tokens, for the cost per clip |
+| `MAX_PICKS` | `15` | Most clips kept per VOD |
+| `MEDIA_DIR` | `./media` | Where clips, thumbnails and their masters are kept (never committed) |
+| `RENDER_PRESET` | `veryfast` | x264 preset for clips |
 | `POSTIZ_URL` | – | Address you open Postiz at, e.g. `https://postiz.techinsiderbytes.com` |
 | `POSTIZ_API_KEY` | – | From Postiz > Settings > Public API |
 | `UPLOAD_POST_API_KEY` | – | Upload-Post API key (instead of Postiz) |
@@ -117,9 +126,27 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 - `server/pipeline/transcript/`: a `Transcriber` interface with word timestamps. The `openai`
   adapter calls `whisper-1` (`verbose_json`, word granularity), splits audio over 25 MB into
   overlapping chunks and merges the timings. The cost of each VOD is stored.
+  Ingest also measures loudness per second (ffmpeg `ebur128`) while the audio is still there.
+- `server/pipeline/picks/`: plain signals (loudness spikes, speech rate, laughing/shouting words,
+  a slot for chat replay) find up to 30 candidate moments, snapped to sentence boundaries. An
+  OpenAI-compatible model ranks them with a strict JSON schema: start, end, hook, title, score,
+  reason, layout and flags (spoiler, story cutscene, ending, leak, breaks the brief). The campaign
+  brief and the creator's off-limits note go into the prompt. Then a plain-code gate drops anything
+  flagged, anything mentioning a "No …" phrase from the brief, overlaps, and windows that cannot be
+  cut to 15-60 s on sentence boundaries. Dropped picks are stored with the reason and never render.
+- `server/pipeline/render/`: one job per kept pick. yt-dlp downloads only that section (±3 s,
+  ≤1080p30). Layouts: *stacked* (the creator's face cam box on top, gameplay below; the box is
+  drawn once per creator in Sources), *center* (9:16 gameplay crop), *full* (whole frame over a
+  blurred copy). Karaoke captions (ASS, 2-4 words a line, the spoken word highlighted, clear of the
+  bottom 20% and right 15%) and the hook for the first 2 s are burned in. Output: H.264 + AAC MP4,
+  1080×1920, 30 fps, -14 LUFS, plus a thumbnail, in `media/clips/`. The padded section is kept
+  next to it as the clip's master (for edits and re-renders in the gallery); other temp files go
+  with the job's temp folder. Each render becomes a clip in the Inbox. The server log prints time
+  per step and cost per clip, and the gallery shows them on each clip.
 - `server/publish/`: a `PostingService` interface with Postiz, Upload-Post and fake adapters,
   plus pure planners for the permission/brief gate, spacing, captions and earnings.
-- `server/clips/`: clips, review decisions (approve, reject with a reason, undo of the last one; all
+- `server/clips/`: clips (each rendered pick becomes one, with its padded section kept as the
+  master), review decisions (approve, reject with a reason, undo of the last one; all
   stored in `clip_reviews` for tuning picks later) and edits (trim, title, hook, caption text,
   layout). Saving an edit marks the clip "being remade" and queues a `render-clip` job.
 - `server/pipeline/rerender/`: a pure planner (9:16 crop math for the stacked / center / full

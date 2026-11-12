@@ -7,7 +7,11 @@ import { openDb } from "./db/index.js";
 import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { JobQueue } from "./jobs/queue.js";
-import { INGEST_JOB, ingestHandler, onIngestFinished } from "./pipeline/ingest/ingest.js";
+import { PicksRepo } from "./picks/repo.js";
+import { pipelineOnFinished } from "./pipeline/chain.js";
+import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
+import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
+import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
@@ -18,21 +22,32 @@ const config = loadConfig();
 const db = openDb(config.dbFile);
 const sources = new SourcesRepo(db);
 const vods = new VodsRepo(db);
+const picks = new PicksRepo(db);
 const clips = new ClipsRepo(db);
 const posts = new PostsRepo(db);
 const publisher = new Publisher({ sources, clips, posts, service: config.postingService });
-const mediaDir = join(dirname(config.dbFile), "media");
-const ingestFinished = onIngestFinished(vods);
-const renderFinished = onRenderFinished(clips);
-const queue = new JobQueue(db, {
+const mediaDir = config.mediaDir;
+const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
+const clipRenderFinished = onRenderFinished(clips);
+const queue: JobQueue = new JobQueue(db, {
   handlers: {
     [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
+    [PICKS_JOB]: picksHandler({ sources, vods, picks, picker: config.picker, maxPicks: config.maxPicks }),
+    [RENDER_JOB]: renderHandler({
+      sources,
+      vods,
+      picks,
+      clips,
+      downloader: config.sectionDownloader,
+      mediaDir,
+      preset: config.renderPreset,
+    }),
     [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
     [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
   },
-  onFinished: (job) => {
-    ingestFinished(job);
-    renderFinished(job);
+  onFinished: (job, payload) => {
+    pipelineFinished(job, payload);
+    clipRenderFinished(job);
   },
 });
 
@@ -41,7 +56,7 @@ const here = fileURLToPath(import.meta.url);
 const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : undefined;
 const seedDemoClip =
   process.env.CLIPFARM_FAKES === "1" ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
-const app = createApp({ sources, vods, queue, clips, posts, publisher, seedDemoClip, clientDir });
+const app = createApp({ sources, vods, picks, queue, clips, posts, publisher, seedDemoClip, clientDir });
 
 queue.start();
 // Post links and views, read on a timer within the service's API limits.
@@ -49,7 +64,7 @@ const refreshTimer = setInterval(() => void publisher.refresh(), config.postingR
 refreshTimer.unref();
 const server = app.listen(config.port, () => {
   console.log(
-    `clipfarm on http://localhost:${config.port} (downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, posting: ${config.postingService.name})`,
+    `clipfarm on http://localhost:${config.port} (downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
   );
 });
 
