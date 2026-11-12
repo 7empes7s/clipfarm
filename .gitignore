@@ -1,0 +1,8 @@
+node_modules/
+media/
+out/
+*.mp4
+*.webm
+*.m4a
+.env
+.lab/

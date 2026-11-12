@@ -1,0 +1,140 @@
+# Postiz on Mulinux. Adapted from the official compose
+# (github.com/gitroomhq/postiz-docker-compose, AGPL-3.0) with these changes for a shared 7.6 GB box:
+# - every image pinned, every service memory-limited (total 2176 MiB), restart: unless-stopped;
+# - only the web app is published, on 127.0.0.1 (Caddy + the Cloudflare tunnel put it on the internet);
+# - Temporal keeps its search data in Postgres instead of Elasticsearch (saves ~600 MB), no Temporal UI;
+# - data lives under /opt/postiz/ (bind mounts), secrets come from .env next to this file.
+# Install and run it with ops/postiz/RUNBOOK.md. To update, bump the pinned tags below.
+name: postiz
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:v2.25.3
+    restart: unless-stopped
+    mem_limit: 1280m
+    logging: *logging
+    environment:
+      MAIN_URL: ${MAIN_URL:?set MAIN_URL in .env}
+      FRONTEND_URL: ${FRONTEND_URL:?set FRONTEND_URL in .env}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:?set NEXT_PUBLIC_BACKEND_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      DATABASE_URL: postgresql://postiz:${POSTIZ_DB_PASSWORD:?set POSTIZ_DB_PASSWORD in .env}@postiz-postgres:5432/postiz
+      REDIS_URL: redis://postiz-redis:6379
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      TEMPORAL_ADDRESS: temporal:7233
+      IS_GENERAL: 'true'
+      DISABLE_REGISTRATION: ${DISABLE_REGISTRATION:-false}
+      RUN_CRON: 'true'
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      API_LIMIT: ${API_LIMIT:-30}
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      YOUTUBE_CLIENT_SECRET: ${YOUTUBE_CLIENT_SECRET:-}
+      TIKTOK_CLIENT_ID: ${TIKTOK_CLIENT_ID:-}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:-}
+      INSTAGRAM_APP_ID: ${INSTAGRAM_APP_ID:-}
+      INSTAGRAM_APP_SECRET: ${INSTAGRAM_APP_SECRET:-}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      X_API_KEY: ${X_API_KEY:-}
+      X_API_SECRET: ${X_API_SECRET:-}
+    volumes:
+      - /opt/postiz/config:/config/
+      - /opt/postiz/uploads:/uploads/
+    ports:
+      - 127.0.0.1:${POSTIZ_PORT:-5300}:5000
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:5000/',res=>process.exit(res.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      postiz-postgres:
+        condition: service_healthy
+      postiz-redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+
+  postiz-postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+    command: ["postgres", "-c", "shared_buffers=64MB"]
+    environment:
+      POSTGRES_USER: postiz
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:?set POSTIZ_DB_PASSWORD in .env}
+      POSTGRES_DB: postiz
+    volumes:
+      - /opt/postiz/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postiz -d postiz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postiz-redis:
+    image: redis:7.2.11-alpine
+    restart: unless-stopped
+    mem_limit: 96m
+    logging: *logging
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - /opt/postiz/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  temporal-postgres:
+    image: postgres:16.10-alpine
+    restart: unless-stopped
+    mem_limit: 160m
+    logging: *logging
+    command: ["postgres", "-c", "shared_buffers=32MB"]
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD in .env}
+    volumes:
+      - /opt/postiz/temporal-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *logging
+    environment:
+      DB: postgres12
+      DB_PORT: '5432'
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD in .env}
+      POSTGRES_SEEDS: temporal-postgres
+      ENABLE_ES: 'false'
+      TEMPORAL_NAMESPACE: default
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy

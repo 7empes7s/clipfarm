@@ -1,0 +1,5 @@
+# Postiz behind Caddy (Caddy listens on :80 behind the cloudflared tunnel, which does TLS).
+# Append to /etc/caddy/Caddyfile (RUNBOOK.md step 5). The port matches POSTIZ_PORT in .env.
+http://postiz.techinsiderbytes.com {
+	reverse_proxy 127.0.0.1:5300
+}
