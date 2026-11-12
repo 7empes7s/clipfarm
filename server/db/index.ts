@@ -231,6 +231,11 @@ const MIGRATIONS: string[] = [
   ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
   ALTER TABLE permissions ADD COLUMN review_reason TEXT;
   `,
+  `
+  -- Routing: the permission kinds an account takes (NULL: every kind) and the Whop campaigns pinned to it.
+  ALTER TABLE posting_accounts ADD COLUMN takes TEXT;
+  ALTER TABLE posting_accounts ADD COLUMN pinned_campaigns TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function migrate(db: Db): void {

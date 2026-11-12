@@ -316,6 +316,10 @@ export interface ChannelSettings {
   /** Off stops new posts to the account. */
   enabled: boolean;
   health: AccountHealth;
+  /** Routing: the permission kinds whose clips this account posts. Every kind to start with. */
+  takes: PermissionKind[];
+  /** Whop campaigns (permission ids) pinned here: on this platform they post only from this account. */
+  pinnedCampaignIds: number[];
 }
 
 /** A connected account plus our settings for it. */
