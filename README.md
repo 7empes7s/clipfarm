@@ -21,6 +21,10 @@ npm run build      # server to dist/server, client to dist/client
 npm run preview    # built client + API on one port ($PORT, default 3000)
 ```
 
+On an empty gallery, the Inbox has a **Load demo clips** button: a queued job makes two demo
+creators and ten clips from generated test patterns (about 20 s), so the review can be tried right
+away. Demo campaigns allow no platform, so demo clips can be exported but never posted.
+
 Try it without network or API keys (fake downloader makes a 10 s test clip, fake transcriber
 returns fixed words):
 
@@ -115,8 +119,18 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   overlapping chunks and merges the timings. The cost of each VOD is stored.
 - `server/publish/`: a `PostingService` interface with Postiz, Upload-Post and fake adapters,
   plus pure planners for the permission/brief gate, spacing, captions and earnings.
-- `server/clips/`: clips with approve/reject (the picks-and-render step will create them).
-- `client/`: the phone-first gallery (React + Vite): Campaigns, Clips and Stats tabs.
+- `server/clips/`: clips, review decisions (approve, reject with a reason, undo of the last one; all
+  stored in `clip_reviews` for tuning picks later) and edits (trim, title, hook, caption text,
+  layout). Saving an edit marks the clip "being remade" and queues a `render-clip` job.
+- `server/pipeline/rerender/`: a pure planner (9:16 crop math for the stacked / center / full
+  layouts, caption lines, ASS subtitles) and a runner that cuts the clip again from its master (the
+  longer source section) with ffmpeg, one job at a time. The face cam box is set per creator in
+  Sources and used by the stacked layout.
+- `client/`: the phone-first gallery (React + Vite). Tabs: Inbox (one clip at a time, autoplay
+  muted, tap for sound; swipe right or Approve, swipe left or Reject + a reason; Edit; Undo; on
+  desktop an "Up next" grid and keys A / R then 1-5 / E / arrows / Z), Approved and Posted
+  (posting, export, views, Whop), Sources (campaigns, face cam), Jobs (progress, cancel, try again)
+  and Stats. Rejected clips are one tap away from the Inbox.
 - `shared/`: types used by both.
 
 ## Manual check with a real link (not run in CI)
