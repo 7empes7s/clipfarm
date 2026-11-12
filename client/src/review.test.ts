@@ -20,6 +20,7 @@ function clip(id: number, patch: Partial<Clip> = {}): Clip {
     masterDurationSec: 30,
     captionWords: [],
     postCount: 0,
+    experiment: false,
     videoUrl: `/api/clips/${id}/video?v=1`,
     masterUrl: `/api/clips/${id}/master`,
     live: null,

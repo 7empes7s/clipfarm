@@ -27,6 +27,7 @@ interface ClipRow {
   live_stream_sec: number | null;
   live_moment_at: string | null;
   live_latency_sec: number | null;
+  experiment?: number;
   created_at: string;
 }
 
@@ -83,6 +84,7 @@ function toClip(r: ClipRow): Clip {
     masterDurationSec: r.master_duration_sec ?? r.duration_sec,
     captionWords: JSON.parse(r.caption_words) as Word[],
     postCount: r.post_count ?? 0,
+    experiment: r.experiment === 1,
     videoUrl: `/api/clips/${r.id}/video?v=${r.version}`,
     masterUrl: `/api/clips/${r.id}/master`,
     live:
@@ -93,7 +95,13 @@ function toClip(r: ClipRow): Clip {
   };
 }
 
-const SELECT = "SELECT clips.*, (SELECT COUNT(*) FROM posts WHERE posts.clip_id = clips.id) AS post_count FROM clips";
+// "In force" for a permission: no end date, or one after @now (ISO timestamps compare as text).
+const IN_FORCE = "p.source_id = clips.source_id AND (p.expires_at IS NULL OR p.expires_at > @now)";
+// experiment: the source's records in force are all experiments (see isExperimentOnly).
+const SELECT = `SELECT clips.*, (SELECT COUNT(*) FROM posts WHERE posts.clip_id = clips.id) AS post_count,
+  (EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind = 'experiment')
+    AND NOT EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind != 'experiment')) AS experiment
+  FROM clips`;
 
 export class ClipsRepo {
   constructor(
@@ -134,7 +142,7 @@ export class ClipsRepo {
   }
 
   private row(id: number): ClipRow {
-    const row = this.db.prepare(`${SELECT} WHERE clips.id = ?`).get(id) as ClipRow | undefined;
+    const row = this.db.prepare(`${SELECT} WHERE clips.id = @id`).get({ id, now: this.now().toISOString() }) as ClipRow | undefined;
     if (!row) throw new NotFoundError("That clip was not found.");
     return row;
   }
@@ -155,7 +163,7 @@ export class ClipsRepo {
   }
 
   list(): Clip[] {
-    return (this.db.prepare(`${SELECT} ORDER BY clips.id DESC`).all() as ClipRow[]).map(toClip);
+    return (this.db.prepare(`${SELECT} ORDER BY clips.id DESC`).all({ now: this.now().toISOString() }) as ClipRow[]).map(toClip);
   }
 
   setStatus(id: number, status: ClipStatus): Clip {

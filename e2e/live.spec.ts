@@ -56,8 +56,11 @@ test("launch day: the leak rule before launch, then live clips tagged LIVE in th
     await card.getByLabel("Launch time, in your time zone").fill("2026-01-01T00:00");
     await card.getByRole("button", { name: "Save time" }).click();
 
-    // Launch time is behind us: live mode armed itself and records the creator.
+    // Launch time is now behind the Disarm above, so that Disarm holds: nothing is recorded until Arm.
     await expect(card.getByText("GTA VI is out.")).toBeVisible();
+    await expect(card.getByTestId("launch-state")).toHaveText("Disarmed");
+    await expect(row.getByText("Live mode is disarmed")).toBeVisible();
+    await card.getByRole("button", { name: "Arm", exact: true }).click();
     await expect(row.getByText(/Recording on Twitch/)).toBeVisible();
     await expect(card.getByTestId("launch-state")).toHaveText(/Recording \d/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

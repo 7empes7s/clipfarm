@@ -12,6 +12,8 @@
     "preview": "node dist/server/index.js",
     "start": "node dist/server/index.js",
     "test": "vitest run",
+    "test:engine": "vitest run -c vitest.engine.config.ts",
+    "test:engine:writer": "ENGINE_WRITER=1 vitest run -c vitest.engine.config.ts",
     "test:e2e": "playwright test",
     "e2e:live": "playwright test -c playwright.live.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit && tsc -p ops/tsconfig.json --noEmit",

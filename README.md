@@ -43,6 +43,10 @@ app shell, so it opens without a network; numbers load once it is back.
 - **Progress**: the goals (O1: clips per hour of stream, minutes per hour of stream, share
   approved; O2: review time per clip) and each stream's stages (transcript, picks, render) with
   the time each took.
+- **Experiment**: what happened to experiment posts, in total, per burner account and per creator:
+  posts, views, claims, removals, strikes and the time to the first claim. The posting service
+  reports these where it can; otherwise tap Claim, Removed or Strike on a post. A strike switches
+  the burner off and says why, until you switch it on again in its settings.
 - **Outputs**: every clip with its status, where it was posted, links and views; filters by
   creator, campaign, platform and date; tap ▶ to play.
 - **Accounts** (Posting accounts): several accounts per platform, each linked once in the posting
@@ -87,15 +91,16 @@ env-only.
 | `PORT` | `3000` | Port for the API and, in preview, the client |
 | `HOST` | every interface | Address to listen on; the live box uses `127.0.0.1` |
 | `CLIPFARM_REQUIRE_ACCESS` | off | `1` on the live box: requests without Cloudflare Access's `Cf-Access-Jwt-Assertion` header are refused (clipfarm has no login of its own) |
-| `DATA_DIR` | `./data` | Folder for the SQLite database |
-| `OPENAI_API_KEY` | – | Key for the Whisper API. Without it, transcription jobs fail with a clear message |
-| `TRANSCRIBER` | `openai` | `openai` or `fake` |
+| `DATA_DIR` | `./data` | Folder for the SQLite database and the local engine's programs and models (`models/`) |
+| `OPENAI_API_KEY` | – | Optional. Only for "Use cloud AI for speed" on the Dashboard; without it everything runs locally |
+| `TRANSCRIBER` | local engine | `fake` skips real transcription |
+| `WHISPER_BIN` / `LLAMA_SERVER_BIN` | downloaded | Your own whisper.cpp `whisper-cli` / llama.cpp `llama-server` (needed where there is no ready-made Linux build, e.g. macOS) |
 | `DOWNLOADER` | `yt-dlp` | `yt-dlp` or `fake` |
 | `YT_DLP_BIN` | `yt-dlp` | Path to the yt-dlp binary |
 | `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, picker, posting) and adds a demo-clip button for e2e |
 | `FAKE_VOD_SEC` | `10` | Length of the fake downloader's test clip |
-| `PICKER` | `llm` | `llm` or `fake` (loudest moments, no AI: demos only, it cannot flag spoilers) |
-| `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the picking model. Without one, picking jobs fail with a clear message |
+| `PICKER` | local engine | `fake` takes the loudest moments (demos only, it cannot flag spoilers) |
+| `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the cloud picking model (only used with "Use cloud AI for speed") |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API, e.g. `https://openrouter.ai/api/v1`, `https://api.cerebras.ai/v1` |
 | `LLM_MODEL` | `gpt-4o-mini` | Model name at that API (must support JSON-schema answers) |
 | `LLM_USD_PER_MTOK_IN` / `_OUT` | `0` | Model list prices per million tokens, for the cost per clip |
@@ -246,6 +251,12 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   `direct-permission` or `own-content`, with campaign link, brief rules, pay per 1,000 views,
   minimum views, allowed platforms and end date). The server refuses to ingest from a source
   without an active record, both when the link is added and again when the job runs.
+  A fifth kind, `experiment`, tests what the platforms do to clips posted without the creator's
+  permission: it needs no proof, only a note, and ends after 30 days unless a date is given. Its
+  clips carry an "Experiment" badge and go to **burner accounts only**: main accounts are not in
+  the picker, and exports and Whop refuse them (`requireActivePermission`, `accountsAllowedFor`).
+  With no burner switched on, posting is refused with the reason. The content rules stay: no
+  leaks, isolated cutscenes or ending spoilers.
 - `server/jobs/`: a SQLite-backed queue. One job at a time (the box is shared), automatic retries,
   cancel, progress, and a temp folder per job that is always removed.
 - `server/live/`: live mode. `plan.ts` holds the rules as plain functions (armed or not, the leak
@@ -254,15 +265,22 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   interface (yt-dlp, ffmpeg on Kick's HLS address, and a fake); `job.ts` is the queued work per
   segment and cuts LIVE clips from the recorded segment; `notify.ts` is web push behind an
   interface with a fake.
+- `server/engine/`: clipfarm's own engine. `catalog.ts` pins every program and model to a
+  SHA-256, `download.ts` fetches with resume and checks it, `memory.ts` is the guard, `llama.ts`
+  runs the hook writer for one picking session, and `engine.ts` reports status, keeps the
+  settings and hands the pipeline its transcriber and picker (local by default, cloud as an option).
 - `server/pipeline/ingest/`: yt-dlp downloads **audio only** (`-f bestaudio`, ~60 MB per hour)
   plus title, duration and chapters. The video is not downloaded here; the render step will fetch
   only the picked sections.
-- `server/pipeline/transcript/`: a `Transcriber` interface with word timestamps. The `openai`
+- `server/pipeline/transcript/`: a `Transcriber` interface with word timestamps. The `local`
+  one (default) runs whisper.cpp with VAD and parses its one-word segments. The optional `openai`
   adapter calls `whisper-1` (`verbose_json`, word granularity), splits audio over 25 MB into
   overlapping chunks and merges the timings. The cost of each VOD is stored.
   Ingest also measures loudness per second (ffmpeg `ebur128`) while the audio is still there.
 - `server/pipeline/picks/`: plain signals (loudness spikes, speech rate, laughing/shouting words,
-  a slot for chat replay) find up to 30 candidate moments, snapped to sentence boundaries. An
+  a slot for chat replay) find up to 30 candidate moments, snapped to sentence boundaries. The
+  `local` picker (default) ranks them by those signals, screens them with keywords and writes
+  hooks from the transcript or with the local writer. With cloud AI on, an
   OpenAI-compatible model ranks them with a strict JSON schema: start, end, hook, title, score,
   reason, layout and flags (spoiler, story cutscene, ending, leak, breaks the brief). The campaign
   brief and the creator's off-limits note go into the prompt. Then a plain-code gate drops anything
@@ -299,10 +317,41 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 - `shared/`: types used by both, and `metrics.ts` (growth, averages, cost per approved clip, time
   left, review speed).
 
+## The local engine (no outside AI service)
+
+By default clipfarm transcribes and picks on its own machine; OpenAI is only an optional speed-up
+("Use cloud AI for speed" on the Dashboard, once an OpenAI key is set in Settings).
+
+- **Speech-to-text**: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) with
+  [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) first, so only speech is transcribed.
+  One word per segment gives the word times the captions need. Default model `base.en`
+  (`tiny.en` and `small.en` can be picked on the Dashboard).
+- **Picks**: signals that need no AI rank the moments (loudness spikes, speech rate, hype and
+  laughing words, shouted lines, chat spikes when there are any), and a keyword screen flags
+  spoilers, endings, leaks and cutscenes. Hooks and titles are the line said at the peak, or, with
+  the hook writer on, written by Qwen2.5-1.5B-Instruct (Apache-2.0) on
+  [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT) with a JSON schema. The writer is
+  loaded only while picking and can add flags, never clear them.
+- **Setup**: on first start a job called "Engine setup" downloads the ready-made programs and the
+  models into `DATA_DIR/models` (about 1.3 GB with the writer, 160 MB without). Every file is
+  pinned to a SHA-256 in `server/engine/catalog.ts`; an interrupted download carries on where it
+  stopped. The Dashboard shows "Local engine: ready" or what is missing, with a button.
+- **Memory guard**: a model is not started when free memory is below its need plus 1 GB (or it
+  does not fit under the service's own cap); the job says why. Without room for the writer, picks
+  still come out, with transcript hooks and the reason on each pick.
+- **Measured** on the 4-vCPU box with `base.en`: 10 minutes of generated speech → transcript and
+  ranked picks in about 62 s (6 min per hour of stream), peak 440 MB. The writer adds about 15 s
+  per moment (about 8 min for 30) at a 1.9 GB peak.
+
+`npm run test:engine` runs the real engine on speech generated by ffmpeg (flite voice): it
+downloads the pinned parts into `data/engine-test`, checks word times across silences, and holds
+a 10-minute sample to the budget (250 s, 2.5 GB). CI runs it. `npm run test:engine:writer` does
+the same for the hook writer (1.1 GB download, needs about 2.9 GB of free memory; not in CI).
+
 ## Manual check with a real link (not run in CI)
 
-1. Install `yt-dlp` and set `OPENAI_API_KEY`.
+1. Install `yt-dlp`. Start the app and wait for "Local engine: ready" on the Dashboard.
 2. `npm run build && PORT=3000 npm run preview`, open http://localhost:3000.
 3. Add a campaign you really have permission for, then paste a short VOD link (a few minutes).
 4. The work queue shows "Downloading audio", then "Transcribing", then "Done". Open
-   "Show transcript" and check the words and that the cost is a few cents at most.
+   "Show transcript" and check the words (the local engine costs nothing per minute).

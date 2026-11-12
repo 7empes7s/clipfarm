@@ -231,6 +231,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posting_accounts ADD COLUMN pinned_campaigns TEXT NOT NULL DEFAULT '[]';
   `,
   `
+  ALTER TABLE permissions ADD COLUMN note TEXT NOT NULL DEFAULT '';
+  ALTER TABLE posts ADD COLUMN claim_at TEXT;
+  ALTER TABLE posts ADD COLUMN removal_at TEXT;
+  ALTER TABLE posts ADD COLUMN strike_at TEXT;
+  ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
+  `,
+  `
   -- Live mode: jobs with a higher priority run first; streams recorded in rolling segments.
   ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX jobs_next ON jobs(status, priority DESC, id);

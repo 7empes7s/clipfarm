@@ -161,8 +161,8 @@ export function LaunchCard({ refreshKey }: { refreshKey: string }) {
         )}
         {info.creators.length === 0 ? (
           <p className="hint">
-            No creator has a permission record yet, so nobody can be recorded. Join a clipping program and add it as a campaign in{" "}
-            <a href="#sources">Sources</a>.
+            No creator has a permission record yet, so nobody can be recorded. Join a clipping program, then{" "}
+            <a href="#sources">add it as a campaign</a>.
           </p>
         ) : (
           <ul className="launch-creators">
@@ -173,7 +173,8 @@ export function LaunchCard({ refreshKey }: { refreshKey: string }) {
         )}
         {info.needPermission > 0 && (
           <p className="hint">
-            {info.needPermission} more on the <a href="#watchlist">watchlist</a> need a permission record before they can be recorded.
+            {info.needPermission} more watched creators need a permission record before they can be recorded.{" "}
+            <a href="#watchlist">See who</a>
           </p>
         )}
         {info.push.publicKey && (

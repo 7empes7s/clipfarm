@@ -3,6 +3,7 @@ import type { Clip, Post, PostingInfo, Source } from "../../shared/types";
 import { noAccountReason } from "../../shared/routing";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
+import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
@@ -129,6 +130,11 @@ export function ClipsTab({
                     {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
                   <LiveTag clip={clip} short />
+                  {clip.experiment && (
+                    <p className="hint exp-line">
+                      <ExperimentBadge /> Burner accounts only, no export.
+                    </p>
+                  )}
                   {gap && (
                     <p className="hint" data-testid="routing-gap">
                       {gap}
@@ -145,9 +151,11 @@ export function ClipsTab({
                         <button type="button" className="primary" onClick={() => setPosting(clip)} disabled={!info}>
                           Post
                         </button>
-                        <button type="button" onClick={() => setExporting(clip)}>
-                          Export
-                        </button>
+                        {!clip.experiment && (
+                          <button type="button" onClick={() => setExporting(clip)}>
+                            Export
+                          </button>
+                        )}
                       </>
                     )}
                     {clip.status !== "rejected" && clip.postCount === 0 && (

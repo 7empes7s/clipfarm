@@ -1,8 +1,8 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, RejectReason } from "../shared/types.js";
-import { PLATFORMS, REJECT_REASONS } from "../shared/types.js";
+import type { Platform, PostFlag, RejectReason } from "../shared/types.js";
+import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
 import { accessGate } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
@@ -10,6 +10,7 @@ import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
+import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
@@ -25,7 +26,7 @@ import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
-import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
+import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
@@ -44,6 +45,8 @@ export interface AppDeps {
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
   /** Live mode: the Launch day card's switches, and who gets notifications. */
   live?: { manager: LiveManager; repo: LiveRepo };
+  /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
+  engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
   settings?: { store: Settings; demo: boolean };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
@@ -90,6 +93,7 @@ export function createApp({
   accountStats,
   watchlist,
   live,
+  engine,
   settings,
   seedDemoClip,
   clientDir,
@@ -110,6 +114,14 @@ export function createApp({
 
   app.post("/api/sources", (req, res) => {
     res.status(201).json(sources.create(parseNewSource(req.body)));
+  });
+
+  // Another record for a creator we already have (an experiment, or a campaign that replaces an old one).
+  app.post("/api/sources/:id/permissions", (req, res) => {
+    const id = idParam(req.params.id);
+    sources.get(id);
+    sources.addPermission(id, parsePermission(req.body));
+    res.status(201).json(sources.get(id));
   });
 
   // Clears a source and everything made from it (the end-to-end test tidies up with this).
@@ -285,6 +297,13 @@ export function createApp({
     res.json(posts.markWhopSubmitted(idParam(req.params.id)));
   });
 
+  // One tap on a post: a claim, removal or strike seen on the platform (on: false takes it back).
+  app.post("/api/posts/:id/flags", (req, res) => {
+    const { flag, on } = (req.body ?? {}) as { flag?: unknown; on?: unknown };
+    if (!POST_FLAGS.includes(flag as PostFlag)) throw new ValidationError("Pick what happened: claim, removal or strike.");
+    res.json(posts.setFlag(idParam(req.params.id), flag as PostFlag, on !== false));
+  });
+
   app.get("/api/stats", (_req, res) => {
     res.json(publisher.stats());
   });
@@ -416,6 +435,31 @@ export function createApp({
   }
 
   // "Load demo clips" on an empty gallery: generated test patterns, made by a queued job.
+  if (engine) {
+    const status = () => engine.engine.status(queue.list(200), engine.fake ? "test" : "auto");
+
+    app.get("/api/engine", (_req, res) => {
+      res.json(status());
+    });
+
+    app.put("/api/engine/settings", (req, res) => {
+      engine.engine.saveSettings(req.body);
+      res.json(status());
+    });
+
+    // "Set up the local engine": one download job at a time; a second tap joins the one waiting.
+    app.post("/api/engine/setup", (_req, res) => {
+      const now = status();
+      if (now.mode === "local" && now.downloads.length > 0 && !(now.setupJob && now.setupJob.status !== "failed")) {
+        queue.enqueue(ENGINE_SETUP_JOB, {});
+      } else if (now.setupJob?.status === "queued") {
+        // Already waiting: make sure the queue is working on it, so the tap is never a dead end.
+        void queue.kick();
+      }
+      res.status(202).json(status());
+    });
+  }
+
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
   });

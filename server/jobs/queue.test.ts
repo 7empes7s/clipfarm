@@ -85,6 +85,21 @@ describe("JobQueue", () => {
     expect(finished).toEqual([`${waiting.id}:cancelled`, `${running.id}:done`]);
   });
 
+  it("runs a job added in the same tick as start()", async () => {
+    let calls = 0;
+    const { queue } = makeQueue({
+      work: async () => {
+        calls++;
+      },
+    });
+    queue.start();
+    const job = queue.enqueue("work", {});
+    await new Promise((r) => setTimeout(r, 50));
+    await queue.idle();
+    expect(calls).toBe(1);
+    expect(queue.get(job.id).status).toBe("done");
+  });
+
   it("retries a failing job, then succeeds", async () => {
     let calls = 0;
     const { queue } = makeQueue({

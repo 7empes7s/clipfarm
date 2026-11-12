@@ -2,6 +2,7 @@ import { type PointerEvent, useCallback, useEffect, useRef, useState } from "rea
 import type { Clip, Job, RejectReason, Source } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, REJECT_REASON_LABELS, REJECT_REASONS } from "../../shared/types";
 import { api } from "./api";
+import { ExperimentBadge } from "./Experiment";
 import { EditSheet } from "./EditSheet";
 import { LiveTag } from "./LiveTag";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
@@ -356,6 +357,7 @@ function ClipHead({ clip, position }: { clip: Clip; position: string }) {
       <div>
         {clip.hook && <p className="hook">{clip.hook}</p>}
         <h3>{clip.title}</h3>
+        {clip.experiment && <ExperimentBadge />}
         <p className="hint">score · {position}</p>
         <LiveTag clip={clip} />
       </div>
