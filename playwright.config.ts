@@ -20,10 +20,18 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // The built app with fake downloader and transcriber, on a throwaway database.
+    // The built app with fake downloader, transcriber and picker, on a throwaway database and media folder.
     command: "rm -rf .e2e-data/run && npm run build && node dist/server/index.js",
     url: `http://localhost:${port}/api/health`,
-    env: { PORT: String(port), CLIPFARM_FAKES: "1", DATA_DIR: ".e2e-data/run" },
+    // A 40 s fake VOD, long enough for the fake picker to find a 15-60 s clip.
+    env: {
+      PORT: String(port),
+      CLIPFARM_FAKES: "1",
+      FAKE_VOD_SEC: "40",
+      RENDER_PRESET: "ultrafast",
+      DATA_DIR: ".e2e-data/run",
+      MEDIA_DIR: ".e2e-data/run/media",
+    },
     reuseExistingServer: false,
     timeout: 120_000,
   },

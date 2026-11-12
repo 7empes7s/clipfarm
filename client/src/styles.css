@@ -1094,6 +1094,111 @@ a.button {
   }
 }
 
+/* Picks: the clips cut from one VOD */
+.picks {
+  margin-top: var(--s3);
+}
+.picks h4 {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-head);
+  font-size: 1.1rem;
+}
+.pick-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4) var(--s3);
+}
+@media (min-width: 640px) {
+  .pick-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.pick {
+  min-width: 0;
+}
+.pick-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.pick-frame:disabled {
+  opacity: 1;
+}
+.pick-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pick-score {
+  position: absolute;
+  top: var(--s2);
+  left: var(--s2);
+  min-width: 2.25rem;
+  padding: 0.05rem var(--s2);
+  border-radius: 999px;
+  background: var(--tally);
+  color: var(--surface);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pick-rendering .pick-frame,
+.pick-picked .pick-frame {
+  color: var(--work);
+}
+.pick-failed .pick-frame {
+  color: var(--bad);
+}
+.pick-title {
+  margin-top: var(--s1);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.left-out {
+  margin-top: var(--s3);
+  font-size: 0.9375rem;
+}
+.left-out summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--muted);
+}
+.left-out ul {
+  margin: 0;
+  padding-left: var(--s4);
+}
+.left-out .hint {
+  margin: 0;
+}
+.player {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 70dvh;
+  aspect-ratio: 9 / 16;
+  margin: var(--s3) auto 0;
+  border-radius: var(--radius-small);
+  background: var(--ink);
+}
+.pick-facts {
+  margin-top: var(--s3);
+}
+
 /* Dashboard */
 .visually-hidden {
   position: absolute;

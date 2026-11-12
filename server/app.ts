@@ -15,12 +15,14 @@ import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import type { PostsRepo } from "./publish/repo.js";
+import type { PicksRepo } from "./picks/repo.js";
 import { parseFaceCam, parseNewSource, type SourcesRepo } from "./sources/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
   sources: SourcesRepo;
   vods: VodsRepo;
+  picks: PicksRepo;
   queue: JobQueue;
   clips: ClipsRepo;
   posts: PostsRepo;
@@ -39,6 +41,13 @@ function idParam(raw: string | string[] | undefined): number {
   return id;
 }
 
+function sendMedia(res: express.Response, next: express.NextFunction, file: string | null): void {
+  if (!file || !existsSync(file)) throw new NotFoundError("That file is not there (yet).");
+  // Paths come from the server, never the request; they may sit under a dot-folder (e.g. ~/.cubefarm).
+  // A player that stops a range request mid-way is not an error worth answering.
+  res.sendFile(file, { dotfiles: "allow" }, (err) => err && !res.headersSent && next(err));
+}
+
 function platformParam(raw: unknown): Platform {
   if (!PLATFORMS.includes(raw as Platform)) throw new ValidationError("Pick a platform.");
   return raw as Platform;
@@ -47,6 +56,7 @@ function platformParam(raw: unknown): Platform {
 export function createApp({
   sources,
   vods,
+  picks,
   queue,
   clips,
   posts,
@@ -73,6 +83,24 @@ export function createApp({
   app.put("/api/sources/:id/face-cam", (req, res) => {
     const id = idParam(req.params.id);
     res.json(sources.setFaceCam(id, req.body === null || req.body?.clear ? null : parseFaceCam(req.body)));
+  });
+
+  app.get("/api/vods/:id/picks", (req, res) => {
+    const id = idParam(req.params.id);
+    vods.get(id);
+    res.json(picks.listForVod(id));
+  });
+
+  app.get("/api/picks", (_req, res) => {
+    res.json(picks.list());
+  });
+
+  app.get("/api/picks/:id/video", (req, res, next) => {
+    sendMedia(res, next, picks.files(idParam(req.params.id)).video);
+  });
+
+  app.get("/api/picks/:id/thumb", (req, res, next) => {
+    sendMedia(res, next, picks.files(idParam(req.params.id)).thumb);
   });
 
   app.get("/api/vods", (_req, res) => {

@@ -22,7 +22,7 @@ export interface JobQueueOptions {
   /** Where per-job temp folders are made. Defaults to the OS temp dir. */
   tmpRoot?: string;
   /** Called after a job ends for good (done, failed after its last try, or cancelled). */
-  onFinished?: (job: Job) => void;
+  onFinished?: (job: Job, payload: unknown) => void;
   now?: () => Date;
 }
 
@@ -241,6 +241,9 @@ export class JobQueue {
         "UPDATE jobs SET status = ?, progress = COALESCE(?, progress), message = ?, error = ?, updated_at = ?, finished_at = ? WHERE id = ?",
       )
       .run(status, fields.progress ?? null, fields.message, fields.error ?? null, this.now().toISOString(), this.now().toISOString(), id);
-    this.opts.onFinished?.(this.get(id));
+    if (this.opts.onFinished) {
+      const { payload } = this.db.prepare("SELECT payload FROM jobs WHERE id = ?").get(id) as { payload: string };
+      this.opts.onFinished(this.get(id), JSON.parse(payload));
+    }
   }
 }

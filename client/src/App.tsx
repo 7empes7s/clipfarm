@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { Clip, Job, Source, Vod, VodDetail } from "../../shared/types";
+import type { Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
@@ -9,6 +9,7 @@ import { FaceCamSheet } from "./FaceCamSheet";
 import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
 import { StatsTab } from "./StatsTab";
+import { Clips } from "./Clips";
 import { clock, shortDate, usd } from "./format";
 
 const STATE_LABEL = { active: "Allowed", expired: "Expired", none: "No permission" } as const;
@@ -29,6 +30,8 @@ const JOB_STATUS_LABEL: Record<Job["status"], string> = {
 
 const JOB_TYPE_LABEL: Record<string, string> = {
   ingest: "Transcript",
+  picks: "Picking highlights",
+  render: "Cutting a clip",
   "render-clip": "New version",
   "demo-clips": "Demo clips",
 };
@@ -65,6 +68,7 @@ export function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [vods, setVods] = useState<Vod[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [picks, setPicks] = useState<Pick[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -80,10 +84,11 @@ export function App() {
   const refresh = useCallback(async () => {
     const edits = clipsEdits.current;
     try {
-      const [s, v, j, c] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.clips()]);
+      const [s, v, j, c, p] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.clips(), api.picks()]);
       setSources(s);
       setVods(v);
       setJobs(j);
+      setPicks(p);
       if (edits === clipsEdits.current) setClips(c);
       setLoadError(null);
     } catch (err) {
@@ -166,6 +171,7 @@ export function App() {
                   key={s.id}
                   source={s}
                   vods={vods.filter((v) => v.sourceId === s.id)}
+                  picks={picks}
                   onChange={refresh}
                   onFaceCam={() => setFaceCamFor(s)}
                 />
@@ -220,7 +226,19 @@ export function App() {
   );
 }
 
-function SourceCard({ source, vods, onChange, onFaceCam }: { source: Source; vods: Vod[]; onChange: () => void; onFaceCam: () => void }) {
+function SourceCard({
+  source,
+  vods,
+  picks,
+  onChange,
+  onFaceCam,
+}: {
+  source: Source;
+  vods: Vod[];
+  picks: Pick[];
+  onChange: () => void;
+  onFaceCam: () => void;
+}) {
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -318,7 +336,7 @@ function SourceCard({ source, vods, onChange, onFaceCam }: { source: Source; vod
       {vods.length > 0 && (
         <ul className="vods">
           {vods.map((v) => (
-            <VodRow key={v.id} vod={v} />
+            <VodRow key={v.id} vod={v} picks={picks.filter((p) => p.vodId === v.id)} />
           ))}
         </ul>
       )}
@@ -326,7 +344,7 @@ function SourceCard({ source, vods, onChange, onFaceCam }: { source: Source; vod
   );
 }
 
-function VodRow({ vod }: { vod: Vod }) {
+function VodRow({ vod, picks }: { vod: Vod; picks: Pick[] }) {
   const [detail, setDetail] = useState<VodDetail | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -359,6 +377,7 @@ function VodRow({ vod }: { vod: Vod }) {
           ))}
         </p>
       )}
+      <Clips picks={picks} />
     </li>
   );
 }

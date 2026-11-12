@@ -162,10 +162,10 @@ describe("earningsRows (earnings with minimums)", () => {
 describe("vodProgress and goals", () => {
   const jobs = [
     // Newest first, like the queue lists them: the latest try of a stage counts.
-    job({ type: "render", status: "running", progress: 0.5, startedAt: "2026-11-18T10:08:00.000Z" }),
-    job({ type: "picks", startedAt: "2026-11-18T10:06:00.000Z", finishedAt: "2026-11-18T10:08:00.000Z" }),
-    job({ type: "ingest", startedAt: "2026-11-18T10:00:00.000Z", finishedAt: "2026-11-18T10:06:00.000Z" }),
-    job({ type: "ingest", status: "failed", startedAt: "2026-11-18T09:00:00.000Z", finishedAt: "2026-11-18T09:01:00.000Z" }),
+    job({ id: 104, type: "render", status: "running", progress: 0.5, startedAt: "2026-11-18T10:08:00.000Z" }),
+    job({ id: 103, type: "picks", startedAt: "2026-11-18T10:06:00.000Z", finishedAt: "2026-11-18T10:08:00.000Z" }),
+    job({ id: 102, type: "ingest", startedAt: "2026-11-18T10:00:00.000Z", finishedAt: "2026-11-18T10:06:00.000Z" }),
+    job({ id: 101, type: "ingest", status: "failed", startedAt: "2026-11-18T09:00:00.000Z", finishedAt: "2026-11-18T09:01:00.000Z" }),
   ];
 
   it("shows each stage with its time, and the share of clips approved", () => {
@@ -179,9 +179,26 @@ describe("vodProgress and goals", () => {
     expect(p).toMatchObject({ clips: 4, approved: 2, approvedShare: 0.5 });
   });
 
+  it("adds up the render jobs of every pick, after the latest picks run", () => {
+    const picks = job({ type: "picks", startedAt: "2026-11-18T10:06:00.000Z", finishedAt: "2026-11-18T10:08:00.000Z" });
+    const renders = [
+      job({ type: "render", status: "queued", progress: 0 }),
+      job({ type: "render", status: "running", progress: 0.5, startedAt: "2026-11-18T10:12:00.000Z" }),
+      job({ type: "render", startedAt: "2026-11-18T10:08:00.000Z", finishedAt: "2026-11-18T10:12:00.000Z" }),
+    ];
+    const old = job({ id: picks.id - 1, type: "render", status: "failed" });
+    // Newest first, as listed: the old render belongs to an earlier picks run and is left out.
+    const listed = [...renders.reverse(), picks, old];
+    const running = vodProgress(vod(), listed, [], "Streamer 1").stages[2];
+    expect(running).toEqual({ stage: "render", state: "running", seconds: null, progress: 0.5 });
+
+    for (const r of renders) Object.assign(r, { status: "done", startedAt: "2026-11-18T10:20:00.000Z", finishedAt: "2026-11-18T10:23:00.000Z" });
+    expect(vodProgress(vod(), listed, [], "Streamer 1").stages[2]).toEqual({ stage: "render", state: "done", seconds: 540, progress: 1 });
+  });
+
   it("measures O1 and O2 against their targets", () => {
     const doneJobs = [
-      job({ type: "render", startedAt: "2026-11-18T10:08:00.000Z", finishedAt: "2026-11-18T10:20:00.000Z" }),
+      job({ id: 105, type: "render", startedAt: "2026-11-18T10:08:00.000Z", finishedAt: "2026-11-18T10:20:00.000Z" }),
       ...jobs.slice(1),
     ];
     const clips = Array.from({ length: 8 }, (_, i) => clip({ status: i < 3 ? "approved" : "pending", vodId: 1 }));

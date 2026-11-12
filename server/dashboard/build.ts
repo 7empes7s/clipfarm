@@ -40,14 +40,6 @@ const JOB_LABELS: Record<string, string> = {
 /** The pipeline's job type for each stage of a VOD. */
 const STAGE_JOBS: Record<StageName, string> = { transcript: "ingest", picks: "picks", render: "render" };
 
-const STAGE_STATE: Record<Job["status"], StageState> = {
-  queued: "waiting",
-  running: "running",
-  done: "done",
-  failed: "failed",
-  cancelled: "failed",
-};
-
 /** Targets from the charter's objectives. */
 export const GOALS = { clipsPerHour: 10, minutesPerHour: 30, approvedShare: 0.5, secondsPerClip: 10 };
 
@@ -59,29 +51,46 @@ function secondsBetween(from: string | null, to: string | null): number | null {
 /** When a post went (or goes) out. */
 const postTime = (p: Post) => p.postedAt ?? p.scheduledAt;
 
+/** One stage from its jobs: the latest try of a single job, or all clips' render jobs together. */
+function stageOf(stage: StageName, jobs: Job[]): VodProgress["stages"][number] {
+  if (jobs.length === 0) return { stage, state: "waiting", seconds: null, progress: 0 };
+  const done = jobs.filter((j) => j.status === "done");
+  const pending = jobs.filter((j) => j.status === "queued" || j.status === "running");
+  let state: StageState;
+  if (pending.length > 0) state = done.length > 0 || pending.some((j) => j.status === "running") ? "running" : "waiting";
+  else state = done.length > 0 ? "done" : "failed";
+  const times = done.map((j) => secondsBetween(j.startedAt, j.finishedAt));
+  return {
+    stage,
+    state,
+    seconds: state === "done" && times.every((t) => t !== null) ? times.reduce((a, t) => a! + t!, 0) : null,
+    progress: (done.length + pending.reduce((sum, j) => sum + (j.status === "running" ? j.progress : 0), 0)) / jobs.length,
+  };
+}
+
 export function vodProgress(vod: Vod, jobs: Job[], clips: Clip[], creatorName: string): VodProgress {
-  const stages = (Object.keys(STAGE_JOBS) as StageName[]).map((stage) => {
-    // Jobs come newest first: the latest try of each stage counts.
-    const job = jobs.find((j) => j.vodId === vod.id && j.type === STAGE_JOBS[stage]);
-    if (!job) return { stage, state: "waiting" as const, seconds: null, progress: 0 };
-    return {
-      stage,
-      state: STAGE_STATE[job.status],
-      seconds: job.status === "done" ? secondsBetween(job.startedAt, job.finishedAt) : null,
-      progress: job.status === "done" ? 1 : job.progress,
-    };
-  });
-  const mine = clips.filter((c) => c.vodId === vod.id);
-  const approved = mine.filter((c) => c.status === "approved").length;
+  // Jobs come newest first. Transcript and picks: the latest try counts. Render: one job per pick,
+  // so every render job queued after the latest picks run counts.
+  const mine = jobs.filter((j) => j.vodId === vod.id);
+  const latest = (type: string) => mine.find((j) => j.type === type);
+  const picksJob = latest(STAGE_JOBS.picks);
+  const renders = mine.filter((j) => j.type === STAGE_JOBS.render && (!picksJob || j.id > picksJob.id));
+  const stages = [
+    stageOf("transcript", [latest(STAGE_JOBS.transcript)].filter((j): j is Job => !!j)),
+    stageOf("picks", picksJob ? [picksJob] : []),
+    stageOf("render", renders),
+  ];
+  const made = clips.filter((c) => c.vodId === vod.id);
+  const approved = made.filter((c) => c.status === "approved").length;
   return {
     vodId: vod.id,
     title: vod.title ?? vod.url,
     creatorName,
     durationSec: vod.durationSec,
     stages,
-    clips: mine.length,
+    clips: made.length,
     approved,
-    approvedShare: mine.length ? approved / mine.length : null,
+    approvedShare: made.length ? approved / made.length : null,
     createdAt: vod.createdAt,
   };
 }

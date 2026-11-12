@@ -8,6 +8,7 @@ import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { FakePostingService } from "../publish/fake.js";
 import { accountStatsFromPostiz, type PostizAnalytics, PostizService } from "../publish/postiz.js";
 import { Publisher } from "../publish/publisher.js";
@@ -166,7 +167,7 @@ function setup<S extends PostingService = FakePostingService>(service: S = new F
   const publisher = new Publisher({ sources, clips, posts, service, now: () => clock });
   const queue = new JobQueue(db, { handlers: {} });
   queue.stop();
-  const app = createApp({ sources, vods: new VodsRepo(db), queue, clips, posts, publisher, accountStats: store });
+  const app = createApp({ sources, vods: new VodsRepo(db), picks: new PicksRepo(db), queue, clips, posts, publisher, accountStats: store });
   return { db, sources, clips, posts, store, app, service, tick: (ms: number) => (clock = new Date(clock.getTime() + ms)) };
 }
 

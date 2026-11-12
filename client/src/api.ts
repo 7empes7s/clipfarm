@@ -7,6 +7,7 @@ import type {
   ExportPack,
   Job,
   NewSourceInput,
+  Pick,
   Platform,
   RejectReason,
   Post,
@@ -36,6 +37,7 @@ export const api = {
   addVod: (sourceId: number, url: string) =>
     call<{ vod: Vod; job: Job }>("/api/vods", { method: "POST", body: JSON.stringify({ sourceId, url }) }),
   jobs: () => call<Job[]>("/api/jobs"),
+  picks: () => call<Pick[]>("/api/picks"),
   cancelJob: (id: number) => call<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   retryJob: (id: number) => call<Job>(`/api/jobs/${id}/retry`, { method: "POST" }),
   clips: () => call<Clip[]>("/api/clips"),

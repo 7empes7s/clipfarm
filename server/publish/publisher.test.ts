@@ -8,6 +8,7 @@ import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { SourcesRepo } from "../sources/repo.js";
 import { VodsRepo } from "../vods/repo.js";
 import { FakePostingService } from "./fake.js";
@@ -33,7 +34,7 @@ function setup(perm: Parameters<typeof campaignInput>[0] = {}, opts: { clipStatu
   const publisher = new Publisher({ sources, clips, posts, service, now: clock });
   const queue = new JobQueue(db, { handlers: {} });
   queue.stop();
-  const app = createApp({ sources, vods, queue, clips, posts, publisher });
+  const app = createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher });
   const source = sources.create(campaignInput(perm));
   const clip = clips.create({ sourceId: source.id, vodId: null, title: "He actually landed the jump", filePath: videoPath, durationSec: 24 });
   if ((opts.clipStatus ?? "approved") === "approved") clips.setStatus(clip.id, "approved");

@@ -14,6 +14,14 @@ export function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
+export function megabytes(bytes: number): string {
+  return `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+export function seconds(ms: number): string {
+  return ms < 1000 ? "under 1 s" : `${Math.round(ms / 1000)} s`;
+}
+
 /** 950, 12.4k, 1.2M: short counts for tiles and charts. */
 export function compact(n: number): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);

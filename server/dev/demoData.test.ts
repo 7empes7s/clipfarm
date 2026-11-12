@@ -5,6 +5,7 @@ import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { FakePostingService } from "../publish/fake.js";
 import { Publisher } from "../publish/publisher.js";
 import { PostsRepo } from "../publish/repo.js";
@@ -25,7 +26,7 @@ function setup() {
   const publisher = new Publisher({ sources, clips, posts, service });
   const queue = new JobQueue(db, { handlers: { [DEMO_DATA_JOB]: async () => {} } });
   queue.stop();
-  const app = createApp({ sources, vods, queue, clips, posts, publisher, accountStats });
+  const app = createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher, accountStats });
   // What makeDemoClips makes: two creators whose record allows no platform, ten clips.
   const made = {
     sources: ["Demo Streamer A", "Demo Streamer B"].map((creatorName) =>

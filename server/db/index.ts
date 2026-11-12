@@ -129,6 +129,36 @@ const MIGRATIONS: string[] = [
   CREATE INDEX clip_reviews_clip ON clip_reviews(clip_id);
   `,
   `
+  ALTER TABLE vods ADD COLUMN loudness TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE picks (
+    -- AUTOINCREMENT: a re-run replaces picks, and a stale render job must never reach a new one.
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vod_id INTEGER NOT NULL REFERENCES vods(id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    rank INTEGER NOT NULL,
+    start_sec REAL NOT NULL,
+    end_sec REAL NOT NULL,
+    title TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason TEXT NOT NULL,
+    flags TEXT NOT NULL,
+    drop_reason TEXT,
+    layout TEXT NOT NULL,
+    status TEXT NOT NULL,
+    error TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    steps TEXT NOT NULL DEFAULT '[]',
+    file_path TEXT,
+    thumb_path TEXT,
+    size_bytes INTEGER,
+    duration_sec REAL,
+    clip_id INTEGER REFERENCES clips(id),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX picks_vod ON picks(vod_id, rank);
+  `,
+  `
   ALTER TABLE jobs ADD COLUMN started_at TEXT;
   ALTER TABLE jobs ADD COLUMN finished_at TEXT;
   CREATE TABLE account_stats (

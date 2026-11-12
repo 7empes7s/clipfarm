@@ -6,6 +6,7 @@ import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
+import { PicksRepo } from "../picks/repo.js";
 import { FakePostingService } from "../publish/fake.js";
 import { Publisher } from "../publish/publisher.js";
 import { PostsRepo } from "../publish/repo.js";
@@ -88,7 +89,7 @@ describe("POST /api/vods (server-side permission gate)", () => {
     const clips = new ClipsRepo(db, () => NOW);
     const posts = new PostsRepo(db, () => NOW);
     const publisher = new Publisher({ sources, clips, posts, service: new FakePostingService(), now: () => NOW });
-    return { db, sources, app: createApp({ sources, vods, queue, clips, posts, publisher }) };
+    return { db, sources, app: createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher }) };
   }
 
   it("refuses a source without any permission record, with a plain error", async () => {
