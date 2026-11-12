@@ -104,8 +104,10 @@ export function createApp({ sources, vods, queue, clips, posts, publisher, seedD
     const id = idParam(req.params.id);
     const file = clips.filePath(id);
     if (!existsSync(file)) throw new NotFoundError("The video file for this clip is missing on the server.");
-    if (req.query.download) res.download(file, `${slug(clips.get(id).title)}.mp4`, (err) => err && next(err));
-    else res.sendFile(file, (err) => err && next(err));
+    // The data folder may sit under a dot folder (.e2e-data), which send() refuses by default.
+    const opts = { dotfiles: "allow" as const };
+    if (req.query.download) res.download(file, `${slug(clips.get(id).title)}.mp4`, opts, (err) => err && next(err));
+    else res.sendFile(file, opts, (err) => err && next(err));
   });
 
   app.get("/api/clips/:id/export", (req, res) => {

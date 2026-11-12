@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
@@ -15,7 +15,9 @@ import { Publisher } from "./publisher.js";
 import { PostsRepo } from "./repo.js";
 
 const dir = mkdtempSync(join(tmpdir(), "clipfarm-publisher-"));
-const videoPath = join(dir, "clip.mp4");
+// A dot folder, like the e2e data folder (.e2e-data/run/media).
+mkdirSync(join(dir, ".data"));
+const videoPath = join(dir, ".data", "clip.mp4");
 writeFileSync(videoPath, "not really a video");
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -187,6 +189,14 @@ describe("tracking, Whop and stats", () => {
     });
     const refused = await request(app).get(`/api/clips/${clip.id}/export?platform=instagram`);
     expect(refused.status).toBe(403);
+  });
+
+  it("serves the clip video to play and to download, even from a dot folder", async () => {
+    const { app, clip } = setup();
+    const play = await request(app).get(`/api/clips/${clip.id}/video`).expect(200);
+    expect(play.headers["content-type"]).toBe("video/mp4");
+    const download = await request(app).get(`/api/clips/${clip.id}/video?download=1`).expect(200);
+    expect(download.headers["content-disposition"]).toContain("he-actually-landed-the-jump.mp4");
   });
 
   it("never sends keys to the client", async () => {
