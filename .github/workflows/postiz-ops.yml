@@ -15,14 +15,6 @@ jobs:
       - name: Shellcheck
         run: shellcheck ops/postiz/*.sh
 
-  tests:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+  # typecheck and test now run for the whole repo (ops included) in CI's "check" job,
+  # which also installs ffmpeg for the pipeline tests. A second "npm test" here would
+  # duplicate that run and fail without ffmpeg, so it was removed rather than duplicated.
