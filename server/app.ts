@@ -12,6 +12,7 @@ import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
+import { directPlatform, type Isolation } from "./isolation/isolation.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import type { LiveManager } from "./live/manager.js";
@@ -19,6 +20,7 @@ import { parsePushSubscription } from "./live/notify.js";
 import type { LiveRepo } from "./live/repo.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
+import type { DirectPoster } from "./publish/direct/direct.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import { buildChecklist } from "./settings/checklist.js";
 import { configuredMap, integration, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
@@ -58,6 +60,8 @@ export interface AppDeps {
   engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
   settings?: { store: Settings; demo: boolean };
+  /** Isolation groups (Settings, Accounts) and the uploads clipfarm does itself. `demo`: the platforms are stand-ins. */
+  isolation?: { isolation: Isolation; direct: DirectPoster; demo: boolean };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -107,6 +111,7 @@ export function createApp({
   live,
   engine,
   settings,
+  isolation: groups,
   seedDemoClip,
   clientDir,
   access,
@@ -498,8 +503,74 @@ export function createApp({
           activePermissions: sources.list().filter((s) => s.permissionState === "active").length,
           clips: clips.list().length,
           posted: posts.list().filter((p) => p.status === "posted").length,
+          groups: groups?.isolation.info(publisher.accounts.list(), { lastConnect: null, demo }).groups,
         }),
       );
+    });
+  }
+
+  if (groups) {
+    const { isolation, direct, demo } = groups;
+    // No key, token, proxy sign-in or full address is in this answer: see Isolation.info.
+    const info = () => isolation.info(publisher.accounts.list(), { lastConnect: direct.lastConnect, demo });
+
+    app.get("/api/groups", (_req, res) => {
+      res.json(info());
+    });
+
+    app.post("/api/groups", (req, res) => {
+      isolation.create(req.body);
+      res.status(201).json(info());
+    });
+
+    app.delete("/api/groups/:id", (req, res) => {
+      isolation.remove(idParam(req.params.id));
+      res.json(info());
+    });
+
+    app.put("/api/groups/:id/apps/:platform", (req, res) => {
+      isolation.setApp(idParam(req.params.id), directPlatform(req.params.platform), req.body);
+      res.json(info());
+    });
+
+    app.delete("/api/groups/:id/apps/:platform", (req, res) => {
+      isolation.removeApp(idParam(req.params.id), directPlatform(req.params.platform));
+      res.json(info());
+    });
+
+    app.put("/api/groups/:id/proxy", (req, res) => {
+      isolation.setProxy(idParam(req.params.id), (req.body ?? {}).url);
+      res.json(info());
+    });
+
+    app.delete("/api/groups/:id/proxy", (req, res) => {
+      isolation.setProxy(idParam(req.params.id), null);
+      res.json(info());
+    });
+
+    // The Test button: where the proxy leaves from, and whether that differs from this server.
+    app.post("/api/groups/:id/proxy/test", async (req, res) => {
+      const check = await isolation.check(idParam(req.params.id));
+      res.json({ check, ...info() });
+    });
+
+    // "Connect channel": where to send the browser to sign in with this group's app.
+    app.post("/api/groups/:id/connect/:platform", async (req, res) => {
+      res.json({ url: await direct.connectUrl(idParam(req.params.id), directPlatform(req.params.platform)) });
+    });
+
+    app.put("/api/accounts/:id/group", (req, res) => {
+      const account = publisher.accounts.list().find((a) => a.id === String(req.params.id));
+      if (!account) throw new NotFoundError("That account was not found.");
+      isolation.moveAccount(account, (req.body ?? {}).groupId);
+      res.json(info());
+    });
+
+    // Where the platform sends the browser after the sign-in. Open to the internet (see access.ts):
+    // only a state we handed out counts, and the answer says nothing but where to go next.
+    app.get("/oauth/:platform/callback", async (req, res) => {
+      const ok = await direct.callback(directPlatform(req.params.platform), req.query.code, req.query.state);
+      res.redirect(`/?connect=${ok ? "ok" : "failed"}#settings/accounts`);
     });
   }
 

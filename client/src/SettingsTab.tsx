@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import type { IntegrationId, IntegrationStatus, SettingField, SettingsInfo } from "../../shared/types";
+import { AccountsSettings } from "./AccountsSettings";
 import { api } from "./api";
 import { shortDate } from "./format";
 import { Sheet } from "./Sheet";
@@ -168,6 +169,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
           ))}
         </ul>
       )}
+      <AccountsSettings focus={focus === "accounts"} />
       {editingRow && (
         <KeysSheet
           row={editingRow}

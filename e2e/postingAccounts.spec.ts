@@ -5,7 +5,10 @@ import { PERMISSION_KINDS } from "../shared/types.js";
 // Runs after posting.spec.ts (by file name), which leaves an approved clip in Posted. The fake
 // posting service holds two TikTok accounts; this marks one as a burner and checks the picker
 // follows. It runs again on the desktop project, so it does not depend on the settings it starts with.
-test("posting accounts: sync, mark one as burner with its own pace, and the picker follows", async ({ page }) => {
+test("posting accounts: sync, mark one as burner with its own pace, and the picker follows", async ({ page, request }) => {
+  // A burner can only be picked once its group has a proxy that passed its test (a stand-in here).
+  expect((await request.put("/api/groups/2/proxy", { data: { url: "http://user:e2e-proxy-pass@proxy.example:8080" } })).status()).toBe(200);
+  expect((await request.post("/api/groups/2/proxy/test")).status()).toBe(200);
   const consoleErrors: string[] = [];
   page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
   const width = page.viewportSize()!.width;

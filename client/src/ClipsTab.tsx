@@ -254,6 +254,13 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
         <span className="post-status">{postStatusLabel(post)}</span>
       </div>
       {post.error && <p className="hint">{post.error}</p>}
+      {post.note && <p className="hint">{post.note}</p>}
+      {post.groupName && (
+        <p className="hint" data-testid="post-group">
+          Group {post.groupName}
+          {post.exitIp && `, left from ${post.exitIp}`}
+        </p>
+      )}
       {post.url && (
         <a className="post-url" href={post.url} target="_blank" rel="noreferrer">
           {post.url}

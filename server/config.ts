@@ -14,7 +14,10 @@ import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
 import type { Platform, PostingAccount } from "../shared/types.js";
 import { PLATFORMS } from "../shared/types.js";
+import { demoEndpoints, FakePlatforms } from "./publish/direct/fake.js";
+import { type Endpoints, REAL_ENDPOINTS } from "./publish/direct/platforms.js";
 import { FakePostingService, NoPostingService } from "./publish/fake.js";
+import { type Transport, undiciTransport } from "./isolation/net.js";
 import { PostizService } from "./publish/postiz.js";
 import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
@@ -81,6 +84,10 @@ export interface Config {
   campaignFetcher: ProofFetcher;
   /** The cloud model that helps read a campaign page, only while "Use cloud AI for speed" is on and a key is set. */
   campaignChat: () => ChatClient | null;
+  /** The app's public address: where the platforms send the browser back after "Connect channel". */
+  publicUrl: string;
+  /** Direct uploads: the platforms' addresses, and each isolation group's way out (its proxy, or straight). */
+  direct: { endpoints: Endpoints; transport: Transport };
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -219,7 +226,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   });
   const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
   const fakePicker = fakes || env.PICKER === "fake";
+  // Demo mode: YouTube, TikTok, Instagram and the proxy check are in-process stand-ins.
+  const fakePlatforms = fakes ? new FakePlatforms() : null;
   return {
+    publicUrl: env.CLIPFARM_PUBLIC_URL || "https://clip.techinsiderbytes.com",
+    direct: fakePlatforms
+      ? { endpoints: demoEndpoints(fakePlatforms), transport: (proxyUrl) => fakePlatforms.fetch(proxyUrl !== null) }
+      : { endpoints: { ...REAL_ENDPOINTS, ipEcho: env.IP_ECHO_URL || REAL_ENDPOINTS.ipEcho }, transport: undiciTransport().fetch },
     settings,
     fakes,
     port: Number(env.PORT ?? 3000),

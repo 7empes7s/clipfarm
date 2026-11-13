@@ -11,6 +11,19 @@ interface SavedValue {
 interface SecretsFile {
   values: Record<string, SavedValue>;
   tests: Partial<Record<IntegrationId, KeyTestResult>>;
+  /** Isolation groups' app keys and proxies, and the tokens of channels connected here, by name. */
+  vault?: Record<string, string>;
+}
+
+/** The password inside a saved proxy address, as typed and as it is written in an address. */
+function proxyPasswords(value: string): string[] {
+  if (!/^(https?|socks5?):\/\//.test(value)) return [];
+  try {
+    const { password } = new URL(value);
+    return password ? [password, decodeURIComponent(password)] : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Values shorter than this are not worth hiding (and hiding them would blank out ordinary words). */
@@ -23,7 +36,7 @@ const MIN_SCRUB_LENGTH = 6;
  * Values never leave this class except through `get`/`env` (for the calls that need them).
  */
 export class Settings {
-  private data: SecretsFile = { values: {}, tests: {} };
+  private data: SecretsFile & { vault: Record<string, string> } = { values: {}, tests: {}, vault: {} };
   private listeners: (() => void)[] = [];
 
   /** `file` null keeps everything in memory (tests, and callers that only want the env). */
@@ -49,6 +62,7 @@ export class Settings {
         }
       }
       this.data.tests = parsed.tests ?? {};
+      for (const [name, v] of Object.entries(parsed.vault ?? {})) if (typeof v === "string" && v) this.data.vault[name] = v;
     } catch {
       // Never print the file: it holds keys.
       console.error("The saved keys file could not be read, so it is ignored. Paste the keys again in Settings.");
@@ -97,6 +111,24 @@ export class Settings {
     this.write();
   }
 
+  /** A group's app key or proxy, or a connected channel's token. Never sent to the screen. */
+  secret(name: string): string | undefined {
+    return this.data.vault[name] || undefined;
+  }
+
+  /** Saves one of those (null or empty removes it). */
+  setSecret(name: string, value: string | null): void {
+    if (value) this.data.vault[name] = value;
+    else delete this.data.vault[name];
+    this.write();
+  }
+
+  /** Removes every secret whose name starts with `prefix` (a removed group or channel). */
+  dropSecrets(prefix: string): void {
+    for (const name of Object.keys(this.data.vault)) if (name.startsWith(prefix)) delete this.data.vault[name];
+    this.write();
+  }
+
   /** Called after every save or remove (the watchlist checks again at once). */
   onChange(fn: () => void): void {
     this.listeners.push(fn);
@@ -110,6 +142,11 @@ export class Settings {
       for (const value of new Set([this.data.values[name]?.value, this.baseEnv[name]])) {
         if (value && value.length >= MIN_SCRUB_LENGTH) out = out.split(value).join("***");
       }
+    }
+    // Longest first, so a proxy address goes as a whole before its password does.
+    const hidden = Object.values(this.data.vault).flatMap((value) => [value, ...proxyPasswords(value)]);
+    for (const value of [...new Set(hidden)].sort((a, b) => b.length - a.length)) {
+      if (value.length >= MIN_SCRUB_LENGTH) out = out.split(value).join("***");
     }
     return out;
   }

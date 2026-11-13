@@ -422,7 +422,8 @@ export interface ClipEditInput {
   effects: ClipEffects;
 }
 
-export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none"] as const;
+/** "direct": uploaded by clipfarm itself through the platform's API, with the account's group's app and proxy. */
+export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none", "direct"] as const;
 export type PostingServiceName = (typeof POSTING_SERVICES)[number];
 
 /** A social account connected in the posting service (Postiz "integration", Upload-Post profile platform). */
@@ -473,6 +474,83 @@ export interface ChannelAccount extends PostingAccount, ChannelSettings {
   pace: PostingRules;
   /** Why the account was switched off by itself (a strike); cleared when it is switched on again. */
   pausedReason: string | null;
+  /** The isolation group it belongs to: its developer apps and its way out to the internet. */
+  groupId: number;
+  /** Connected in clipfarm (Settings, Accounts) and uploaded to directly, not through the posting service. */
+  direct: boolean;
+}
+
+/** The two groups every install starts with. */
+export const MAIN_GROUP_ID = 1;
+export const BURNERS_GROUP_ID = 2;
+
+/** Platforms clipfarm can upload to by itself, with a group's own developer app. */
+export const DIRECT_PLATFORMS = ["youtube", "tiktok", "instagram"] as const;
+export type DirectPlatform = (typeof DIRECT_PLATFORMS)[number];
+
+/** What each platform calls the two halves of an app's keys. */
+export const APP_KEY_LABELS: Record<DirectPlatform, { app: string; id: string; secret: string }> = {
+  youtube: { app: "YouTube (Google Cloud project)", id: "OAuth client ID", secret: "Client secret" },
+  tiktok: { app: "TikTok app", id: "Client key", secret: "Client secret" },
+  instagram: { app: "Instagram (Meta app)", id: "App ID", secret: "App secret" },
+};
+
+/** YouTube gives each Cloud project this many units a day; one upload costs 1,600. The day ends at midnight Pacific time. */
+export const YOUTUBE_DAILY_UNITS = 10_000;
+export const YOUTUBE_UPLOAD_UNITS = 1_600;
+
+/** One platform's developer app in a group. The keys are never sent: only whether they are set. */
+export interface GroupApp {
+  platform: DirectPlatform;
+  set: boolean;
+  /** The last 4 characters of the app's ID, to tell apps apart. */
+  idEnding: string | null;
+  /** The address to paste as the app's redirect URI. */
+  redirectUri: string;
+}
+
+/** The last test of a group's proxy. Addresses are masked to their network (203.0.113.x). */
+export interface ProxyCheck {
+  ok: boolean;
+  message: string;
+  exitIp: string | null;
+  country: string | null;
+  at: string;
+}
+
+export interface GroupAccount {
+  id: string;
+  name: string;
+  platform: Platform;
+  direct: boolean;
+  /** A direct account whose sign-in ran out: connect it again. */
+  disabled: boolean;
+}
+
+/** Accounts that share developer apps and a way out to the internet, kept apart from every other group. */
+export interface IsolationGroup {
+  id: number;
+  name: string;
+  /** Main groups hold main accounts (proxy optional); burner groups hold burners (proxy required). */
+  kind: AccountRole;
+  /** Main and Burners: always there. */
+  builtIn: boolean;
+  apps: GroupApp[];
+  /** The proxy's host and port; its user name and password are never sent. */
+  proxy: { set: boolean; address: string | null; signIn: boolean; check: ProxyCheck | null };
+  /** Why this group's accounts cannot post right now, in plain words. */
+  blocked: string | null;
+  /** YouTube units this group's app used today; `fullUntil` is the reset when another upload no longer fits. */
+  youtubeQuota: { used: number; limit: number; fullUntil: string | null };
+  accounts: GroupAccount[];
+}
+
+export interface IsolationInfo {
+  groups: IsolationGroup[];
+  /** How the last "Connect channel" ended. */
+  lastConnect: { ok: boolean; message: string; at: string } | null;
+  /** Demo mode: the platforms and the proxy check are stand-ins. */
+  demo: boolean;
 }
 
 /** One account in the picker for a clip. */
@@ -560,6 +638,11 @@ export interface Post {
   experiment: boolean;
   /** When each claim, removal or strike was recorded; null when there is none. */
   flags: Record<PostFlag, string | null>;
+  /** The isolation group the post went out through, and the address it left from (masked to its network). */
+  groupName: string | null;
+  exitIp: string | null;
+  /** Something to know about a waiting post, e.g. that it waits for YouTube's quota. */
+  note: string | null;
   /** Views × the campaign's pay per 1,000 (less Whop's 10% fee on a Whop campaign), or 0 under its minimum views. */
   estimatedEarningsUsd: number;
 }
@@ -907,7 +990,7 @@ export interface SettingsInfo {
 }
 
 export interface SetupItem {
-  id: "keys" | "accounts" | "permission" | "clip" | "post";
+  id: "keys" | "accounts" | "isolation" | "permission" | "clip" | "post";
   label: string;
   done: boolean;
   /** One plain line on what to do (or what is done). */

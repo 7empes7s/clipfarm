@@ -6,6 +6,7 @@ import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
+import { Isolation } from "./isolation/isolation.js";
 import { JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
@@ -16,6 +17,7 @@ import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
 import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
 import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
+import { DirectPoster } from "./publish/direct/direct.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
 import type { Settings } from "./settings/store.js";
@@ -32,6 +34,8 @@ export interface Runtime {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  isolation: Isolation;
+  direct: DirectPoster;
   accountStats: AccountStatsStore;
   queue: JobQueue;
   liveRepo: LiveRepo;
@@ -52,7 +56,10 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const picks = new PicksRepo(db);
   const clips = new ClipsRepo(db);
   const posts = new PostsRepo(db);
-  const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
+  const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
+  const publisher = new Publisher({ sources, clips, posts, service: config.postingService, isolation, vodTitle: (id) => vods.get(id).title });
+  const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
+  publisher.useDirect(direct);
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
@@ -98,5 +105,5 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, isolation, direct, accountStats, queue, liveRepo, notifier };
 }
