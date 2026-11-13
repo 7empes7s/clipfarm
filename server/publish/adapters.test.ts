@@ -120,7 +120,7 @@ describe("PostizService", () => {
       { externalId: "post-x-1", accountId: "int-x", platform: "x", scheduledAt: "2026-11-20T09:00:00.000Z" },
     ]);
     expect(updates).toEqual([
-      { externalId: "post-yt-1", accountId: "int-yt", status: "posted", url: "https://www.youtube.com/shorts/abc123", postedAt: "2026-11-19T12:00:05.000Z", error: null, views: 12500 },
+      { externalId: "post-yt-1", accountId: "int-yt", status: "posted", url: "https://www.youtube.com/shorts/abc123", postedAt: "2026-11-19T12:00:05.000Z", error: null, views: 12500, metrics: { likes: 175, comments: 25 } },
       { externalId: "post-tt-1", accountId: "int-tt", status: "failed", url: null, postedAt: null, error: "Account banned from posting, please check TikTok account status" },
       { externalId: "post-x-1", accountId: "int-x", status: "scheduled", url: null, postedAt: null, error: null },
     ]);

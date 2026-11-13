@@ -1,3 +1,5 @@
+import type { GrowthDefaults } from "../../../shared/growth.js";
+import { applyPreferences } from "../../growth/preferences.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
@@ -18,6 +20,8 @@ export interface PicksDeps {
   maxPicks: number;
   /** What is trending today (the trend radar); left out or null, picks rank on their own score. */
   trends?: () => TrendBoost | null;
+  /** The defaults learned from test campaigns (preferred length, favoured words); left out, picks rank as proposed. */
+  preferences?: () => GrowthDefaults;
 }
 
 /**
@@ -54,7 +58,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
 
     progress(0.9, "Checking picks");
     const reviewed = reviewPicks(
-      applyTrendBoost(result.picks, vod.words, trends),
+      applyTrendBoost(deps.preferences ? applyPreferences(result.picks, deps.preferences()) : result.picks, vod.words, trends),
       toSentences(vod.words),
       vod.words,
       [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],

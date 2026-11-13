@@ -1,3 +1,4 @@
+import type { PostMetrics } from "../../shared/growth.js";
 import type { DailyPoint, Platform, PostFlag, PostingAccount } from "../../shared/types.js";
 import { PostingServiceError } from "./errors.js";
 import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
@@ -24,12 +25,12 @@ export class FakePostingService implements PostingService {
   views: number | null = 12_000;
   /** Views for single posts, by post id; the rest report `views`. */
   viewsFor = new Map<string, number>();
-  /** On: a scheduled post goes out once its time has come (by `today`), as a real service's would. */
-  publishesOnTime = false;
   failWith: string | null = null;
   /** What refresh reports per post id (a claim, a strike…), as a platform would. */
   flags = new Map<string, PostFlag[]>();
-  /** The clock: when posts go out, and the last day account stats end on. */
+  /** A stand-in for platform analytics: what refresh reports for a post of this age. Left out: just `views`. */
+  metricsFor: ((post: TrackedPost, ageHours: number) => Partial<PostMetrics> | null) | null = null;
+  /** The fake's clock: the last day of account stats, and when a scheduled post goes out. */
   today: () => Date = () => new Date();
   private n = 0;
   private postedIds = new Set<string>();
@@ -81,13 +82,25 @@ export class FakePostingService implements PostingService {
     return Promise.resolve(
       posts.map((p) => {
         const update: PostUpdate = { externalId: p.externalId, accountId: p.accountId };
-        if (this.publishesOnTime && !this.postedIds.has(p.externalId) && new Date(p.scheduledAt).getTime() <= this.today().getTime()) {
+        // A scheduled post goes out when its time comes, as on a real service.
+        const due = new Date(p.scheduledAt);
+        if (!this.postedIds.has(p.externalId) && due.getTime() <= this.today().getTime()) {
           this.postedIds.add(p.externalId);
-          Object.assign(update, { status: "posted", postedAt: p.scheduledAt, url: `https://example.com/${p.platform}/${p.externalId}` });
+          update.status = "posted";
+          update.url = `https://example.com/${p.platform}/${p.externalId}`;
+          update.postedAt = due.toISOString();
         }
         // Scheduled posts stay scheduled; posted ones report views.
-        const views = this.viewsFor.get(p.externalId) ?? this.views;
-        if (this.postedIds.has(p.externalId) && views !== null) update.views = views;
+        if (this.postedIds.has(p.externalId)) {
+          const metrics = this.metricsFor?.(p, (this.today().getTime() - due.getTime()) / 3600_000);
+          if (metrics) {
+            update.metrics = metrics;
+            if (typeof metrics.views === "number") update.views = metrics.views;
+          } else {
+            const views = this.viewsFor.get(p.externalId) ?? this.views;
+            if (views !== null) update.views = views;
+          }
+        }
         const flags = this.flags.get(p.externalId);
         if (flags) update.flags = flags;
         return update;

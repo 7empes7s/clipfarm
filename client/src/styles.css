@@ -3030,6 +3030,202 @@ button.danger {
   margin: 0;
 }
 
+/* Growth lab: test campaigns and their reports. */
+.growth .stack {
+  margin-bottom: var(--s4);
+}
+.growth .card .meta,
+.growth .card .actions {
+  margin-top: var(--s2);
+}
+.hypothesis {
+  margin: var(--s2) 0 0;
+  font-style: italic;
+}
+.run-running {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.run-paused {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+/* The read: the verdict of a test, like the caption bar under a live picture. */
+.read {
+  margin: var(--s3) 0;
+  padding: var(--s2) var(--s3);
+  border-left: 4px dashed var(--muted);
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+  font-family: var(--font-head);
+  font-stretch: condensed;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.read.is-called {
+  border-left: 4px solid var(--ok);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.compare-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  margin-left: auto;
+}
+.compare-tick input {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--ink);
+}
+.compare-go {
+  width: 100%;
+  margin-bottom: var(--s4);
+}
+.recommend {
+  margin: 0 0 var(--s4);
+  padding: var(--s4);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.recommend.is-applied {
+  border-color: var(--ok);
+}
+.recommend h3 {
+  font-size: 1.35rem;
+}
+.recommend p {
+  margin: var(--s2) 0 0;
+}
+.recommend .actions {
+  margin-top: var(--s3);
+}
+.kpi-table {
+  font-size: 0.875rem;
+}
+.kpi-table th[scope="row"],
+.kpi-table thead th:first-child {
+  width: 30%;
+}
+.tile.is-missing dd {
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1.9;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-weight: 600;
+}
+.report .section-head {
+  margin-bottom: var(--s1);
+}
+.report .section-head h2 {
+  overflow-wrap: anywhere;
+}
+.lines-chart svg {
+  height: 150px;
+}
+.lines-plot {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+.lines-max {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.chart-line.line-1 {
+  stroke: var(--ink);
+  stroke-dasharray: 6 4;
+}
+.chart-line.line-2 {
+  stroke: var(--work);
+  stroke-dasharray: 2 3;
+}
+.chart-line.line-3 {
+  stroke: var(--focus);
+  stroke-dasharray: 10 3 2 3;
+}
+.lines-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+.lines-key li {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.lines-key svg {
+  width: 28px;
+  height: 6px;
+  flex: none;
+}
+.lines-key b {
+  font-variant-numeric: tabular-nums;
+}
+.ranked {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+.ranked li {
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.ranked-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.export {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  margin-top: var(--s5);
+}
+.digest ul {
+  margin: 0 0 var(--s3);
+  padding-left: 1.25rem;
+}
+.variants {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s2) 0;
+  padding: 0;
+  list-style: none;
+}
+.variants li {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+.dash-campaigns {
+  margin: var(--s4) 0;
+}
+.dash-campaigns ul {
+  margin: var(--s2) 0 0;
+  padding-left: 1.25rem;
+}
+
 /* Paste a campaign link: the import card on Sources, and the marks on what the page did not say. */
 .campaign-import {
   display: grid;

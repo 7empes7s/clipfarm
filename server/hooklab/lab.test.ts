@@ -42,7 +42,6 @@ async function setup(opts: { permission?: Partial<NewSourceInput["permission"]>;
   const posts = new PostsRepo(db, clock);
   const service = new FakePostingService(ACCOUNTS);
   service.today = clock;
-  service.publishesOnTime = true;
   service.views = 0;
   const publisher = new Publisher({ sources, clips, posts, service, now: clock });
   await publisher.syncAccounts();

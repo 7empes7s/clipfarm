@@ -1,3 +1,4 @@
+import type { ChartSeries } from "../../shared/growth";
 import type { DailyPoint } from "../../shared/types";
 import { compact } from "./format";
 
@@ -33,6 +34,51 @@ export function LineChart({ points, label }: { points: DailyPoint[]; label: stri
         </span>
         <span>{shortDay(points.at(-1)!.date)}</span>
       </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * Up to four lines on one scale (total views so far, per variant). Each line has its own dash
+ * pattern as well as its own color, and the key under the chart repeats both with the last value,
+ * so the lines can be told apart on a small screen and without color.
+ */
+export function LinesChart({ series, label }: { series: ChartSeries[]; label: string }) {
+  const days = series[0]?.points ?? [];
+  if (days.length < 2) return null;
+  const max = Math.max(...series.flatMap((s) => s.points.map((p) => p.value)), 1);
+  const height = 150;
+  const path = (points: DailyPoint[]) =>
+    points.map((p, i) => `${i ? "L" : "M"}${((i / (points.length - 1)) * W).toFixed(1)},${(height - 4 - (p.value / max) * (height - 8)).toFixed(1)}`).join(" ");
+  return (
+    <figure className="chart lines-chart" data-testid="views-chart">
+      <div className="lines-plot">
+        <span className="lines-max">{compact(max)}</span>
+        <svg viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${label}: ${series.map((s) => `${s.label} ${compact(s.points.at(-1)!.value)}`).join(", ")}`}>
+          {[0.25, 0.5, 0.75].map((f) => (
+            <line key={f} className="chart-grid" x1={0} x2={W} y1={height * f} y2={height * f} />
+          ))}
+          {series.map((s, i) => (
+            <path key={s.key} className={`chart-line line-${i}`} d={path(s.points)} />
+          ))}
+        </svg>
+      </div>
+      <figcaption>
+        <span>{shortDay(days[0]!.date)}</span>
+        <span>{label}</span>
+        <span>{shortDay(days.at(-1)!.date)}</span>
+      </figcaption>
+      <ul className="lines-key">
+        {series.map((s, i) => (
+          <li key={s.key}>
+            <svg viewBox="0 0 28 6" aria-hidden="true">
+              <path className={`chart-line line-${i}`} d="M0,3 L28,3" />
+            </svg>
+            {s.label}
+            <b>{compact(s.points.at(-1)!.value)}</b>
+          </li>
+        ))}
+      </ul>
     </figure>
   );
 }

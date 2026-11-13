@@ -24,6 +24,7 @@ const {
   posts,
   publisher,
   accountStats,
+  growth,
   queue,
   watchRepo,
   radar,
@@ -90,6 +91,7 @@ const app = createApp({
   settings: { store: settings, demo: config.fakes },
   trends: radar,
   hookLab,
+  growth,
   seedDemoClip,
   clientDir,
   access: config.access ?? undefined,
@@ -109,10 +111,23 @@ const background = () => {
   void hookLab.tick().catch((err: Error) => console.error(`[hook lab] ${err.message}`));
 };
 const refreshTimer = setInterval(() => {
-  void publisher.refresh().then(() => accountStats.refresh());
+  void publisher
+    .refresh()
+    .then(() => growth.collectPlatformStats())
+    .then(() => accountStats.refresh());
   background();
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
+// Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.
+const growthRound = () => {
+  void growth
+    .tick()
+    .then(() => growth.sendDigest())
+    .catch((err: unknown) => console.error(`[growth] ${(err as Error).message}`));
+};
+const growthTimer = setInterval(growthRound, 10 * 60_000);
+growthTimer.unref();
+growthRound();
 poller.start(config.watchPollMinutes * 60_000);
 background();
 void live.start();
@@ -130,6 +145,7 @@ function shutdown() {
   // A running job is aborted and put back in the queue for the next start.
   queue.stop();
   clearInterval(refreshTimer);
+  clearInterval(growthTimer);
   poller.stop();
   live.stop();
   allowance.stop();

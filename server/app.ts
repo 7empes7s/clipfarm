@@ -13,6 +13,8 @@ import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { HookLab } from "./hooklab/lab.js";
+import type { GrowthLab } from "./growth/lab.js";
+import { growthRoutes } from "./growth/routes.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import type { LiveManager } from "./live/manager.js";
@@ -64,6 +66,8 @@ export interface AppDeps {
   trends?: TrendRadar;
   /** A/B tests of hooks on burner accounts. */
   hookLab?: HookLab;
+  /** Test campaigns, their reports and the daily digest. */
+  growth?: GrowthLab;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -115,6 +119,7 @@ export function createApp({
   settings,
   trends,
   hookLab,
+  growth,
   seedDemoClip,
   clientDir,
   access,
@@ -354,7 +359,8 @@ export function createApp({
 
   app.post("/api/posts/refresh", async (_req, res) => {
     const updated = await publisher.refresh();
-    res.json({ updated, error: publisher.lastRefreshError });
+    await growth?.collectPlatformStats();
+    res.json({ updated, error: publisher.lastRefreshError ?? growth?.lastStatsError ?? null });
   });
 
   app.post("/api/posts/:id/views", (req, res) => {
@@ -374,7 +380,10 @@ export function createApp({
   app.post("/api/posts/:id/flags", (req, res) => {
     const { flag, on } = (req.body ?? {}) as { flag?: unknown; on?: unknown };
     if (!POST_FLAGS.includes(flag as PostFlag)) throw new ValidationError("Pick what happened: claim, removal or strike.");
-    res.json(posts.setFlag(idParam(req.params.id), flag as PostFlag, on !== false));
+    const post = posts.setFlag(idParam(req.params.id), flag as PostFlag, on !== false);
+    // A strike pauses the campaign the post belongs to right away, not at the next round.
+    growth?.pauseOnStrikes();
+    res.json(post);
   });
 
   app.get("/api/stats", (_req, res) => {
@@ -582,6 +591,7 @@ export function createApp({
       res.json(hookLab.info());
     });
   }
+  if (growth) app.use("/api/growth", growthRoutes(growth));
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
@@ -599,6 +609,7 @@ export function createApp({
           sources: sources.list(),
           accounts: accountStats.info(posts.rules()).cards,
           decisionTimes: clips.decisionTimes(),
+          growth: growth ? { campaigns: growth.summaries(), recommendations: growth.repo.recommendations() } : undefined,
           engineReports: engine ? (vodId) => engine.engine.reportsFor(vodId) : undefined,
         }),
       );

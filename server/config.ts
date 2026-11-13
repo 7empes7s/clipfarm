@@ -27,6 +27,7 @@ import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
+import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
 import { Settings } from "./settings/store.js";
 import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
 
@@ -63,6 +64,10 @@ export interface Config {
   trendSource: () => TrendSource;
   /** The cloud AI model that tags trends and writes hook variants; null without a key (and in demo mode). */
   aiChat: () => ChatClient | null;
+  /** Platform APIs asked about our posts directly, on top of the posting service. */
+  platformStats: PlatformStatsSource[];
+  /** What an hour of this server costs (USD), for a clip's compute cost. */
+  computeUsdPerHour: number;
   /** Live mode: records streams while they are live, in rolling segments. */
   live: {
     capturer: LiveCapturer;
@@ -258,7 +263,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     mediaDir: resolve(env.MEDIA_DIR ?? "media"),
     maxPicks: Number(env.MAX_PICKS || 15),
     renderPreset: env.RENDER_PRESET || "veryfast",
-    postingService: fakes ? demoPostingService() : livePostingService(settings),
+    postingService: fakes ? new FakePostingService() : livePostingService(settings),
     trendSource: fakes ? () => new FakeTrendSource() : liveTrendSource(settings),
     aiChat: fakes ? () => null : liveCloudChat(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
@@ -273,6 +278,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
           new KickClient(),
           liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
+    // In demo mode the fake posting service stands in for the platforms' analytics too.
+    platformStats: fakes ? [] : [new YouTubeStats({ apiKey: () => settings.get("YOUTUBE_API_KEY") })],
+    // A Hetzner CX32 is about $8 a month: roughly a cent an hour.
+    computeUsdPerHour: Number(env.COMPUTE_USD_PER_HOUR) || 0.011,
     live: {
       // Demo mode: a made-up stream of two short segments, so LIVE clips show up within seconds.
       capturer: fakeDownloads ? new FakeLiveCapturer({ maxSegments: 2 }) : new PlatformLiveCapturer(new YtDlpLiveCapturer(env.YT_DLP_BIN ?? "yt-dlp")),
@@ -291,13 +300,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     campaignFetcher: fakes ? new FakeCampaignFetcher() : new HttpProofFetcher(),
     campaignChat: fakes ? () => null : liveCampaignChat(settings, engine),
   };
-}
-
-/** Demo mode's posting service: scheduled posts go out when their time comes, as a real service's would. */
-function demoPostingService(): FakePostingService {
-  const service = new FakePostingService();
-  service.publishesOnTime = true;
-  return service;
 }
 
 /** The cloud chat model for these settings; null without a key. */

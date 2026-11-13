@@ -18,6 +18,7 @@ import type {
 } from "../../shared/types.js";
 import { vodEngineLines } from "../engine/runs.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types.js";
+import type { CampaignSummary, Recommendation } from "../../shared/growth.js";
 import { average, costPerApprovedClip, dayOf, etaSeconds, lastDays, round2, secondsPerReview, towards, weekStart } from "../../shared/metrics.js";
 
 export interface DashboardInput {
@@ -30,6 +31,8 @@ export interface DashboardInput {
   accounts: AccountCard[];
   /** When each approve or reject (not undone) was made. */
   decisionTimes: string[];
+  /** From the growth lab, so the dashboard and the Campaigns tab show the same numbers. */
+  growth?: { campaigns: CampaignSummary[]; recommendations: Recommendation[] };
   /** Which engine handled a video's transcript and picks; left out, the cards say nothing about it. */
   engineReports?: (vodId: number) => EngineReport[];
 }
@@ -323,5 +326,9 @@ export function buildDashboard(input: DashboardInput): Dashboard {
       totalUsd: round2(rows.reduce((s, r) => s + r.estimatedUsd, 0)),
     },
     experiment: experimentReport(posts, accounts),
+    growth: {
+      campaigns: (input.growth?.campaigns ?? []).filter((c) => c.campaign.status === "running" || c.campaign.status === "paused"),
+      recommendations: (input.growth?.recommendations ?? []).filter((r) => r.status === "open"),
+    },
   };
 }
