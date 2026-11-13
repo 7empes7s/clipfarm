@@ -1,8 +1,6 @@
 import { run } from "../../tools/exec.js";
+import { PLAIN, type PolishPlan } from "../polish/plan.js";
 import { type LayoutPlan, OUT_FPS, videoFilter } from "./layout.js";
-
-/** Loudness target for short-form platforms. */
-export const TARGET_LUFS = -14;
 
 export interface RenderOptions {
   /** The downloaded section. */
@@ -15,6 +13,8 @@ export interface RenderOptions {
   assFile: string | null;
   cwd: string;
   output: string;
+  /** The finishing touches; without it the clip gets none (and single-pass loudness). */
+  polish?: PolishPlan;
   /** x264 preset: "veryfast" for real clips, "ultrafast" in tests. */
   preset?: string;
   signal?: AbortSignal;
@@ -22,11 +22,13 @@ export interface RenderOptions {
 
 /** ffmpeg arguments for one clip: H.264 + AAC MP4, 1080×1920, 30 fps, -14 LUFS. */
 export function renderArgs(o: RenderOptions): string[] {
-  const audio = `[0:a]loudnorm=I=${TARGET_LUFS}:TP=-1.5:LRA=11,aresample=48000[a]`;
+  const polish = o.polish ?? PLAIN;
+  if (!polish.audio) throw new Error("The video has no sound, so it cannot become a clip.");
+  const audio = `[0:a]${polish.audio}[a]`;
   return [
     "-hide_banner", "-loglevel", "error", "-y",
     "-ss", o.offsetSec.toFixed(3), "-t", o.durationSec.toFixed(3), "-i", o.input,
-    "-filter_complex", `${videoFilter(o.plan, o.assFile)};${audio}`,
+    "-filter_complex", `${videoFilter(o.plan, o.assFile, polish, o.durationSec)};${audio}`,
     "-map", "[v]", "-map", "[a]",
     "-c:v", "libx264", "-preset", o.preset ?? "veryfast", "-crf", "21", "-r", String(OUT_FPS),
     "-c:a", "aac", "-b:a", "160k", "-ac", "2",

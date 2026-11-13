@@ -74,6 +74,7 @@ export const api = {
   undoReview: () => call<Clip>("/api/clips/undo", { method: "POST" }),
   editClip: (id: number, edit: ClipEditInput) =>
     call<{ clip: Clip; job: Job }>(`/api/clips/${id}/edit`, { method: "POST", body: JSON.stringify(edit) }),
+  fixClip: (id: number) => call<{ clip: Clip; job: Job }>(`/api/clips/${id}/fix`, { method: "POST" }),
   setFaceCam: (sourceId: number, faceCam: FaceCam | null) =>
     call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify(faceCam ?? { clear: true }) }),
   loadDemo: () => call<Job>("/api/demo", { method: "POST" }),

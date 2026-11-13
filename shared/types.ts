@@ -258,6 +258,43 @@ export const REJECT_REASON_LABELS: Record<RejectReason, string> = {
 export const CLIP_MIN_SEC = 3;
 export const CLIP_MAX_SEC = 60;
 
+/** The finishing touches a render adds. Each is on by default and can be turned off per clip in Edit. */
+export const CLIP_EFFECTS = ["hookCard", "zoom", "loudness", "loopEnding", "progressBar"] as const;
+export type ClipEffect = (typeof CLIP_EFFECTS)[number];
+export type ClipEffects = Record<ClipEffect, boolean>;
+
+export const DEFAULT_EFFECTS: ClipEffects = { hookCard: true, zoom: true, loudness: true, loopEnding: true, progressBar: true };
+
+export const CLIP_EFFECT_LABELS: Record<ClipEffect, string> = {
+  hookCard: "Hook card (first 1.5 s)",
+  zoom: "Punch-in zooms",
+  loudness: "Even loudness",
+  loopEnding: "Loop ending",
+  progressBar: "Progress bar",
+};
+
+export type QualityCode = "black" | "frozen" | "silence" | "captions" | "duration" | "size" | "loudness";
+
+/** One thing the automatic check found wrong with a render, in plain words. */
+export interface QualityIssue {
+  code: QualityCode;
+  reason: string;
+}
+
+/** The change the Fix button makes before it remakes the clip. Times are master seconds. */
+export interface ClipFix {
+  label: string;
+  startSec?: number;
+  endSec?: number;
+  effects?: Partial<ClipEffects>;
+}
+
+/** The result of the check that runs after each render; no issues means the clip passed. */
+export interface ClipQuality {
+  issues: QualityIssue[];
+  fix: ClipFix | null;
+}
+
 export interface Clip {
   id: number;
   sourceId: number;
@@ -279,6 +316,9 @@ export interface Clip {
   masterDurationSec: number;
   /** Caption words, timed in master seconds. */
   captionWords: Word[];
+  effects: ClipEffects;
+  /** Null until a render has been checked (clips made before the check, demo clips). */
+  quality: ClipQuality | null;
   postCount: number;
   /** The creator has only an experiment record in force: the clip goes to burner accounts only. */
   experiment: boolean;
@@ -307,6 +347,7 @@ export interface ClipEditInput {
   layout: ClipLayout;
   startSec: number;
   endSec: number;
+  effects: ClipEffects;
 }
 
 export const POSTING_SERVICES = ["postiz", "upload-post", "fake", "none"] as const;

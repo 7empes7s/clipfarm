@@ -42,18 +42,6 @@ export async function probeVideo(file: string, signal?: AbortSignal): Promise<Vi
   };
 }
 
-/** Width and height of the first video stream, from ffprobe. */
-export async function probeVideoSize(file: string, signal?: AbortSignal): Promise<{ width: number; height: number }> {
-  const { stdout } = await run(
-    "ffprobe",
-    ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", file],
-    { signal },
-  );
-  const [width, height] = stdout.trim().split(",").map(Number);
-  if (!width || !height) throw new Error(`Could not read the picture size of ${file}`);
-  return { width, height };
-}
-
 /**
  * Extracts (a slice of) the audio track as small mono MP3 (16 kHz, 48 kbps: ~21 MB per hour),
  * which is all speech-to-text needs.
@@ -77,7 +65,7 @@ export async function generateSample(
   durationSec = 10,
   signal?: AbortSignal,
   size = "640x360",
-  pattern: "testsrc" | "testsrc2" | "smptehdbars" = "testsrc",
+  pattern: "testsrc" | "testsrc2" = "testsrc",
 ): Promise<void> {
   await run(
     "ffmpeg",

@@ -1,6 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Clip, Source, Word } from "../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import type { JobContext, JobHandler } from "../jobs/queue.js";
 import { renderClip } from "../pipeline/rerender/render.js";
@@ -65,7 +66,7 @@ export async function makeDemoClips(
   await mkdir(deps.mediaDir, { recursive: true });
   const creators = [
     { name: "Demo Streamer A", pattern: "testsrc2" as const, faceCam: { x: 0.68, y: 0.05, w: 0.28, h: 0.3 } },
-    { name: "Demo Streamer B", pattern: "smptehdbars" as const, faceCam: null },
+    { name: "Demo Streamer B", pattern: "testsrc" as const, faceCam: null },
   ];
   const made: string[] = [];
   const saved = new Set<string>();
@@ -97,8 +98,8 @@ export async function makeDemoClips(
       const layout = m.faceCam ? ("stacked" as const) : ("center" as const);
       const filePath = join(deps.mediaDir, `demo-clip-${m.source.id}-${i}.mp4`);
       made.push(filePath);
-      const input = { clipId: 0, sourceId: m.source.id, masterPath: m.masterPath, startSec, endSec, layout, hook, captionWords: words };
-      const durationSec = await renderClip({ ...input, faceCam: m.faceCam }, filePath, tmpDir, signal);
+      const input = { clipId: 0, sourceId: m.source.id, masterPath: m.masterPath, startSec, endSec, layout, hook, captionWords: words, effects: DEFAULT_EFFECTS, peakSec: null };
+      const { durationSec, quality } = await renderClip({ ...input, faceCam: m.faceCam }, filePath, tmpDir, signal);
       const clip = deps.clips.create({
         sourceId: m.source.id,
         vodId: null,
@@ -114,6 +115,7 @@ export async function makeDemoClips(
         masterDurationSec: MASTER_SEC,
         startSec,
         endSec,
+        quality,
       });
       result.clips.push(clip);
       saved.add(filePath).add(m.masterPath);

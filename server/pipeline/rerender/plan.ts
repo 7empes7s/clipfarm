@@ -1,4 +1,5 @@
 import type { ClipLayout, FaceCam, Word } from "../../../shared/types.js";
+import { finishFilter, HOOK_CARD_SEC, PLAIN, type PolishPlan } from "../polish/plan.js";
 
 // Pure planning for re-rendering an edited clip: crop math per layout, caption timing and the ffmpeg
 // arguments. The runner (render.ts) only probes the master, writes the files and calls ffmpeg.
@@ -110,12 +111,18 @@ function assTime(sec: number): string {
 
 const assText = (s: string) => s.replace(/\\/g, "/").replace(/[{}]/g, "").replace(/\r?\n/g, " ");
 
-/** Seconds the hook text stays on screen at the start. */
-export const HOOK_SEC = 2;
+/** Seconds the hook card stays on screen at the start. */
+export const HOOK_SEC = HOOK_CARD_SEC;
+
+const CAPTION_SIZE = 86;
+/** The width captions may use (1080 minus the margins below) and a generous width per character at size 1. */
+const CAPTION_ROOM = OUT_W - 90 - 170;
+const CHAR_WIDTH = 0.68;
 
 /**
  * An ASS subtitle file: big white words with a black outline, kept out of the platform UI (bottom
- * 20 %, right 15 %), and the hook in a box near the top for the first seconds.
+ * 20 %, right 15 %), and the hook card near the top for the first 1.5 s. A line with a word too long
+ * for the safe width is set smaller, so it still fits.
  */
 export function buildAss(events: CaptionEvent[], hook: string, clipLen: number): string {
   const lines = [
@@ -127,15 +134,19 @@ export function buildAss(events: CaptionEvent[], hook: string, clipLen: number):
     "",
     "[V4+ Styles]",
     "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-    "Style: Caption,DejaVu Sans,86,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,0,2,90,170,430,1",
-    "Style: Hook,DejaVu Sans,64,&H00000000,&H00000000,&H0000E6FF,&H0000E6FF,-1,0,0,0,100,100,0,0,3,18,0,8,90,170,240,1",
+    `Style: Caption,DejaVu Sans,${CAPTION_SIZE},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,0,2,90,170,430,1`,
+    "Style: Hook,DejaVu Sans,84,&H00000000,&H00000000,&H0000E6FF,&H0000E6FF,-1,0,0,0,100,100,0,0,3,18,0,8,90,170,240,1",
     "",
     "[Events]",
     "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
   ];
   if (hook.trim()) lines.push(`Dialogue: 1,${assTime(0)},${assTime(Math.min(HOOK_SEC, clipLen))},Hook,,0,0,0,,${assText(hook.trim())}`);
   for (const e of events) {
-    if (e.endSec > e.startSec) lines.push(`Dialogue: 0,${assTime(e.startSec)},${assTime(e.endSec)},Caption,,0,0,0,,${assText(e.text)}`);
+    if (e.endSec <= e.startSec) continue;
+    const text = assText(e.text);
+    const longest = Math.max(...text.split(/\s+/).map((w) => w.length));
+    const fit = Math.floor(CAPTION_ROOM / (longest * CHAR_WIDTH));
+    lines.push(`Dialogue: 0,${assTime(e.startSec)},${assTime(e.endSec)},Caption,,0,0,0,,${fit < CAPTION_SIZE ? `{\\fs${fit}}` : ""}${text}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -160,20 +171,24 @@ export function planRender(opts: {
   faceCam: FaceCam | null;
   hook: string;
   captionWords: Word[];
+  /** The finishing touches; without it the clip gets none. */
+  polish?: PolishPlan;
 }): RenderPlan {
+  const polish = opts.polish ?? PLAIN;
   const clipLen = Math.round((opts.endSec - opts.startSec) * 1000) / 1000;
   const events = captionEvents(opts.captionWords, opts.startSec, opts.endSec);
-  const ass = events.length || opts.hook.trim() ? buildAss(events, opts.hook, clipLen) : null;
-  let graph = layoutFilter(opts.srcW, opts.srcH, opts.layout, opts.faceCam);
-  if (ass) graph = `${graph};[v]ass=captions.ass[vout]`;
+  const hook = polish.hookCard ? opts.hook : "";
+  const ass = events.length || hook.trim() ? buildAss(events, hook, clipLen) : null;
+  let graph = `${layoutFilter(opts.srcW, opts.srcH, opts.layout, opts.faceCam)};${finishFilter("v", "vout", ass ? "captions.ass" : null, polish, clipLen)}`;
+  if (polish.audio) graph = `${graph};[0:a:0]${polish.audio}[a]`;
   const args = [
     "-hide_banner", "-loglevel", "error", "-y",
     "-ss", String(opts.startSec),
     "-i", opts.masterPath,
     "-t", String(clipLen),
     "-filter_complex", graph,
-    "-map", ass ? "[vout]" : "[v]",
-    "-map", "0:a:0?",
+    "-map", "[vout]",
+    ...(polish.audio ? ["-map", "[a]"] : []),
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "30",
     "-c:a", "aac", "-b:a", "128k",
     "-threads", "2",
