@@ -299,6 +299,11 @@ export function App() {
           }}
         />
       )}
+      <footer className="legal">
+        <a href="/home">About</a>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms</a>
+      </footer>
       </main>
     </div>
   );

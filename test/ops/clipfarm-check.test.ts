@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkClipfarm, type ClipfarmProbes, type HttpAnswer, httpGet, portOpen } from '../../ops/clipfarm/check.ts';
 
+const PAGE = '<!doctype html><title>TechInsiderBytes: Privacy Policy</title>';
 const LOGIN = 'https://tib.cloudflareaccess.com/cdn-cgi/access/login/clip.techinsiderbytes.com?kid=abc';
 
 /** Everything healthy; each test breaks one thing. */
@@ -10,10 +11,12 @@ function probes(overrides: Partial<ClipfarmProbes> = {}): ClipfarmProbes {
   return {
     serviceState: async () => 'active',
     portOpen: async () => true,
-    httpGet: async (url): Promise<HttpAnswer> =>
-      url.startsWith('https://')
-        ? { status: 302, location: LOGIN, server: 'cloudflare', body: '' }
-        : { status: 200, body: '{"ok":true}' },
+    httpGet: async (url): Promise<HttpAnswer> => {
+      if (!url.startsWith('https://')) return { status: 200, body: '{"ok":true}' };
+      return /\/(home|privacy|terms)$/.test(url)
+        ? { status: 200, server: 'cloudflare', body: PAGE }
+        : { status: 302, location: LOGIN, server: 'cloudflare', body: '' };
+    },
     ...overrides,
   };
 }
@@ -22,10 +25,10 @@ const check = (overrides?: Partial<ClipfarmProbes>) =>
   checkClipfarm({ port: 5310, hostname: 'clip.techinsiderbytes.com', probes: probes(overrides) });
 
 describe('ops/clipfarm/check.ts', () => {
-  it('says OK for each of the four checks when everything is up and behind Access', async () => {
+  it('says OK for each of the five checks when everything is up and behind Access', async () => {
     const result = await check();
     expect(result.ok).toBe(true);
-    expect(result.lines).toHaveLength(4);
+    expect(result.lines).toHaveLength(5);
     for (const line of result.lines) expect(line).toMatch(/^OK: /);
     expect(result.lines[3]).toContain('Cloudflare Access');
   });
@@ -41,7 +44,23 @@ describe('ops/clipfarm/check.ts', () => {
     expect(asked).toEqual([
       { url: 'http://127.0.0.1:80/api/health', host: 'clip.techinsiderbytes.com' },
       { url: 'https://clip.techinsiderbytes.com/', host: undefined },
+      { url: 'https://clip.techinsiderbytes.com/home', host: undefined },
+      { url: 'https://clip.techinsiderbytes.com/privacy', host: undefined },
+      { url: 'https://clip.techinsiderbytes.com/terms', host: undefined },
     ]);
+  });
+
+  it('reports a public page that Google cannot read: behind the login, without a contact address, or the wrong page', async () => {
+    const privacy = (answer: HttpAnswer) =>
+      check({ httpGet: async (url, host) => (url.endsWith('/privacy') ? answer : probes().httpGet(url, host)) });
+
+    const behind = await privacy({ status: 302, location: LOGIN, server: 'cloudflare', body: '' });
+    expect(behind.ok).toBe(false);
+    expect(behind.lines[4]).toMatch(/^NOT OK: .*\/privacy .*Cloudflare login.*clipfarm:public-pages/);
+
+    expect((await privacy({ status: 503, body: 'This page is not set up yet.' })).lines[4]).toMatch(/^NOT OK: .*SUPPORT_EMAIL/);
+    // The app shell answering 200 is not the page.
+    expect((await privacy({ status: 200, body: '<title>clipfarm</title>' })).lines[4]).toMatch(/^NOT OK: .*\/privacy answers 200 without/);
   });
 
   it('reports a stopped service and a closed port', async () => {

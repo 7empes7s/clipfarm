@@ -249,6 +249,7 @@ Never add a policy with Include **Everyone** and Action **Allow** to this applic
 | `/api/*` (clips, approve, post, videos) | Never | This is what Access protects. |
 | `/api/health` | No | Only checked on the box (`deploy.sh`, `clipfarm:check`), which does not go through Cloudflare. |
 | `/oauth/youtube/callback`, `/oauth/tiktok/callback`, `/oauth/instagram/callback` | **Yes** (below) | Where YouTube, TikTok and Meta send the browser back after "Connect channel" in Settings, Accounts. These three exact paths only. The server acts on one only when it carries a one-time code it handed out itself minutes before, and answers with nothing but a redirect into the app. |
+| `/home`, `/privacy`, `/terms` | **Yes**, by script ("Public pages" below) | The public home, the Privacy Policy and the Terms that Google reads before it lets the app ask for YouTube access. Text only: no script, no cookie, nothing private. The server keeps exactly these three paths open and refuses anything under them. |
 | Webhooks | None exist | clipfarm calls Postiz and the platforms; nothing calls clipfarm from outside. If a webhook is added later, it needs its own secret and its own bypass, in that issue. |
 | `/manifest.webmanifest`, `/icons/*` | No, unless installing fails (below) | The page asks for the manifest with your sign-in cookie, so it normally works behind Access. |
 
@@ -487,6 +488,52 @@ Whatever happens, the run removes its test campaigns ("E2E test …") and their 
 If the machine dies mid-run, they stay: on the box, `clipfarm-ops source list` shows the
 "E2E test …" entries with their ids and `clipfarm-ops source remove <id>` removes each (how to
 run it: "IT ops" below). A campaign whose clips were really posted is never removed this way.
+
+## Public pages: /home, /privacy and /terms (IT: two commands, once)
+
+Google's consent screen for the YouTube app lists `https://clip.techinsiderbytes.com/privacy` and
+`/terms`, and Google checks that they are real pages anyone can read. The server writes them
+itself (`server/publicPages.ts`), together with a public home at `/home`. `/` stays the app
+behind the sign-in: Cloudflare Access cannot open a hostname's first page without opening
+everything under it, so the consent screen's **Application home page** is
+`https://clip.techinsiderbytes.com/home`.
+
+**1. The contact address.** The pages answer 503 until the server knows which address to show.
+It must be the support email set on the Google consent screen:
+
+```bash
+read -r -p "Support email on the Google consent screen: " SUPPORT_EMAIL
+sed -i '/^SUPPORT_EMAIL=/d' /etc/clipfarm/clipfarm.env
+echo "SUPPORT_EMAIL=$SUPPORT_EMAIL" >> /etc/clipfarm/clipfarm.env
+systemctl restart clipfarm
+curl -s -o /dev/null -w '%{http_code} %{content_type}\n' http://127.0.0.1:5310/privacy   # expect: 200 text/html; charset=utf-8
+```
+
+**2. Let visitors through Cloudflare.** With the office's Cloudflare key (an API token with
+**Access: Apps and Policies** Edit) and the account's ID:
+
+```bash
+read -rs -p "Cloudflare API token: " CLOUDFLARE_API_TOKEN && echo
+read -r -p "Cloudflare account ID: " CLOUDFLARE_ACCOUNT_ID
+export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+cd /opt/clipfarm-live/current && npm run clipfarm:public-pages
+```
+
+It makes one Access application, `clipfarm public pages`, for exactly the three paths, with one
+policy that lets everyone through, then reads the pages from outside. Running it again changes
+nothing. Expected:
+
+```
+OK: made the Access application "clipfarm public pages" for clip.techinsiderbytes.com/home, clip.techinsiderbytes.com/privacy, clip.techinsiderbytes.com/terms.
+OK: added the policy that lets everyone read these pages.
+OK: /home, /privacy, /terms on clip.techinsiderbytes.com are public pages anyone can read.
+```
+
+`npm run clipfarm:check` reads the three pages after every deploy as well, and the Dashboard's
+Live version card shows its line when one of them stops answering.
+
+When the code changes what is read from Google, where it is kept or who gets it, the text in
+`server/publicPages.ts` and its `EFFECTIVE_DATE` change in the same pull request.
 
 ## IT ops: run clipfarm without a browser (IT)
 

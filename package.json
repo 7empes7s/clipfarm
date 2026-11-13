@@ -21,7 +21,8 @@
     "icons": "node client/scripts/make-icons.ts",
     "ops": "node dist/server/ops/cli.js",
     "postiz:check": "node ops/postiz/check-cli.ts",
-    "clipfarm:check": "node ops/clipfarm/check-cli.ts"
+    "clipfarm:check": "node ops/clipfarm/check-cli.ts",
+    "clipfarm:public-pages": "node ops/clipfarm/public-pages-cli.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.1.1",

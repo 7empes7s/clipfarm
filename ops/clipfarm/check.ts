@@ -1,7 +1,7 @@
 /**
  * Read-only check of the live clipfarm (npm run clipfarm:check, on the box): the service runs, its
- * port listens, Caddy routes the hostname to it, and the public URL sends visitors to the
- * Cloudflare Access login instead of showing the gallery. Changes nothing.
+ * port listens, Caddy routes the hostname to it, the public URL sends visitors to the Cloudflare
+ * Access login instead of showing the gallery, and the public pages answer anyone. Changes nothing.
  */
 import { execFile } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
@@ -123,6 +123,33 @@ function publicLine(hostname: string, answer: HttpAnswer): string {
   return `NOT OK: ${url} answers ${status}${answer.location ? ` (to ${answer.location})` : ''}, not a redirect to the Cloudflare Access login (RUNBOOK.md steps 7 and 8).`;
 }
 
+/** The pages anyone may read (the same list as PUBLIC_PAGE_PATHS in server/access.ts). */
+export const PUBLIC_PAGE_PATHS = ['/home', '/privacy', '/terms'];
+
+const PUBLIC_PAGES_FIX = 'RUNBOOK.md, "Public pages"';
+
+/** One line for the public pages: each must answer with its text to a visitor who is not signed in. */
+export async function publicPagesLine(hostname: string, get: ClipfarmProbes['httpGet']): Promise<string> {
+  for (const path of PUBLIC_PAGE_PATHS) {
+    const url = `https://${hostname}${path}`;
+    let answer: HttpAnswer;
+    try {
+      answer = await get(url);
+    } catch (error) {
+      return `NOT OK: cannot reach ${url} (${why(error)}).`;
+    }
+    if (answer.status === 200 && answer.body.includes('<title>TechInsiderBytes')) continue;
+    if (answer.status >= 300 && answer.status < 400) {
+      return `NOT OK: ${url} sends visitors to ${isAccessLogin(answer.location) ? 'the Cloudflare login' : answer.location}, so Google cannot read it. Run "npm run clipfarm:public-pages" (${PUBLIC_PAGES_FIX}).`;
+    }
+    if (answer.status === 503) {
+      return `NOT OK: ${url} answers 503: SUPPORT_EMAIL is not set in /etc/clipfarm/clipfarm.env (${PUBLIC_PAGES_FIX}).`;
+    }
+    return `NOT OK: ${url} answers ${answer.status} without the page's text (${PUBLIC_PAGES_FIX}).`;
+  }
+  return `OK: ${PUBLIC_PAGE_PATHS.join(', ')} on ${hostname} are public pages anyone can read.`;
+}
+
 export async function checkClipfarm(options: ClipfarmCheckOptions): Promise<ClipfarmCheckResult> {
   const { port, hostname, unit = 'clipfarm', caddy = '127.0.0.1:80', probes = realProbes } = options;
   const lines: string[] = [];
@@ -157,6 +184,8 @@ export async function checkClipfarm(options: ClipfarmCheckOptions): Promise<Clip
   } catch (error) {
     lines.push(`NOT OK: cannot reach https://${hostname}/ (${why(error)}). Is the public hostname set in the tunnel (RUNBOOK.md step 8)?`);
   }
+
+  lines.push(await publicPagesLine(hostname, probes.httpGet));
 
   return { ok: lines.every((line) => line.startsWith('OK: ')), lines };
 }

@@ -61,6 +61,9 @@ const here = fileURLToPath(import.meta.url);
 const clientDir = here.endsWith(".js") ? join(dirname(here), "..", "client") : undefined;
 const clientProblem = clientDir ? clientBuildProblem(clientDir) : null;
 if (clientProblem) console.error(`ERROR: ${clientProblem}`);
+if (!config.supportEmail) {
+  console.error("ERROR: SUPPORT_EMAIL is not set (or is not an email address): /home, /privacy and /terms answer 503 until it is.");
+}
 const seedDemoClip =
   config.fakes ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
 const app = createApp({
@@ -89,6 +92,7 @@ const app = createApp({
   seedDemoClip,
   clientDir,
   deployStatusFile: join(dirname(config.dbFile), "deploy-status.json"),
+  supportEmail: config.supportEmail,
   access: config.access ?? undefined,
 });
 
