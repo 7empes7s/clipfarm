@@ -2,7 +2,6 @@ import { Router } from "express";
 import { ValidationError } from "../errors.js";
 import type { GrowthLab } from "./lab.js";
 import { parseCampaign } from "./plan.js";
-import { parseSubscription, type PushStore } from "./push.js";
 
 function id(raw: unknown): number {
   const n = Number(raw);
@@ -11,7 +10,7 @@ function id(raw: unknown): number {
 }
 
 /** The growth lab's API, under /api/growth. */
-export function growthRoutes(lab: GrowthLab, push?: PushStore): Router {
+export function growthRoutes(lab: GrowthLab): Router {
   const r = Router();
   const { repo } = lab;
 
@@ -76,18 +75,11 @@ export function growthRoutes(lab: GrowthLab, push?: PushStore): Router {
     res.json(lab.info());
   });
 
-  if (push) {
-    r.post("/push", (req, res) => {
-      push.subscribe(parseSubscription(req.body));
-      res.status(201).json({ ok: true });
-    });
-
-    r.delete("/push", (req, res) => {
-      const endpoint = (req.body ?? {}).endpoint as unknown;
-      if (typeof endpoint === "string") push.unsubscribe(endpoint);
-      res.status(204).end();
-    });
-  }
+  // The clock the 09:00 digest follows: the phone's time zone, sent by the app.
+  r.put("/digest-zone", (req, res) => {
+    repo.setDigestZone((req.body ?? {}).zone);
+    res.json(lab.info());
+  });
 
   return r;
 }

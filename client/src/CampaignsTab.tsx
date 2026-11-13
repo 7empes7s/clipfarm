@@ -25,6 +25,7 @@ import { api } from "./api";
 import { LinesChart } from "./charts";
 import { shortDate, usd } from "./format";
 import { rate, shiftTime, shown } from "./growthFormat";
+import { type PushState, pushState, turnOffPush, turnOnPush } from "./push";
 import { Sheet } from "./Sheet";
 
 const pct = (n: number) => `${n}%`;
@@ -82,7 +83,7 @@ export function CampaignsTab({ sources, sub }: { sources: Source[]; sub?: string
           ))}
           <List campaigns={info.campaigns} onChange={load} />
           <Defaults defaults={info.defaults} />
-          <DigestCard info={info} />
+          <DigestCard info={info} onChange={setInfo} />
         </>
       )}
       {formOpen && info && (
@@ -397,51 +398,38 @@ function Defaults({ defaults: d }: { defaults: GrowthDefaults }) {
   );
 }
 
-function DigestCard({ info }: { info: GrowthInfo }) {
-  const [on, setOn] = useState<boolean | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const PUSH_NOTE: Record<PushState, string> = {
+  on: "Notifications are on for this device.",
+  off: "Turn on notifications on this device to get it.",
+  blocked: "Notifications are blocked for clipfarm. Allow them in the browser's site settings to get it.",
+  unavailable: "This browser cannot get notifications. On an iPhone, add clipfarm to the home screen and open it from there.",
+};
+
+/** What today's digest says, and the switch for getting it at 09:00 (the same notifications as live mode). */
+function DigestCard({ info, onChange }: { info: GrowthInfo; onChange: (info: GrowthInfo) => void }) {
+  const [push, setPush] = useState<PushState>("unavailable");
+  const [error, setError] = useState<string | null>(null);
+  const here = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
-    if (!supported) return;
     let live = true;
-    void navigator.serviceWorker.ready
-      .then((reg) => reg.pushManager.getSubscription())
-      .then((s) => live && setOn(s !== null))
-      .catch(() => undefined);
+    pushState().then((s) => live && setPush(s), () => undefined);
     return () => {
       live = false;
     };
-  }, [supported]);
+  }, []);
 
-  async function turnOn() {
-    setMessage(null);
-    try {
-      if ((await Notification.requestPermission()) !== "granted") {
-        throw new Error("Notifications are blocked for clipfarm. Allow them in the browser's site settings, then tap again.");
-      }
-      const reg = await navigator.serviceWorker.ready;
-      const subscription = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: info.pushKey });
-      await api.subscribeDigest({ ...subscription.toJSON(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
-      setOn(true);
-    } catch (err) {
-      setMessage((err as Error).message);
-    }
-  }
+  // The first phone to open this tab sets the clock the digest follows; after that it changes only on a tap.
+  const { digestZone } = info;
+  useEffect(() => {
+    if (digestZone === null) api.setDigestZone(here).then(onChange, () => undefined);
+  }, [digestZone, here, onChange]);
 
-  async function turnOff() {
-    setMessage(null);
-    try {
-      const subscription = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
-      if (subscription) {
-        await api.unsubscribeDigest(subscription.endpoint);
-        await subscription.unsubscribe();
-      }
-      setOn(false);
-    } catch (err) {
-      setMessage((err as Error).message);
-    }
-  }
+  const toggle = () => {
+    setError(null);
+    const next = push === "on" ? turnOffPush() : turnOnPush(info.pushKey!);
+    next.then(setPush, (err: Error) => setError(`Notifications could not be changed: ${err.message}`));
+  };
 
   return (
     <>
@@ -452,23 +440,25 @@ function DigestCard({ info }: { info: GrowthInfo }) {
             <li key={line}>{line}</li>
           ))}
         </ul>
-        {!supported ? (
-          <p className="hint">This browser cannot get notifications. On an iPhone, add clipfarm to the home screen and open it from there.</p>
-        ) : on ? (
-          <div className="meta">
-            <span>Sent to this device every day at 09:00.</span>
-            <button type="button" className="link" onClick={() => void turnOff()}>
-              Turn off
+        <p className="hint">
+          Sent every day at 09:00{digestZone ? ` (${digestZone.replace(/_/g, " ")} time)` : ""}.{" "}
+          {info.pushKey ? PUSH_NOTE[push] : "Demo mode sends no notifications."}
+        </p>
+        <div className="actions">
+          {info.pushKey && (push === "on" || push === "off") && (
+            <button type="button" onClick={toggle}>
+              {push === "on" ? "Turn off notifications" : "Turn on notifications"}
             </button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => void turnOn()}>
-            Send me this every day at 09:00
-          </button>
-        )}
-        {message && (
+          )}
+          {digestZone !== null && digestZone !== here && (
+            <button type="button" className="link" onClick={() => void api.setDigestZone(here).then(onChange, (err: Error) => setError(err.message))}>
+              Use this device's time ({here.replace(/_/g, " ")})
+            </button>
+          )}
+        </div>
+        {error && (
           <p className="error" role="alert">
-            {message}
+            {error}
           </p>
         )}
       </div>

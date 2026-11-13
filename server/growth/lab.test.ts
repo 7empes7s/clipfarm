@@ -18,7 +18,7 @@ import { PostsRepo } from "../publish/repo.js";
 import { SourcesRepo } from "../sources/repo.js";
 import { VodsRepo } from "../vods/repo.js";
 import { GrowthLab } from "./lab.js";
-import { FakePushSender, PushStore } from "./push.js";
+import { FakeNotifier } from "../live/notify.js";
 import { GrowthRepo } from "./repo.js";
 
 const dir = mkdtempSync(join(tmpdir(), "clipfarm-growth-"));
@@ -61,12 +61,11 @@ function setup(start = "2026-11-20T08:00:00.000Z") {
   service.today = clock;
   const publisher = new Publisher({ sources, clips, posts, service, now: clock });
   const repo = new GrowthRepo(db, clock);
-  const push = new PushStore(db, clock);
-  const sender = new FakePushSender();
-  const lab = new GrowthLab({ repo, posts, clips, sources, publisher, push: { store: push, sender }, now: clock });
+  const notifier = new FakeNotifier();
+  const lab = new GrowthLab({ repo, posts, clips, sources, publisher, notifier, now: clock });
   const queue = new JobQueue(db, { handlers: {} });
   queue.stop();
-  const app = createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher, growth: { lab, push } });
+  const app = createApp({ sources, vods, picks: new PicksRepo(db), queue, clips, posts, publisher, growth: lab });
   const source = sources.create(campaignInput({ allowedPlatforms: ["tiktok", "youtube"] }));
   // Plenty of approved clips of both lengths: a clip goes out once per account.
   for (let i = 0; i < 30; i++) {
@@ -83,7 +82,7 @@ function setup(start = "2026-11-20T08:00:00.000Z") {
       if (now.getUTCMinutes() === 0) await publisher.refresh();
     }
   }
-  return { db, app, service, publisher, posts, clips, sources, repo, lab, push, sender, run, clock, setNow: (d: Date) => (now = d) };
+  return { db, app, service, publisher, posts, clips, sources, repo, lab, notifier, run, clock, setNow: (d: Date) => (now = d) };
 }
 
 /**
@@ -419,26 +418,29 @@ describe("the daily digest", () => {
     expect(digest.lines[2]).toMatch(/^Second account: day 7 of 7, \d+ of 28 posts$/);
     expect(digest.lines[3]).toBe("Tip: Make 20-30 s the default clip length");
 
-    t.push.subscribe({ endpoint: "https://push.example/tokyo", p256dh: "k", auth: "a", tz: "Asia/Tokyo" });
-    t.push.subscribe({ endpoint: "https://push.example/utc", p256dh: "k", auth: "a", tz: "UTC" });
-    t.push.subscribe({ endpoint: "https://push.example/gone", p256dh: "k", auth: "a", tz: "UTC" });
-    t.sender.gone.add("https://push.example/gone");
-
-    // 08:50 UTC is 17:50 in Tokyo: too late there, too early in UTC.
+    // Until the app says where the phone is, 09:00 is UTC.
     t.setNow(new Date("2026-11-26T08:50:00.000Z"));
-    expect(await t.lab.sendDigests()).toBe(0);
+    expect(await t.lab.sendDigest()).toBe(false);
     t.setNow(new Date("2026-11-26T09:05:00.000Z"));
-    expect(await t.lab.sendDigests()).toBe(1);
-    expect(t.sender.sent).toHaveLength(1);
-    expect(t.sender.sent[0]).toMatchObject({ endpoint: "https://push.example/utc", title: "clipfarm: yesterday" });
-    expect(t.sender.sent[0]!.body).toContain("Tip: Make 20-30 s the default clip length");
-    // Once a day, and a subscription the browser dropped is forgotten.
-    expect(await t.lab.sendDigests()).toBe(0);
-    expect(t.push.list().map((s) => s.endpoint).sort()).toEqual(["https://push.example/tokyo", "https://push.example/utc"]);
-    // Tokyo's turn comes at its own 09:00.
+    expect(await t.lab.sendDigest()).toBe(true);
+    expect(t.notifier.sent).toHaveLength(1);
+    expect(t.notifier.sent[0]).toMatchObject({ title: "clipfarm: yesterday", url: "/#campaigns" });
+    expect(t.notifier.sent[0]!.body).toContain("Tip: Make 20-30 s the default clip length");
+    // Once a day.
+    t.setNow(new Date("2026-11-26T09:15:00.000Z"));
+    expect(await t.lab.sendDigest()).toBe(false);
+
+    // The app sends the phone's time zone; the next digest follows that clock (09:00 in Tokyo is 00:00 UTC).
+    expect((await request(t.app).put("/api/growth/digest-zone").send({ zone: "Mars/Olympus" })).body.error).toBe("That is not a time zone, like Europe/Amsterdam.");
+    expect((await request(t.app).put("/api/growth/digest-zone").send({ zone: "Asia/Tokyo" })).body.digestZone).toBe("Asia/Tokyo");
+    t.setNow(new Date("2026-11-26T23:50:00.000Z"));
+    expect(await t.lab.sendDigest()).toBe(false);
     t.setNow(new Date("2026-11-27T00:10:00.000Z"));
-    expect(await t.lab.sendDigests()).toBe(1);
-    expect(t.sender.sent[1]!.endpoint).toBe("https://push.example/tokyo");
+    expect(await t.lab.sendDigest()).toBe(true);
+    // A digest missed in the morning (the server was down) is not sent in the afternoon.
+    t.setNow(new Date("2026-11-28T05:00:00.000Z"));
+    expect(await t.lab.sendDigest()).toBe(false);
+    expect(t.notifier.sent).toHaveLength(2);
   });
 
   it("says not available before any views were read", () => {

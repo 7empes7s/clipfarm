@@ -21,6 +21,15 @@ export function buildDigest({ yesterday, campaigns, recommendation }: DigestInpu
   return { title: "clipfarm: yesterday", lines };
 }
 
+export function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The date and hour on a clock in `tz`; an unknown zone counts as UTC. */
 export function localDayHour(now: Date, tz: string): { day: string; hour: number } {
   try {
@@ -32,7 +41,7 @@ export function localDayHour(now: Date, tz: string): { day: string; hour: number
   }
 }
 
-/** Due once a day from 09:00 on the subscriber's clock; after noon a missed one is skipped, not sent late. */
+/** Due once a day from 09:00 on the manager's clock; after noon a missed one is skipped, not sent late. */
 export function digestDue(now: Date, tz: string, lastDigestDay: string | null): string | null {
   const { day, hour } = localDayHour(now, tz);
   return hour >= DIGEST_HOUR && hour < 12 && lastDigestDay !== day ? day : null;

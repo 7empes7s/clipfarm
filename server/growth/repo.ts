@@ -1,6 +1,7 @@
 import type { CampaignStatus, GrowthCampaign, GrowthCampaignInput, GrowthDefaults, Recommendation, RecommendationStatus } from "../../shared/growth.js";
 import type { Db } from "../db/index.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { isTimeZone } from "./digest.js";
 import type { ProposedChange } from "./report.js";
 
 interface CampaignRow {
@@ -179,14 +180,39 @@ export class GrowthRepo {
   }
 
   defaults(): GrowthDefaults {
-    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'growth_defaults'").get() as { value: string } | undefined;
-    return row ? { ...NO_DEFAULTS, ...(JSON.parse(row.value) as Partial<GrowthDefaults>) } : NO_DEFAULTS;
+    const saved = this.setting("growth_defaults");
+    return saved ? { ...NO_DEFAULTS, ...(JSON.parse(saved) as Partial<GrowthDefaults>) } : NO_DEFAULTS;
   }
 
   private saveDefaults(d: GrowthDefaults): void {
-    this.db
-      .prepare("INSERT INTO settings (key, value) VALUES ('growth_defaults', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .run(JSON.stringify(d));
+    this.saveSetting("growth_defaults", JSON.stringify(d));
+  }
+
+  private setting(key: string): string | null {
+    return (this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined)?.value ?? null;
+  }
+
+  private saveSetting(key: string, value: string): void {
+    this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+  }
+
+  /** The time zone whose 09:00 the digest goes out at; null until the app has said where the phone is. */
+  digestZone(): string | null {
+    return this.setting("growth_digest_zone");
+  }
+
+  setDigestZone(zone: unknown): void {
+    if (typeof zone !== "string" || !isTimeZone(zone)) throw new ValidationError("That is not a time zone, like Europe/Amsterdam.");
+    this.saveSetting("growth_digest_zone", zone);
+  }
+
+  /** The day (on the digest's clock) the last digest went out. */
+  lastDigestDay(): string | null {
+    return this.setting("growth_digest_day");
+  }
+
+  markDigestSent(day: string): void {
+    this.saveSetting("growth_digest_day", day);
   }
 
   /** Keeps a proposed change once per campaign and winner; a dismissed one is not offered again. */

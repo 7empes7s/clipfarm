@@ -7,11 +7,13 @@ import { openRuntime } from "./runtime.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
 import { parseSuggested } from "./sources/suggested.js";
+import { LiveManager } from "./live/manager.js";
+import { realSystem } from "./live/system.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, push, queue } = openRuntime();
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier } = openRuntime();
 const mediaDir = config.mediaDir;
 
 const watchRepo = new WatchlistRepo(db, sources);
@@ -22,7 +24,23 @@ if (config.proofFetcher instanceof FakeProofFetcher) {
   for (const c of suggested) config.proofFetcher.set(c.proofUrl, { status: 200, text: `<p>${c.proofQuote}</p>` });
 }
 const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
-const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
+const live = new LiveManager({
+  repo: liveRepo,
+  watchlist: watchRepo,
+  sources,
+  vods,
+  queue,
+  capturer: config.live.capturer,
+  system: realSystem,
+  notifier,
+  mediaDir,
+  segmentSec: config.live.segmentSec,
+  overlapSec: config.live.overlapSec,
+  keepHours: config.live.keepHours,
+  maxStreams: config.live.maxStreams,
+});
+const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
+const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });
 // A key saved in Settings is tried at once, not after the next wait.
 settings.onChange(() => {
   poller.retryNow();
@@ -49,9 +67,10 @@ const app = createApp({
   allowance,
   suggested,
   watchlist: { repo: watchRepo, poller },
+  live: { manager: live, repo: liveRepo },
   engine: { engine: config.engine, fake: config.fakeEngine },
   settings: { store: settings, demo: config.fakes },
-  growth: { lab: growth, push },
+  growth,
   seedDemoClip,
   clientDir,
   access: config.access ?? undefined,
@@ -76,13 +95,14 @@ refreshTimer.unref();
 const growthRound = () => {
   void growth
     .tick()
-    .then(() => growth.sendDigests())
+    .then(() => growth.sendDigest())
     .catch((err: unknown) => console.error(`[growth] ${(err as Error).message}`));
 };
 const growthTimer = setInterval(growthRound, 10 * 60_000);
 growthTimer.unref();
 growthRound();
 poller.start(config.watchPollMinutes * 60_000);
+void live.start();
 // Looks every 6 hours for public allowances whose proof was last read a week or more ago.
 allowance.start(6 * 3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
@@ -97,9 +117,10 @@ function shutdown() {
   clearInterval(refreshTimer);
   clearInterval(growthTimer);
   poller.stop();
+  live.stop();
   allowance.stop();
   server.close(() => {
-    void queue.idle().then(() => {
+    void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();
       process.exit(0);
     });

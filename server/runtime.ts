@@ -7,9 +7,11 @@ import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
 import { GrowthLab } from "./growth/lab.js";
-import { FakePushSender, PushStore, type PushSender, WebPushSender } from "./growth/push.js";
 import { GrowthRepo } from "./growth/repo.js";
 import { JobQueue } from "./jobs/queue.js";
+import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
+import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
+import { LiveRepo } from "./live/repo.js";
 import { PicksRepo } from "./picks/repo.js";
 import { pipelineOnFinished } from "./pipeline/chain.js";
 import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
@@ -34,8 +36,9 @@ export interface Runtime {
   publisher: Publisher;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
-  push: PushStore;
   queue: JobQueue;
+  liveRepo: LiveRepo;
+  notifier: Notifier;
 }
 
 /**
@@ -54,10 +57,13 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const posts = new PostsRepo(db);
   const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
+  const mediaDir = config.mediaDir;
+  const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
+  const clipRenderFinished = onRenderFinished(clips);
+  const liveRepo = new LiveRepo(db, config.live.launchAt);
+  // Demo mode never reaches a push service.
+  const notifier = config.fakes ? new FakeNotifier() : new WebPushNotifier(liveRepo, config.live.pushSubject);
   const growthRepo = new GrowthRepo(db);
-  const push = new PushStore(db);
-  // Demo mode sends nothing: the digest is only kept in memory.
-  const sender: PushSender = config.fakes ? new FakePushSender() : new WebPushSender({ keys: () => push.keys(), subject: config.publicUrl });
   const growth = new GrowthLab({
     repo: growthRepo,
     posts,
@@ -66,12 +72,10 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     publisher,
     vodTitle: (id) => vods.get(id).title,
     platformStats: config.platformStats,
-    push: { store: push, sender },
+    notifier,
     computeUsdPerHour: config.computeUsdPerHour,
   });
-  const mediaDir = config.mediaDir;
-  const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
-  const clipRenderFinished = onRenderFinished(clips);
+  const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
       [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
@@ -89,8 +93,20 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         picks,
         clips,
         downloader: config.sectionDownloader,
+        liveCut: liveCutter(liveRepo, config.renderPreset),
         mediaDir,
         preset: config.renderPreset,
+      }),
+      [LIVE_SEGMENT_JOB]: liveSegmentHandler({
+        repo: liveRepo,
+        sources,
+        vods,
+        picks,
+        transcriber: config.transcriber,
+        picker: config.picker,
+        queue: () => queue,
+        maxPicks: config.live.maxPicks,
+        contextSec: config.live.segmentSec * 2,
       }),
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
@@ -100,8 +116,9 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
       clipRenderFinished(job);
+      liveFinished(job, payload);
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, push, queue };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier };
 }

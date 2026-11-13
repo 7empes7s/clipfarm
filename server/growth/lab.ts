@@ -12,13 +12,13 @@ import { dayOf } from "../../shared/metrics.js";
 import type { ChannelAccount, Clip, Post } from "../../shared/types.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { HttpError, ValidationError } from "../errors.js";
+import type { Notifier } from "../live/notify.js";
 import type { Publisher } from "../publish/publisher.js";
 import type { PostsRepo } from "../publish/repo.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildDigest, digestDue } from "./digest.js";
 import { chooseVariant, clipFits, slotsForDay, slotTime } from "./plan.js";
 import type { PlatformStatsSource } from "./platformStats.js";
-import type { PushSender, PushStore } from "./push.js";
 import { awaitingMetric, buildReport, compareCampaigns, progressOf, recommendationFor, type ReportRow, toCsv, variantComparisons, viewsGainedOn } from "./report.js";
 import type { GrowthRepo } from "./repo.js";
 
@@ -43,7 +43,8 @@ export interface GrowthLabDeps {
   vodTitle?: (vodId: number) => string | null;
   /** Platform APIs asked directly, on top of the posting service. */
   platformStats?: PlatformStatsSource[];
-  push?: { store: PushStore; sender: PushSender };
+  /** Sends the daily digest to the phones that turned notifications on. */
+  notifier?: Notifier;
   /** What an hour of this server costs, for a clip's compute cost. */
   computeUsdPerHour?: number;
   now?: () => Date;
@@ -316,40 +317,31 @@ export class GrowthLab {
   }
 
   info(): GrowthInfo {
-    const { repo, push } = this.deps;
+    const { repo, notifier } = this.deps;
     return {
       campaigns: this.summaries(),
       recommendations: repo.recommendations(),
       defaults: repo.defaults(),
       digest: this.digest(),
-      pushKey: push?.store.keys().publicKey ?? "",
+      pushKey: notifier?.publicKey ?? null,
+      digestZone: repo.digestZone(),
     };
   }
 
-  /** Sends the digest to every browser whose clock passed 09:00 today. Returns how many were sent. */
-  async sendDigests(): Promise<number> {
-    const { push } = this.deps;
-    if (!push) return 0;
-    const now = this.now();
-    let sent = 0;
-    let digest: Digest | null = null;
-    for (const sub of push.store.list()) {
-      const day = digestDue(now, sub.tz, sub.lastDigestDay);
-      if (!day) continue;
-      digest ??= this.digest();
-      try {
-        const result = await push.sender.send(sub, { title: digest.title, body: digest.lines.join("\n"), url: "/#campaigns" });
-        if (result === "gone") push.store.unsubscribe(sub.endpoint);
-        else {
-          push.store.markSent(sub.endpoint, day);
-          sent++;
-        }
-      } catch (err) {
-        // Tried again at the next round; the endpoint (a private address) stays out of the log.
-        console.error(`[digest] could not send: ${(err as Error).message}`);
-      }
-    }
-    return sent;
+  /**
+   * Sends the digest once a day, from 09:00 on the manager's clock (UTC until the app has said
+   * where the phone is), to every device with notifications on. True when it went out.
+   */
+  async sendDigest(): Promise<boolean> {
+    const { repo, notifier } = this.deps;
+    if (!notifier) return false;
+    const day = digestDue(this.now(), repo.digestZone() ?? "UTC", repo.lastDigestDay());
+    if (!day) return false;
+    const digest = this.digest();
+    // Marked first: a notifier never throws, and a digest twice is worse than one missed.
+    repo.markDigestSent(day);
+    await notifier.notify({ title: digest.title, body: digest.lines.join("\n"), url: "/#campaigns" });
+    return true;
   }
 
   /** Asks the platforms' own APIs about recent posts. Never throws: the error is kept to show. */

@@ -251,8 +251,10 @@ export interface GrowthInfo {
   recommendations: Recommendation[];
   defaults: GrowthDefaults;
   digest: Digest;
-  /** The key the browser needs to subscribe to the daily digest. */
-  pushKey: string;
+  /** The key a browser turns notifications on with; null when none can be sent (demo mode). */
+  pushKey: string | null;
+  /** The time zone whose 09:00 the digest goes out at; null until the app has said where the phone is. */
+  digestZone: string | null;
 }
 
 export interface CampaignComparison {

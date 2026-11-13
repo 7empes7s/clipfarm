@@ -11,6 +11,7 @@ import type {
   FaceCam,
   ExportPack,
   Job,
+  LiveInfo,
   NewPermissionInput,
   NewSourceInput,
   Pick,
@@ -122,8 +123,14 @@ export const api = {
   compareCampaigns: (ids: number[]) => call<CampaignComparison>(`/api/growth/compare?ids=${ids.join(",")}`),
   recommendation: (id: number, action: "apply" | "undo" | "dismiss") =>
     call<GrowthInfo>(`/api/growth/recommendations/${id}/${action}`, { method: "POST" }),
-  subscribeDigest: (subscription: object) => call<unknown>("/api/growth/push", { method: "POST", body: JSON.stringify(subscription) }),
-  unsubscribeDigest: (endpoint: string) => call<unknown>("/api/growth/push", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
+  setDigestZone: (zone: string) => call<GrowthInfo>("/api/growth/digest-zone", { method: "PUT", body: JSON.stringify({ zone }) }),
+  live: () => call<LiveInfo>("/api/live"),
+  arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
+  disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),
+  setLaunchAt: (launchAt: string) => call<LiveInfo>("/api/live/launch", { method: "PUT", body: JSON.stringify({ launchAt }) }),
+  setLiveCreator: (id: number, on: boolean) => call<LiveInfo>(`/api/live/creators/${id}`, { method: "PUT", body: JSON.stringify({ on }) }),
+  subscribePush: (subscription: PushSubscriptionJSON) => call<LiveInfo>("/api/live/push", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: (endpoint: string) => call<LiveInfo>("/api/live/push", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };

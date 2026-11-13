@@ -51,24 +51,32 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// The daily digest: the server sends a sealed message, shown here as a notification.
+// Live mode: the server says when a recording starts and when the first LIVE clip lands.
 self.addEventListener("push", (event) => {
-  let message = { title: "clipfarm", body: "", url: "/#campaigns" };
+  let notice = {};
   try {
-    message = { ...message, ...event.data.json() };
+    notice = event.data ? event.data.json() : {};
   } catch {
-    // An empty or unreadable push still shows something, as browsers require.
+    // Not ours: show the plain fallback below.
   }
-  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: "/icons/icon-192.png", data: { url: message.url } }));
+  event.waitUntil(
+    self.registration.showNotification(notice.title || "clipfarm", {
+      body: notice.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: typeof notice.url === "string" && notice.url.startsWith("/") ? notice.url : "/" },
+    }),
+  );
 });
 
+// A tap opens the app where the notice points (the Inbox for a clip), in the window already open if there is one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url ?? "/#campaigns";
+  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
   event.waitUntil(
-    self.clients.matchAll({ type: "window" }).then((open) => {
-      const tab = open[0];
-      return tab ? tab.navigate(url).then((c) => (c ?? tab).focus()) : self.clients.openWindow(url);
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
+      return open ? open.navigate(url).then((w) => (w ?? open).focus()) : self.clients.openWindow(url);
     }),
   );
 });

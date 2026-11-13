@@ -13,10 +13,12 @@ import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { GrowthLab } from "./growth/lab.js";
-import type { PushStore } from "./growth/push.js";
 import { growthRoutes } from "./growth/routes.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
+import type { LiveManager } from "./live/manager.js";
+import { parsePushSubscription } from "./live/notify.js";
+import type { LiveRepo } from "./live/repo.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
@@ -49,12 +51,14 @@ export interface AppDeps {
   suggested?: SeedCreator[];
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
+  /** Live mode: the Launch day card's switches, and who gets notifications. */
+  live?: { manager: LiveManager; repo: LiveRepo };
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
   engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
   settings?: { store: Settings; demo: boolean };
   /** Test campaigns, their reports and the daily digest. */
-  growth?: { lab: GrowthLab; push?: PushStore };
+  growth?: GrowthLab;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -100,6 +104,7 @@ export function createApp({
   allowance,
   suggested = [],
   watchlist,
+  live,
   engine,
   settings,
   growth,
@@ -319,8 +324,8 @@ export function createApp({
 
   app.post("/api/posts/refresh", async (_req, res) => {
     const updated = await publisher.refresh();
-    await growth?.lab.collectPlatformStats();
-    res.json({ updated, error: publisher.lastRefreshError ?? growth?.lab.lastStatsError ?? null });
+    await growth?.collectPlatformStats();
+    res.json({ updated, error: publisher.lastRefreshError ?? growth?.lastStatsError ?? null });
   });
 
   app.post("/api/posts/:id/views", (req, res) => {
@@ -339,7 +344,7 @@ export function createApp({
     if (!POST_FLAGS.includes(flag as PostFlag)) throw new ValidationError("Pick what happened: claim, removal or strike.");
     const post = posts.setFlag(idParam(req.params.id), flag as PostFlag, on !== false);
     // A strike pauses the campaign the post belongs to right away, not at the next round.
-    growth?.lab.pauseOnStrikes();
+    growth?.pauseOnStrikes();
     res.json(post);
   });
 
@@ -386,6 +391,45 @@ export function createApp({
     app.post("/api/watchlist/poll", async (_req, res) => {
       await poller.pollAll();
       res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+  }
+
+  if (live) {
+    const { manager, repo } = live;
+
+    app.get("/api/live", (_req, res) => {
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/launch", async (req, res) => {
+      await manager.setLaunchAt((req.body ?? {}).launchAt);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/arm", async (_req, res) => {
+      await manager.arm(true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/disarm", async (_req, res) => {
+      await manager.arm(false);
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/creators/:id", async (req, res) => {
+      await manager.setCreator(idParam(req.params.id), (req.body ?? {}).on === true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/push", (req, res) => {
+      repo.addPushSubscription(parsePushSubscription(req.body), new Date());
+      res.status(201).json(manager.info());
+    });
+
+    app.delete("/api/live/push", (req, res) => {
+      const endpoint = (req.body ?? {}).endpoint as unknown;
+      if (typeof endpoint === "string") repo.removePushSubscription(endpoint);
+      res.json(manager.info());
     });
   }
 
@@ -464,7 +508,7 @@ export function createApp({
     });
   }
 
-  if (growth) app.use("/api/growth", growthRoutes(growth.lab, growth.push));
+  if (growth) app.use("/api/growth", growthRoutes(growth));
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
@@ -482,7 +526,7 @@ export function createApp({
           sources: sources.list(),
           accounts: accountStats.info(posts.rules()).cards,
           decisionTimes: clips.decisionTimes(),
-          growth: growth ? { campaigns: growth.lab.summaries(), recommendations: growth.lab.repo.recommendations() } : undefined,
+          growth: growth ? { campaigns: growth.summaries(), recommendations: growth.repo.recommendations() } : undefined,
         }),
       );
     });

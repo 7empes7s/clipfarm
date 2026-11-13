@@ -1,11 +1,8 @@
-import { createDecipheriv, createECDH, createHmac, createPublicKey, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { openDb } from "../db/index.js";
 import { metricsFromPostizAnalytics } from "../publish/postiz.js";
 import { chooseVariant, clipFits, defaultTimes, slotsForDay, slotTime } from "./plan.js";
 import { YouTubeStats, youtubeVideoId } from "./platformStats.js";
 import { applyPreferences } from "./preferences.js";
-import { encryptPayload, generateVapidKeys, parseSubscription, PushStore, vapidAuthorization, WebPushSender } from "./push.js";
 import { NO_DEFAULTS } from "./repo.js";
 import { mergeMetrics, offsetFor } from "./series.js";
 import { NO_METRICS } from "../../shared/growth.js";
@@ -131,91 +128,5 @@ describe("platform stats", () => {
   it("never puts the key in an error", async () => {
     const yt = new YouTubeStats({ apiKey: () => "secret-key", fetch: (() => Promise.resolve(new Response("no", { status: 403 }))) as typeof fetch });
     await expect(yt.stats([{ id: 1, url: "https://youtu.be/vidAAAAAAA1" }])).rejects.toThrow("YouTube answered 403 when asked for video stats.");
-  });
-});
-
-describe("web push", () => {
-  const hkdf = (salt: Buffer, ikm: Buffer, info: Buffer, length: number) => {
-    const prk = createHmac("sha256", salt).update(ikm).digest();
-    return createHmac("sha256", prk).update(Buffer.concat([info, Buffer.from([1])])).digest().subarray(0, length);
-  };
-
-  /** What a browser does with a push message (RFC 8291), to prove ours can be opened. */
-  function open(body: Buffer, browser: ReturnType<typeof createECDH>, auth: Buffer): string {
-    const salt = body.subarray(0, 16);
-    const keyLength = body.readUInt8(20);
-    const senderKey = body.subarray(21, 21 + keyLength);
-    const sealed = body.subarray(21 + keyLength);
-    const ikm = hkdf(auth, browser.computeSecret(senderKey), Buffer.concat([Buffer.from("WebPush: info\0"), browser.getPublicKey(), senderKey]), 32);
-    const decipher = createDecipheriv("aes-128-gcm", hkdf(salt, ikm, Buffer.from("Content-Encoding: aes128gcm\0"), 16), hkdf(salt, ikm, Buffer.from("Content-Encoding: nonce\0"), 12));
-    decipher.setAuthTag(sealed.subarray(sealed.length - 16));
-    const plain = Buffer.concat([decipher.update(sealed.subarray(0, sealed.length - 16)), decipher.final()]);
-    expect(plain.at(-1)).toBe(2);
-    return plain.subarray(0, -1).toString();
-  }
-
-  const browser = createECDH("prime256v1");
-  browser.generateKeys();
-  const auth = Buffer.from("0123456789abcdef");
-  const target = { endpoint: "https://push.example/send/abc", p256dh: browser.getPublicKey().toString("base64url"), auth: auth.toString("base64url") };
-
-  it("seals a message only the subscribed browser can open", () => {
-    const body = encryptPayload(Buffer.from("Yesterday: 12,400 views"), target);
-    expect(body.readUInt32BE(16)).toBe(4096);
-    expect(body.toString()).not.toContain("Yesterday");
-    expect(open(body, browser, auth)).toBe("Yesterday: 12,400 views");
-    const stranger = createECDH("prime256v1");
-    stranger.generateKeys();
-    expect(() => open(body, stranger, auth)).toThrow();
-  });
-
-  it("signs the request with our key, for the push service's own address, for 12 hours", () => {
-    const keys = generateVapidKeys();
-    const header = vapidAuthorization(target.endpoint, keys, "https://clip.example", new Date("2026-11-20T09:00:00.000Z"));
-    const [, token, key] = /^vapid t=(.+), k=(.+)$/.exec(header)!;
-    expect(key).toBe(keys.publicKey);
-    const [head, claims, signature] = token!.split(".");
-    expect(JSON.parse(Buffer.from(claims!, "base64url").toString())).toEqual({ aud: "https://push.example", exp: 1795208400, sub: "https://clip.example" });
-    const pub = Buffer.from(keys.publicKey, "base64url");
-    const publicKey = createPublicKey({
-      key: { kty: "EC", crv: "P-256", x: pub.subarray(1, 33).toString("base64url"), y: pub.subarray(33).toString("base64url") },
-      format: "jwk",
-    });
-    expect(verify("sha256", Buffer.from(`${head}.${claims}`), { key: publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(signature!, "base64url"))).toBe(true);
-  });
-
-  it("sends the sealed digest, and reports a dropped subscription as gone", async () => {
-    const keys = generateVapidKeys();
-    const calls: { url: string; init: RequestInit }[] = [];
-    let status = 201;
-    const fake = ((url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return Promise.resolve(new Response(null, { status }));
-    }) as typeof fetch;
-    const sender = new WebPushSender({ keys: () => keys, subject: "https://clip.example", fetch: fake });
-    expect(await sender.send(target, { title: "clipfarm: yesterday", body: "Yesterday: 9 views", url: "/#campaigns" })).toBe("sent");
-    const headers = calls[0]!.init.headers as Record<string, string>;
-    expect(calls[0]!.url).toBe(target.endpoint);
-    expect(headers["Content-Encoding"]).toBe("aes128gcm");
-    expect(headers.Authorization).toMatch(/^vapid t=/);
-    expect(JSON.parse(open(Buffer.from(calls[0]!.init.body as Uint8Array), browser, auth))).toEqual({ title: "clipfarm: yesterday", body: "Yesterday: 9 views", url: "/#campaigns" });
-    status = 410;
-    expect(await sender.send(target, { title: "t", body: "b", url: "/" })).toBe("gone");
-    status = 500;
-    await expect(sender.send(target, { title: "t", body: "b", url: "/" })).rejects.toThrow("The push service answered 500.");
-  });
-
-  it("makes its key pair once and keeps the subscriptions", () => {
-    const db = openDb(":memory:");
-    const store = new PushStore(db);
-    const keys = store.keys();
-    expect(Buffer.from(keys.publicKey, "base64url")).toHaveLength(65);
-    expect(new PushStore(db).keys()).toEqual(keys);
-    store.subscribe(parseSubscription({ endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth }, tz: "Europe/Amsterdam" }));
-    store.subscribe({ ...target, tz: "UTC" });
-    expect(store.list()).toEqual([{ ...target, tz: "UTC", lastDigestDay: null }]);
-    expect(() => parseSubscription({ endpoint: "http://plain.example", keys: { p256dh: "a", auth: "b" } })).toThrow("That is not a push subscription from a browser.");
-    store.unsubscribe(target.endpoint);
-    expect(store.list()).toEqual([]);
   });
 });

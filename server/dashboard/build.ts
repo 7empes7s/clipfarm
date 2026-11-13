@@ -37,6 +37,7 @@ const JOB_LABELS: Record<string, string> = {
   ingest: "Transcript",
   picks: "Picks",
   render: "Render",
+  "live-segment": "Live segment",
   "render-clip": "New version",
   "demo-clips": "Demo clips",
   "demo-data": "Demo data",
@@ -81,11 +82,17 @@ export function vodProgress(vod: Vod, jobs: Job[], clips: Clip[], creatorName: s
   const latest = (type: string) => mine.find((j) => j.type === type);
   const picksJob = latest(STAGE_JOBS.picks);
   const renders = mine.filter((j) => j.type === STAGE_JOBS.render && (!picksJob || j.id > picksJob.id));
-  const stages = [
-    stageOf("transcript", [latest(STAGE_JOBS.transcript)].filter((j): j is Job => !!j)),
-    stageOf("picks", picksJob ? [picksJob] : []),
-    stageOf("render", renders),
-  ];
+  // A stream recorded live has one job per segment that both transcribes and picks (its time is
+  // counted once, under transcript); skipped segments do not count.
+  const segments = mine.filter((j) => j.type === "live-segment" && j.status !== "cancelled");
+  const live = stageOf("transcript", segments);
+  const stages = segments.length
+    ? [live, { ...live, stage: "picks" as const, seconds: live.seconds === null ? null : 0 }, stageOf("render", renders)]
+    : [
+        stageOf("transcript", [latest(STAGE_JOBS.transcript)].filter((j): j is Job => !!j)),
+        stageOf("picks", picksJob ? [picksJob] : []),
+        stageOf("render", renders),
+      ];
   const made = clips.filter((c) => c.vodId === vod.id);
   const approved = made.filter((c) => c.status === "approved").length;
   return {
