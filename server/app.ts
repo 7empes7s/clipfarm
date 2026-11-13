@@ -11,6 +11,8 @@ import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
+import type { GoogleAi } from "./google/service.js";
+import { clipThumbs, queueThumbs, type ThumbsRepo } from "./google/thumbs.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
@@ -56,6 +58,8 @@ export interface AppDeps {
   live?: { manager: LiveManager; repo: LiveRepo };
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
   engine?: { engine: Engine; fake: boolean };
+  /** Gemini on the Google credit: its spend and switches for the Dashboard, and the thumbnail options of approved clips. */
+  google?: { ai: GoogleAi; thumbs: ThumbsRepo; /** Make them as soon as a clip is approved (not in demo mode, where a tap makes them). */ auto: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
   settings?: { store: Settings; demo: boolean };
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
@@ -106,6 +110,7 @@ export function createApp({
   watchlist,
   live,
   engine,
+  google,
   settings,
   seedDemoClip,
   clientDir,
@@ -258,7 +263,12 @@ export function createApp({
   });
 
   app.post("/api/clips/:id/approve", (req, res) => {
-    res.json(clips.review(idParam(req.params.id), "approve"));
+    const clip = clips.review(idParam(req.params.id), "approve");
+    // Thumbnail options are made once, as soon as a clip is approved, while Google is connected and switched on.
+    if (google?.auto && google.ai.available() && google.ai.settings().thumbnails && google.thumbs.listForClip(clip.id).length === 0) {
+      queueThumbs(clip.id, queue);
+    }
+    res.json(clip);
   });
 
   app.post("/api/clips/:id/reject", (req, res) => {
@@ -500,6 +510,48 @@ export function createApp({
           posted: posts.list().filter((p) => p.status === "posted").length,
         }),
       );
+    });
+  }
+
+  if (google) {
+    const { ai, thumbs } = google;
+
+    app.get("/api/google", (_req, res) => {
+      res.json(ai.status());
+    });
+
+    app.put("/api/google/settings", (req, res) => {
+      ai.saveSettings(req.body);
+      res.json(ai.status());
+    });
+
+    app.get("/api/clips/:id/thumbnails", (req, res) => {
+      const id = idParam(req.params.id);
+      clips.get(id);
+      res.json(clipThumbs(id, { thumbs, google: ai, queue }));
+    });
+
+    // "Make thumbnails" / "Make new ones": with Google they are AI options, without it a frame of the clip.
+    app.post("/api/clips/:id/thumbnails", (req, res) => {
+      const id = idParam(req.params.id);
+      clips.get(id);
+      queueThumbs(id, queue);
+      res.status(202).json(clipThumbs(id, { thumbs, google: ai, queue }));
+    });
+
+    app.post("/api/thumbnails/:id/choose", (req, res) => {
+      const chosen = thumbs.choose(idParam(req.params.id));
+      res.json(clipThumbs(chosen[0]!.clipId, { thumbs, google: ai, queue }));
+    });
+
+    app.get("/api/thumbnails/:id/:size", (req, res, next) => {
+      const { size } = req.params;
+      if (size !== "cover" && size !== "wide") throw new NotFoundError("Not found.");
+      const id = idParam(req.params.id);
+      const file = thumbs.files(id)[size];
+      if (!existsSync(file)) throw new NotFoundError("That file is not there (yet).");
+      if (req.query.download) res.download(file, `thumbnail-${id}-${size}.jpg`, { dotfiles: "allow" }, (err) => err && !res.headersSent && next(err));
+      else sendMedia(res, next, file);
     });
   }
 

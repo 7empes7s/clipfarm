@@ -1,3 +1,4 @@
+import type { Reranker } from "../../google/rerank.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
@@ -15,6 +16,8 @@ export interface PicksDeps {
   picks: PicksRepo;
   picker: Picker;
   maxPicks: number;
+  /** Gemini watches the best picks and blends what it sees into their scores; left out, picks rank as the picker left them. */
+  rerank?: Reranker;
 }
 
 /**
@@ -22,7 +25,7 @@ export interface PicksDeps {
  * boundaries, 15-60 s) decides. Dropped picks are kept with their reason and never render.
  */
 export function picksHandler(deps: PicksDeps): JobHandler {
-  return async ({ payload, signal, progress }) => {
+  return async ({ payload, tmpDir, signal, progress }) => {
     const { vodId, maxPicks = deps.maxPicks } = payload as { vodId: number; maxPicks?: number };
     const vod = deps.vods.detail(vodId);
     const permission = deps.sources.assertCanUse(vod.sourceId);
@@ -47,9 +50,24 @@ export function picksHandler(deps: PicksDeps): JobHandler {
     );
     const ms = Date.now() - started;
 
+    let proposed = result.picks;
+    let costUsd = result.costUsd;
+    if (deps.rerank && proposed.length > 0) {
+      progress(0.5, "Watching the best moments");
+      try {
+        const seen = await deps.rerank(proposed, { vodUrl: vod.url, durationSec: vod.durationSec, creatorName: source.creatorName, tmpDir, signal });
+        proposed = seen.picks;
+        costUsd += seen.costUsd;
+      } catch (err) {
+        // Cancelled: stop. Anything else must not cost the picks already made.
+        signal.throwIfAborted();
+        console.warn(`[picks] vod ${vodId}: the video check failed, keeping the local picks: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     progress(0.9, "Checking picks");
     const reviewed = reviewPicks(
-      result.picks,
+      proposed,
       toSentences(vod.words),
       vod.words,
       [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],
@@ -58,7 +76,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
     );
     const kept = reviewed.filter((p) => !p.dropReason).length;
     // Cost per clip (O5): the VOD's transcript and picking spend shared over the clips kept.
-    const costUsd = kept > 0 ? ((vod.transcriptCostUsd ?? 0) + result.costUsd) / kept : 0;
+    const perClipUsd = kept > 0 ? ((vod.transcriptCostUsd ?? 0) + costUsd) / kept : 0;
     const steps = [{ step: "pick", ms: Math.round(ms / Math.max(1, kept)) }];
     deps.picks.replaceForVod(
       vodId,
@@ -66,12 +84,12 @@ export function picksHandler(deps: PicksDeps): JobHandler {
       reviewed.map((p) => ({
         ...p,
         layout: source.faceCam ? "stacked" : p.layout,
-        costUsd: p.dropReason ? 0 : Math.round(costUsd * 1e6) / 1e6,
+        costUsd: p.dropReason ? 0 : Math.round(perClipUsd * 1e6) / 1e6,
         steps: p.dropReason ? [] : steps,
       })),
     );
     console.log(
-      `[picks] vod ${vodId}: ${kept} kept, ${reviewed.length - kept} left out, picker ${deps.picker.name} ${ms} ms, $${result.costUsd.toFixed(4)}`,
+      `[picks] vod ${vodId}: ${kept} kept, ${reviewed.length - kept} left out, picker ${deps.picker.name} ${ms} ms, $${costUsd.toFixed(4)}`,
     );
   };
 }

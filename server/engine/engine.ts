@@ -40,6 +40,8 @@ export interface EngineOptions {
   cloudPicker: () => Picker | null;
   /** The cloud model as a hook writer, for when the local writer fails and cloud fallback is on; null without a key. */
   cloudChat?: () => ChatClient | null;
+  /** Gemini Flash on the Google credit as a hook writer, tried before the cloud model; null until Google is connected. */
+  googleChat?: () => ChatClient | null;
   /** Python 3, which loads Moonshine's library (standard library only). */
   pythonBin?: string;
   /** When an answer counts as poor and how the audio is cut. */
@@ -111,8 +113,10 @@ export class Engine {
     const local = new LocalPicker((): WriterStep[] => {
       const s = this.settings();
       const cloud = s.cloud || s.stt.some((x) => x.id === "cloud" && x.on) ? (opts.cloudChat?.() ?? null) : null;
+      const gemini = opts.googleChat?.() ?? null;
       return [
         ...(s.writer ? [{ id: "writer", label: "Local writer", writer }] : []),
+        ...(gemini ? [{ id: "gemini-writer", label: "Gemini writer", writer: chatWriter(gemini) }] : []),
         ...(cloud ? [{ id: "cloud-writer", label: "Cloud writer", writer: chatWriter(cloud) }] : []),
       ];
     });
@@ -533,7 +537,7 @@ export class Engine {
     const base = {
       settings,
       steps,
-      week: { jobs: week.length, lines: weekLines(week, { ...Object.fromEntries(STT_STEPS.map((d) => [d.id, d.label])), writer: "Local writer", "cloud-writer": "Cloud writer", "cloud-picker": "Cloud picker" }) },
+      week: { jobs: week.length, lines: weekLines(week, { ...Object.fromEntries(STT_STEPS.map((d) => [d.id, d.label])), writer: "Local writer", "gemini-writer": "Gemini writer", "cloud-writer": "Cloud writer", "cloud-picker": "Cloud picker" }) },
       sttModels,
       cloudAvailable,
       writerNote,

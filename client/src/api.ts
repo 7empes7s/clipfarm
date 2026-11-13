@@ -37,6 +37,7 @@ import type {
   Watchlist,
   WhopStep,
 } from "../../shared/types";
+import type { ClipThumbs, GoogleSettings, GoogleStatus } from "../../shared/google";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -107,6 +108,11 @@ export const api = {
   setupEngine: (step?: string) => call<EngineStatus>("/api/engine/setup", { method: "POST", body: JSON.stringify(step ? { step } : {}) }),
   saveEngineSettings: (change: Partial<EngineSettings>) =>
     call<EngineStatus>("/api/engine/settings", { method: "PUT", body: JSON.stringify(change) }),
+  google: () => call<GoogleStatus>("/api/google"),
+  saveGoogleSettings: (change: Partial<GoogleSettings>) => call<GoogleStatus>("/api/google/settings", { method: "PUT", body: JSON.stringify(change) }),
+  clipThumbs: (clipId: number) => call<ClipThumbs>(`/api/clips/${clipId}/thumbnails`),
+  makeThumbs: (clipId: number) => call<ClipThumbs>(`/api/clips/${clipId}/thumbnails`, { method: "POST" }),
+  chooseThumb: (id: number) => call<ClipThumbs>(`/api/thumbnails/${id}/choose`, { method: "POST" }),
   loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),
   watchlist: () => call<Watchlist>("/api/watchlist"),
   checkWatchlist: () => call<Watchlist>("/api/watchlist/poll", { method: "POST" }),

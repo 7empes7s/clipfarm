@@ -14,7 +14,7 @@ import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier } = openRuntime();
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier, thumbs } = openRuntime();
 const mediaDir = config.mediaDir;
 
 const watchRepo = new WatchlistRepo(db, sources);
@@ -72,6 +72,7 @@ const app = createApp({
   watchlist: { repo: watchRepo, poller },
   live: { manager: live, repo: liveRepo },
   engine: { engine: config.engine, fake: config.fakeEngine },
+  google: { ai: config.google, thumbs, auto: !config.fakes },
   settings: { store: settings, demo: config.fakes },
   seedDemoClip,
   clientDir,

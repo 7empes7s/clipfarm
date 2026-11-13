@@ -552,4 +552,37 @@ describe("engine: the picks chain", () => {
     expect(result.costUsd).toBeCloseTo(0.001 * result.picks.length, 6);
     expect(result.report!.summary).toBe(`Signal scoring ranked ${result.picks.length}; Cloud writer ${result.picks.length}`);
   });
+
+  it("Gemini writes the hooks ahead of OpenAI when Google is connected, and OpenAI takes over when Google stops", async () => {
+    const copy = (hook: string) => JSON.stringify({ hook, title: "Kai cannot believe this jump", flags: { spoiler: false, cutscene: false, ending: false, leak: false, breaks_brief: false } });
+    const asked: string[] = [];
+    let googleUp = true;
+    const gemini: ChatClient = {
+      name: "gemini:test",
+      complete: async () => {
+        asked.push("gemini");
+        if (!googleUp) throw new Error("Today's Google limit (€3.00) is reached.");
+        return { content: copy("GEMINI saw the jump"), costUsd: 0.0005 };
+      },
+    };
+    const openai: ChatClient = { name: "llm:test", complete: async () => (asked.push("openai"), { content: copy("OPENAI saw the jump"), costUsd: 0.001 }) };
+    const engine = new Engine({
+      modelsDir: join(dir, "none"), catalog, cloudTranscriber: () => new FakeTranscriber(), cloudPicker: () => new FakePicker(),
+      cloudChat: () => openai, googleChat: () => gemini,
+    });
+    engine.bind(openDb(":memory:"));
+    engine.saveSettings({ stt: STEPS.map((s) => (s.id === "cloud" ? { ...s, on: true } : s)) });
+
+    const first = await engine.picker.pick(input);
+    expect(new Set(asked)).toEqual(new Set(["gemini"]));
+    expect(first.picks[0]!.hook).toBe("GEMINI saw the jump");
+    expect(first.report!.summary).toBe(`Signal scoring ranked ${first.picks.length}; Gemini writer ${first.picks.length}`);
+
+    googleUp = false;
+    asked.length = 0;
+    const second = await engine.picker.pick(input);
+    expect(asked[0]).toBe("gemini");
+    expect(second.picks[0]!.hook).toBe("OPENAI saw the jump");
+    expect(second.report!.fallbacks).toContainEqual({ step: "gemini-writer", reason: "Today's Google limit (€3.00) is reached.", count: 1 });
+  });
 });

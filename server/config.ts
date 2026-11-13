@@ -1,6 +1,9 @@
 import { join, resolve } from "node:path";
 import { type AccessVerifier, cloudflareAccessVerifier } from "./access.js";
 import { Engine } from "./engine/engine.js";
+import { type GeminiClient, VertexGemini } from "./google/client.js";
+import { FakeGemini } from "./google/fake.js";
+import { GoogleAi } from "./google/service.js";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
@@ -41,6 +44,8 @@ export interface Config {
   downloader: AudioDownloader;
   /** clipfarm's own engine: local speech-to-text and picks by default, cloud AI as an option. */
   engine: Engine;
+  /** Gemini on the Google Cloud credit (video-aware picks, hooks, thumbnails), behind its spend guard. Off until connected in Settings. */
+  google: GoogleAi;
   /** True when transcription and picks are test doubles (demos, e2e), so the engine is not used. */
   fakeEngine: boolean;
   /** The engine's transcriber and picker, or the fakes. */
@@ -124,6 +129,7 @@ async function guarded<T>(settings: Settings, call: () => Promise<T>): Promise<T
 }
 
 const LLM_SETTINGS = ["LLM_API_KEY", "OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL"];
+const GOOGLE_SETTINGS = ["GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GOOGLE_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "GOOGLE_FLASH_MODEL", "GOOGLE_IMAGE_MODEL"];
 const POSTING_SETTINGS = ["POSTIZ_URL", "POSTIZ_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER", "UPLOAD_POST_PLATFORMS"];
 
 /** The optional cloud transcriber ("Use cloud AI for speed"); null until an OpenAI key is set. */
@@ -207,6 +213,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   const dataDir = resolve(env.DATA_DIR ?? "data");
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
   const requireAccess = env.CLIPFARM_REQUIRE_ACCESS === "1";
+  const demoGemini = new FakeGemini();
+  const google = new GoogleAi({
+    // Demo mode never reaches Google: a stand-in makes the thumbnails.
+    client: fakes ? () => demoGemini : live(settings, GOOGLE_SETTINGS, googleClient),
+    creditEur: Number(env.GOOGLE_CREDIT_EUR) || undefined,
+    expiresAt: /^\d{4}-\d{2}-\d{2}$/.test(env.GOOGLE_CREDIT_EXPIRES ?? "") ? env.GOOGLE_CREDIT_EXPIRES : undefined,
+    eurPerUsd: Number(env.GOOGLE_EUR_PER_USD) || undefined,
+    scrub: (text) => settings.scrub(text),
+  });
   const engine = new Engine({
     modelsDir: join(dataDir, "models"),
     whisperBin: env.WHISPER_BIN || undefined,
@@ -214,6 +229,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     cloudTranscriber: liveCloudTranscriber(settings),
     cloudPicker: liveCloudPicker(settings),
     cloudChat: liveCloudChat(settings),
+    googleChat: () => google.chat(),
     pythonBin: env.PYTHON_BIN || undefined,
     thresholds: thresholdsFromEnv(env),
   });
@@ -238,6 +254,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))
       : new YtDlpDownloader(env.YT_DLP_BIN ?? "yt-dlp"),
     engine,
+    google,
     fakeEngine: fakeTranscriber && fakePicker,
     transcriber: fakeTranscriber ? new FakeTranscriber() : engine.transcriber,
     picker: fakePicker ? new FakePicker() : engine.picker,
@@ -276,6 +293,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     campaignFetcher: fakes ? new FakeCampaignFetcher() : new HttpProofFetcher(),
     campaignChat: fakes ? () => null : liveCampaignChat(settings, engine),
   };
+}
+
+/** Gemini on Vertex AI for these settings; null until a project and an API key or service account are set. */
+function googleClient(env: NodeJS.ProcessEnv): GeminiClient | null {
+  if (!env.GOOGLE_CLOUD_PROJECT || !(env.GOOGLE_API_KEY || env.GOOGLE_SERVICE_ACCOUNT_JSON)) return null;
+  return new VertexGemini({
+    project: env.GOOGLE_CLOUD_PROJECT,
+    location: env.GOOGLE_CLOUD_LOCATION || undefined,
+    apiKey: env.GOOGLE_API_KEY || undefined,
+    serviceAccountJson: env.GOOGLE_SERVICE_ACCOUNT_JSON || undefined,
+    flashModel: env.GOOGLE_FLASH_MODEL || undefined,
+    imageModel: env.GOOGLE_IMAGE_MODEL || undefined,
+  });
 }
 
 /** The cloud chat model for these settings; null without a key. */

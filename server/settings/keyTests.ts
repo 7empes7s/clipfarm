@@ -1,5 +1,6 @@
 import type { IntegrationId, Platform } from "../../shared/types.js";
 import { PLATFORMS } from "../../shared/types.js";
+import { VertexGemini } from "../google/client.js";
 import { PostingServiceError } from "../publish/errors.js";
 import { PostizService } from "../publish/postiz.js";
 import { UploadPostService } from "../publish/uploadPost.js";
@@ -64,6 +65,28 @@ const TESTERS: Record<IntegrationId, Tester> = {
     return "Works.";
   },
 
+  // One tiny generateContent call (a fraction of a cent), signed in exactly as the pipeline will be.
+  async google(get) {
+    const gemini = new VertexGemini({
+      project: get("GOOGLE_CLOUD_PROJECT"),
+      location: get("GOOGLE_CLOUD_LOCATION"),
+      apiKey: get("GOOGLE_API_KEY"),
+      serviceAccountJson: get("GOOGLE_SERVICE_ACCOUNT_JSON"),
+      flashModel: get("GOOGLE_FLASH_MODEL"),
+      imageModel: get("GOOGLE_IMAGE_MODEL"),
+    });
+    try {
+      await gemini.generateJson(
+        { system: "Answer in JSON.", text: "Is this a test? Answer ok: true.", schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
+        AbortSignal.timeout(20_000),
+      );
+    } catch (err) {
+      const said = err instanceof Error && /^(The )?Google /.test(err.message) ? err.message : "Google could not be reached.";
+      throw new TestFailed(said);
+    }
+    return `Works: ${gemini.flashModel} answered.`;
+  },
+
   // The same two calls the watchlist makes: an app token, then one page of live streams.
   async twitch(get) {
     const q = new URLSearchParams({ client_id: get("TWITCH_CLIENT_ID"), client_secret: get("TWITCH_CLIENT_SECRET"), grant_type: "client_credentials" });
@@ -107,6 +130,7 @@ export async function testIntegration(id: IntegrationId, settings: Settings, dem
   let result: { ok: boolean; message: string };
   if (!isConfigured(settings, id)) {
     const missing = def.fields.filter((f) => f.required && settings.get(f.name) === undefined).map((f) => f.label);
+    if (def.oneOf && !def.oneOf.some((name) => settings.get(name) !== undefined)) missing.push("an API key or a service account JSON");
     result = { ok: false, message: `Not set yet: ${missing.join(", ")}.` };
   } else if (demo) {
     result = { ok: true, message: "Saved. Demo mode: nothing outside was called." };

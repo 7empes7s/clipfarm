@@ -395,7 +395,8 @@ export class SourcesRepo {
         .prepare(
           `SELECT file_path AS f FROM clips WHERE source_id = @id UNION SELECT master_path FROM clips WHERE source_id = @id
            UNION SELECT file_path FROM picks WHERE source_id = @id UNION SELECT thumb_path FROM picks WHERE source_id = @id
-           UNION SELECT file_path FROM live_segments WHERE capture_id IN (SELECT id FROM live_captures WHERE source_id = @id)`,
+           UNION SELECT file_path FROM live_segments WHERE capture_id IN (SELECT id FROM live_captures WHERE source_id = @id)
+           UNION SELECT cover_path FROM clip_thumbs WHERE clip_id IN ${ofSource} UNION SELECT wide_path FROM clip_thumbs WHERE clip_id IN ${ofSource}`,
         )
         .all({ id }) as { f: string | null }[]
     ).flatMap((r) => (r.f ? [r.f] : []));
