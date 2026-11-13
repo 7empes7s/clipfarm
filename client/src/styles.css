@@ -2883,7 +2883,7 @@ button.danger {
   align-items: center;
   gap: var(--s2);
   min-height: 44px;
-  border-radius: 999px;
+  border-radius: var(--pill);
 }
 .flag[aria-pressed="true"] {
   border-color: var(--bad);
@@ -3051,7 +3051,7 @@ button.danger {
   margin-left: var(--s1);
   padding: 0 var(--s2);
   border: 1px solid var(--work);
-  border-radius: 999px;
+  border-radius: var(--pill);
   color: var(--work);
   font-size: 0.75rem;
   font-weight: 600;
