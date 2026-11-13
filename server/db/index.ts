@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 export type Db = Database.Database;
 
 // Append-only: never edit a migration that has shipped, add a new one.
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   `
   CREATE TABLE sources (
     id INTEGER PRIMARY KEY,
@@ -238,6 +238,20 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
   `,
   `
+  -- Which process works the job queue right now (the server, or clipfarm-ops when it is down).
+  CREATE TABLE queue_worker (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    beat_at TEXT NOT NULL
+  );
+  `,
+  `
+  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
+  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
+  `,
+  `
   -- Trend radar: today's fastest short videos (titles and numbers only, never media).
   CREATE TABLE trend_videos (
     video_id TEXT PRIMARY KEY,
@@ -279,20 +293,6 @@ const MIGRATIONS: string[] = [
     views_per_hour INTEGER
   );
   CREATE INDEX hook_variants_test ON hook_variants(test_id);
-  `,
-  `
-  -- Which process works the job queue right now (the server, or clipfarm-ops when it is down).
-  CREATE TABLE queue_worker (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    owner TEXT NOT NULL,
-    beat_at TEXT NOT NULL
-  );
-  `,
-  `
-  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
-  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
-  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
-  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
   `,
 ];
 
