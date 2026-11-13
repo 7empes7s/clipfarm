@@ -1,4 +1,5 @@
 import type { FullConfig, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
+import { rm } from "node:fs/promises";
 import { LINK_TO_CLIPS_GOAL_MS } from "./settings.js";
 
 /** The name of the attachment the link-to-clips step leaves with its time in ms. */
@@ -51,12 +52,14 @@ export function stepTable(input: { target: string; projects: string[]; rows: Ste
   ].join("\n");
 }
 
-/** Prints the table when the run ends. */
+/** Prints the table when the run ends, then removes the folder of the preview the run started. */
 export default class StepTableReporter implements Reporter {
   private rows: StepRow[] = [];
   private linkToClipsMs: Record<string, number> = {};
   private projects: string[] = [];
   private target = "";
+
+  constructor(private options: { previewDir?: string } = {}) {}
 
   onBegin(config: FullConfig): void {
     this.projects = config.projects.map((p) => p.name);
@@ -77,5 +80,10 @@ export default class StepTableReporter implements Reporter {
     // --project=phone leaves the other screen out of the table.
     const projects = this.projects.filter((p) => this.rows.some((r) => r.project === p));
     console.log(`\n${stepTable({ target: this.target, projects, rows: this.rows, linkToClipsMs: this.linkToClipsMs })}\n`);
+  }
+
+  /** Called after Playwright has stopped the preview, pass or fail, so nothing writes to the folder again. */
+  async onExit(): Promise<void> {
+    if (this.options.previewDir) await rm(this.options.previewDir, { recursive: true, force: true });
   }
 }
