@@ -44,6 +44,7 @@ interface JobRow {
   cancel_requested: number;
   vod_id: number | null;
   clip_id: number | null;
+  priority: number;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -62,6 +63,7 @@ function toJob(r: JobRow): Job {
     maxAttempts: r.max_attempts,
     vodId: r.vod_id,
     clipId: r.clip_id,
+    priority: r.priority,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     startedAt: r.started_at,
@@ -71,7 +73,8 @@ function toJob(r: JobRow): Job {
 
 /**
  * A persistent job queue in SQLite that runs ONE job at a time: the server box is shared,
- * so heavy work (downloads, ffmpeg, transcription) never runs in parallel.
+ * so heavy work (downloads, ffmpeg, transcription) never runs in parallel. The next job is the
+ * waiting one with the highest priority (oldest first among equals); a running job is never interrupted.
  *
  * That holds across processes too: only the queue that holds the lease (the `queue_worker` row)
  * runs jobs. The server holds it while it is up, so a job queued by `clipfarm-ops` is run by the
@@ -159,15 +162,19 @@ export class JobQueue {
     this.holdsLease = false;
   }
 
-  enqueue(type: string, payload: unknown, opts: { vodId?: number; clipId?: number; maxAttempts?: number } = {}): Job {
+  enqueue(
+    type: string,
+    payload: unknown,
+    opts: { vodId?: number; clipId?: number; maxAttempts?: number; priority?: number } = {},
+  ): Job {
     if (!this.opts.handlers[type]) throw new Error(`No handler for job type "${type}"`);
     const ts = this.now().toISOString();
     const { lastInsertRowid } = this.db
       .prepare(
-        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, clip_id, created_at, updated_at)
-         VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)`,
+        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, clip_id, priority, created_at, updated_at)
+         VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
       )
-      .run(type, JSON.stringify(payload ?? {}), opts.maxAttempts ?? 3, opts.vodId ?? null, opts.clipId ?? null, ts, ts);
+      .run(type, JSON.stringify(payload ?? {}), opts.maxAttempts ?? 3, opts.vodId ?? null, opts.clipId ?? null, opts.priority ?? 0, ts, ts);
     const job = this.get(Number(lastInsertRowid));
     if (!this.stopped) this.kick();
     return job;
@@ -181,6 +188,17 @@ export class JobQueue {
 
   list(limit = 50): Job[] {
     return (this.db.prepare("SELECT * FROM jobs ORDER BY id DESC LIMIT ?").all(limit) as JobRow[]).map(toJob);
+  }
+
+  /** Waiting jobs of one type, oldest first. */
+  queued(type: string): Job[] {
+    return (this.db.prepare("SELECT * FROM jobs WHERE status = 'queued' AND type = ? ORDER BY id").all(type) as JobRow[]).map(toJob);
+  }
+
+  /** Takes a waiting job out of the queue for a stated reason, which the job list shows. */
+  skip(id: number, reason: string): Job {
+    if (this.get(id).status === "queued") this.finish(id, "cancelled", { message: "Skipped", error: reason });
+    return this.get(id);
   }
 
   cancel(id: number): Job {
@@ -236,7 +254,7 @@ export class JobQueue {
   private async drainLoop(): Promise<void> {
     while (!this.stopped && this.takeLease()) {
       const row = this.db
-        .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1")
+        .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY priority DESC, id LIMIT 1")
         .get() as JobRow | undefined;
       if (!row) break;
       await this.runOne(row);

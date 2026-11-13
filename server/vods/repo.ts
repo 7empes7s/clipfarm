@@ -85,6 +85,33 @@ export class VodsRepo {
     return row ? (JSON.parse(row.loudness) as number[]) : [];
   }
 
+  /**
+   * A live stream's transcript grows a segment at a time: the words and loudness of `range`
+   * (seconds from the start of the recording) replace what was there, so the overlap between two
+   * segments and a retried job never leave duplicates.
+   */
+  mergeLive(id: number, range: { startSec: number; endSec: number }, words: Word[], loudness: number[], transcriber: string, costUsd: number): void {
+    const kept = this.detail(id).words.filter((w) => w.startSec < range.startSec || w.startSec >= range.endSec);
+    const merged = [...kept, ...words].sort((a, b) => a.startSec - b.startSec);
+    const perSec = this.loudness(id);
+    const first = Math.floor(range.startSec);
+    while (perSec.length < first) perSec.push(-120);
+    loudness.forEach((v, i) => (perSec[first + i] = v));
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM transcript_words WHERE vod_id = ?").run(id);
+      const insert = this.db.prepare(
+        "INSERT INTO transcript_words (vod_id, idx, word, start_sec, end_sec) VALUES (?, ?, ?, ?, ?)",
+      );
+      merged.forEach((w, i) => insert.run(id, i, w.word, w.startSec, w.endSec));
+      this.db
+        .prepare(
+          `UPDATE vods SET transcriber = ?, transcript_cost_usd = COALESCE(transcript_cost_usd, 0) + ?, status = 'ready',
+             duration_sec = MAX(COALESCE(duration_sec, 0), ?), loudness = ? WHERE id = ?`,
+        )
+        .run(transcriber, costUsd, range.endSec, JSON.stringify(perSec), id);
+    })();
+  }
+
   /** Replaces the transcript (so a retried job never leaves duplicates) and marks the video ready. */
   saveTranscript(id: number, words: Word[], transcriber: string, costUsd: number): void {
     this.db.transaction(() => {

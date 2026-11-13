@@ -36,6 +36,7 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   "engine-setup": "Engine setup",
   picks: "Picking highlights",
   render: "Cutting a clip",
+  "live-segment": "Live segment",
   "render-clip": "New version",
   "demo-clips": "Demo clips",
 };

@@ -140,6 +140,8 @@ export interface Job {
   maxAttempts: number;
   vodId: number | null;
   clipId: number | null;
+  /** Higher runs first. 0 for stream/VOD work; live segments and their clips jump ahead. */
+  priority: number;
   createdAt: string;
   updatedAt: string;
   /** When the current (or last) try started and when the job ended for good; null until then. */
@@ -283,7 +285,18 @@ export interface Clip {
   videoUrl: string;
   /** The source section, for trimming and the face cam frame. */
   masterUrl: string;
+  /** Set when the clip was cut while the stream was still live. */
+  live: ClipLive | null;
   createdAt: string;
+}
+
+export interface ClipLive {
+  /** Where the clip starts, in seconds from the start of the stream. */
+  streamSec: number;
+  /** When the moment happened (its last second), by the server's clock. */
+  momentAt: string;
+  /** Seconds from the moment to the clip landing in the Inbox. */
+  latencySec: number;
 }
 
 export interface ClipEditInput {
@@ -783,6 +796,48 @@ export interface SetupItem {
 export interface SetupChecklist {
   items: SetupItem[];
   done: boolean;
+}
+
+/** A clip should be in the Inbox this soon after its moment happened on a live stream. */
+export const LIVE_TARGET_LATENCY_SEC = 15 * 60;
+
+/** One watched creator on the Launch day card. */
+export interface LiveCreatorStatus {
+  creatorId: number;
+  name: string;
+  /** The per-creator switch. */
+  on: boolean;
+  permissionState: PermissionState;
+  live: LiveNow | null;
+  recording: boolean;
+  /** Why it is not being recorded, in plain words; null while it is. */
+  reason: string | null;
+  /** Segments recorded, segments skipped because the server fell behind, and LIVE clips made, this stream. */
+  segments: number;
+  skipped: number;
+  clips: number;
+}
+
+export interface LiveInfo {
+  /** When GTA VI launches: before it, GTA VI streams are never recorded (early copies count as leaks). */
+  launchAt: string;
+  beforeLaunch: boolean;
+  /** Live mode is on right now. */
+  armed: boolean;
+  /** Where things stand, in one plain line. */
+  statusLine: string;
+  /** Creators with a permission record, plus anyone being recorded. */
+  creators: LiveCreatorStatus[];
+  /** Watched creators left out of `creators` because they have no permission record. */
+  needPermission: number;
+  /** Why no new recording can start (disk or memory), or null. */
+  guard: string | null;
+  push: {
+    /** The key the browser subscribes with; null when notifications cannot be sent (demo mode). */
+    publicKey: string | null;
+    /** Phones and browsers that get notifications. */
+    subscribers: number;
+  };
 }
 
 /** How clipfarm transcribes and picks: on this server by default, cloud AI only as a speed-up. */
