@@ -41,21 +41,53 @@ interface ChatCompletion {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
-/** `/chat/completions` with a strict JSON schema: works with OpenAI, OpenRouter and Cerebras. */
+/** The cloud model picks use unless Settings (or the server env) names another. */
+export const DEFAULT_PICK_MODEL = "gpt-6-luna";
+/** Its list prices, USD per million tokens, for the cost per clip. */
+export const DEFAULT_PICK_USD_PER_MTOK = { in: 0.1, out: 0.5 };
+
+/** The model's API refused a call. `body` is its answer as sent, for a plain reason on the Settings card. */
+export class ChatFailedError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`The picking model failed (${status}): ${body.slice(0, 300)}`);
+  }
+}
+
+function price(opts: OpenAiCompatibleChatOptions, inTok: number, outTok: number): number {
+  const costUsd = (inTok * (opts.usdPerMTokIn ?? 0) + outTok * (opts.usdPerMTokOut ?? 0)) / 1e6;
+  return Math.round(costUsd * 1e6) / 1e6;
+}
+
+async function post(opts: OpenAiCompatibleChatOptions, path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
+  const res = await (opts.fetchImpl ?? fetch)(`${opts.baseUrl.replace(/\/+$/, "")}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) throw new ChatFailedError(res.status, await res.text());
+  return res.json();
+}
+
+/**
+ * `/chat/completions` with a strict JSON schema, for addresses that are not OpenAI's own:
+ * OpenRouter, Cerebras, a local llama.cpp server.
+ */
 export class OpenAiCompatibleChat implements ChatClient {
   readonly name: string;
-  private readonly fetchImpl: typeof fetch;
 
   constructor(private opts: OpenAiCompatibleChatOptions) {
     this.name = `llm:${opts.model}`;
-    this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
   async complete(req: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
-    const res = await this.fetchImpl(`${this.opts.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.opts.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const body = (await post(
+      this.opts,
+      "/chat/completions",
+      {
         model: this.opts.model,
         temperature: 0.2,
         ...(this.opts.maxTokens ? { max_tokens: this.opts.maxTokens } : {}),
@@ -64,21 +96,66 @@ export class OpenAiCompatibleChat implements ChatClient {
           { role: "user", content: req.user },
         ],
         response_format: { type: "json_schema", json_schema: { name: req.schemaName, strict: true, schema: req.schema } },
-      }),
+      },
       signal,
-    });
-    if (!res.ok) {
-      const detail = (await res.text()).slice(0, 300);
-      throw new Error(`The picking model failed (${res.status}): ${detail}`);
-    }
-    const body = (await res.json()) as ChatCompletion;
+    )) as ChatCompletion;
     const content = body.choices?.[0]?.message?.content;
     if (!content) throw new Error("The picking model sent an empty answer.");
-    const inTok = body.usage?.prompt_tokens ?? 0;
-    const outTok = body.usage?.completion_tokens ?? 0;
-    const costUsd = (inTok * (this.opts.usdPerMTokIn ?? 0) + outTok * (this.opts.usdPerMTokOut ?? 0)) / 1e6;
-    return { content, costUsd: Math.round(costUsd * 1e6) / 1e6 };
+    return { content, costUsd: price(this.opts, body.usage?.prompt_tokens ?? 0, body.usage?.completion_tokens ?? 0) };
   }
+}
+
+interface ResponsesAnswer {
+  output?: { type?: string; content?: { type?: string; text?: string; refusal?: string }[] }[];
+  usage?: { input_tokens?: number; output_tokens?: number };
+}
+
+/** OpenAI's Responses API (`/responses`) with a strict JSON schema: how OpenAI serves its current models. */
+export class OpenAiResponsesChat implements ChatClient {
+  readonly name: string;
+
+  constructor(private opts: OpenAiCompatibleChatOptions) {
+    this.name = `llm:${opts.model}`;
+  }
+
+  async complete(req: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
+    const body = (await post(
+      this.opts,
+      "/responses",
+      {
+        model: this.opts.model,
+        instructions: req.system,
+        input: req.user,
+        ...(this.opts.maxTokens ? { max_output_tokens: this.opts.maxTokens } : {}),
+        text: { format: { type: "json_schema", name: req.schemaName, strict: true, schema: req.schema } },
+        // Nothing is kept on OpenAI's side: each call stands alone.
+        store: false,
+      },
+      signal,
+    )) as ResponsesAnswer;
+    const parts = (body.output ?? []).filter((o) => o.type === "message").flatMap((o) => o.content ?? []);
+    const refusal = parts.find((p) => p.type === "refusal")?.refusal;
+    if (refusal) throw new Error(`The picking model refused: ${refusal.slice(0, 300)}`);
+    const content = parts
+      .filter((p) => p.type === "output_text")
+      .map((p) => p.text ?? "")
+      .join("");
+    if (!content) throw new Error("The picking model sent an empty answer.");
+    return { content, costUsd: price(this.opts, body.usage?.input_tokens ?? 0, body.usage?.output_tokens ?? 0) };
+  }
+}
+
+/** OpenAI's own address gets the Responses API; any other one the Chat Completions shape they all share. */
+export function isOpenAiAddress(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === "api.openai.com";
+  } catch {
+    return false;
+  }
+}
+
+export function chatFor(opts: OpenAiCompatibleChatOptions): ChatClient {
+  return isOpenAiAddress(opts.baseUrl) ? new OpenAiResponsesChat(opts) : new OpenAiCompatibleChat(opts);
 }
 
 const bool = { type: "boolean" };

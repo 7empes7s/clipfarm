@@ -140,7 +140,8 @@ The file explains every line. The ones that matter:
 | `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
 | `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | leave as they are: the server finds the Cloudflare team and application by itself from the public address (an env file without these lines works the same) |
 | `OPENAI_API_KEY` | optional: only for "Use cloud AI for speed" on the Dashboard. Empty = everything runs on this box |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | optional: only if cloud picks should use another provider |
+| `LLM_API_KEY`, `LLM_BASE_URL` | optional: only if cloud picks should use another provider |
+| `LLM_MODEL`, `OPENAI_TRANSCRIBE_MODEL` | leave empty: the models are picked in the app under Settings > OpenAI. An env file that still says `LLM_MODEL=gpt-4o-mini` needs no edit: that line is ignored and the card says so |
 | `POSTIZ_API_KEY` | step 11 |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | watchlist; empty skips that platform |
 

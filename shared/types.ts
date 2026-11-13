@@ -899,6 +899,10 @@ export interface SettingField {
   value: string | null;
   savedAt: string | null;
   placeholder: string;
+  /** What is used while nothing is set (the default model or address); null when there is none. */
+  fallback: string | null;
+  /** The choices for a dropdown (model names from the service, the recommended one first); null for a free text field. */
+  options: string[] | null;
 }
 
 export interface IntegrationStatus {
