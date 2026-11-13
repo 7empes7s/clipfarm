@@ -2302,3 +2302,65 @@ button.danger {
 .flag .hint {
   color: inherit;
 }
+
+/* Paste a campaign link: the import card on Sources, and the marks on what the page did not say. */
+.campaign-import {
+  display: grid;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+.campaign-import > label {
+  font-weight: 600;
+}
+.campaign-import .hint {
+  margin: 0;
+  font-size: 0.875rem;
+}
+.campaign-import .inline input {
+  flex: 1;
+}
+.check-this {
+  display: inline-block;
+  margin-left: var(--s1);
+  padding: 0 var(--s2);
+  border: 1px solid var(--work);
+  border-radius: 999px;
+  color: var(--work);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.campaign-rules {
+  display: grid;
+  gap: var(--s3);
+}
+.campaign-rules .hint {
+  margin: 0;
+}
+
+/* The Whop steps on a posted clip: sent, approved, paid, each tapped by hand. */
+.whop {
+  margin-top: var(--s2);
+  font-size: 0.875rem;
+}
+.whop .hint {
+  margin: var(--s1) 0 0;
+}
+.whop-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  color: var(--muted);
+}
+.whop-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.whop-steps .done {
+  color: var(--ok);
+}

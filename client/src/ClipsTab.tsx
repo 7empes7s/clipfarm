@@ -1,13 +1,13 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import type { Clip, Post, PostingInfo, Source } from "../../shared/types";
+import type { Clip, Post, PostingInfo, Source, WhopStep } from "../../shared/types";
 import { noAccountReason } from "../../shared/routing";
-import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
+import { PLATFORM_LABELS, REJECT_REASON_LABELS, WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
-import { shortDate } from "./format";
+import { shortDate, usd } from "./format";
 import { filterClips } from "./review";
 
 const CLIP_STATUS_LABEL: Record<Clip["status"], string> = {
@@ -22,6 +22,9 @@ const VIEW_TEXT = {
   posted: { title: "Posted", empty: "Nothing posted yet. Post an approved clip to see it here." },
   rejected: { title: "Rejected", empty: "No rejected clips." },
 } as const;
+
+const WHOP_STEP_DO: Record<WhopStep, string> = { submitted: "Mark sent to Whop", approved: "Mark approved", paid: "Mark paid" };
+const WHOP_STEP_DONE: Record<WhopStep, string> = { submitted: "Sent to Whop", approved: "Approved", paid: "Paid" };
 
 export function postStatusLabel(p: Post): string {
   if (p.status === "posted") return "Posted";
@@ -218,6 +221,18 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
     }
   }
 
+  const whopAt = { submitted: post.whopSubmittedAt, approved: post.whopApprovedAt, paid: post.whopPaidAt };
+
+  async function whop(step: WhopStep, on: boolean) {
+    try {
+      await api.markWhop(post.id, step, on);
+      setNote(null);
+      onChange();
+    } catch (err) {
+      setNote((err as Error).message);
+    }
+  }
+
   async function copyLink() {
     if (!post.url) return;
     try {
@@ -271,24 +286,52 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
         </div>
       )}
       {post.status === "posted" && post.campaignUrl && (
-        <div className="meta">
-          {post.whopSubmittedAt ? (
-            <span>
-              Sent to Whop on {shortDate(post.whopSubmittedAt)}, posted by {post.accountName}
-            </span>
-          ) : (
-            <>
+        <div className="whop" data-testid="whop">
+          {!post.whopSubmittedAt && (
+            <div className="meta">
+              {/* One tap: the post's link is copied, and the campaign opens to paste it in. */}
+              <a href={post.campaignUrl} target="_blank" rel="noreferrer" onClick={() => void copyLink()}>
+                Submit to Whop
+              </a>
               <button type="button" className="link" onClick={() => void copyLink()} disabled={!post.url}>
                 Copy link for Whop
               </button>
-              <a href={post.campaignUrl} target="_blank" rel="noreferrer">
-                Open campaign
-              </a>
-              <button type="button" className="link" onClick={() => void api.markWhop(post.id).then(onChange)}>
-                Mark sent to Whop
-              </button>
-            </>
+            </div>
           )}
+          <ol className="whop-steps" aria-label="Whop payout steps">
+            {WHOP_STEPS.map((step, i) => {
+              const at = whopAt[step];
+              const before = i === 0 || whopAt[WHOP_STEPS[i - 1]!] !== null;
+              const last = at !== null && (i === WHOP_STEPS.length - 1 || whopAt[WHOP_STEPS[i + 1]!] === null);
+              return (
+                <li key={step} className={at ? "done" : undefined}>
+                  {at ? (
+                    <span>
+                      {WHOP_STEP_DONE[step]} on {shortDate(at)}
+                      {step === "submitted" && `, posted by ${post.accountName}`}
+                    </span>
+                  ) : (
+                    <button type="button" className="link" disabled={!before} onClick={() => void whop(step, true)}>
+                      {WHOP_STEP_DO[step]}
+                    </button>
+                  )}
+                  {last && (
+                    <button type="button" className="link" onClick={() => void whop(step, false)} aria-label={`Undo: ${WHOP_STEP_DONE[step]}`}>
+                      Undo
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="hint">
+            {usd(post.estimatedEarningsUsd)} estimated after Whop's {Math.round(WHOP_FEE * 100)}% fee.{" "}
+            {post.whopPaidAt
+              ? "Paid out."
+              : post.whopPayoutAt
+                ? `Whop holds payouts about ${WHOP_HOLD_DAYS} days after approval: due around ${shortDate(post.whopPayoutAt)}.`
+                : `Whop holds payouts about ${WHOP_HOLD_DAYS} days after it approves a clip.`}
+          </p>
         </div>
       )}
       {note && <p className="hint">{note}</p>}
