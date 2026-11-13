@@ -22,6 +22,7 @@ import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
+import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
 import { Settings } from "./settings/store.js";
 
 export interface Config {
@@ -53,6 +54,12 @@ export interface Config {
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
   watchPollMinutes: number;
+  /** Platform APIs asked about our posts directly, on top of the posting service. */
+  platformStats: PlatformStatsSource[];
+  /** What an hour of this server costs (USD), for a clip's compute cost. */
+  computeUsdPerHour: number;
+  /** Where the app is reached; names the sender of web push messages. */
+  publicUrl: string;
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -209,6 +216,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
           new KickClient(),
           liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
+    // In demo mode the fake posting service stands in for the platforms' analytics too.
+    platformStats: fakes ? [] : [new YouTubeStats({ apiKey: () => settings.get("YOUTUBE_API_KEY") })],
+    // A Hetzner CX32 is about $8 a month: roughly a cent an hour.
+    computeUsdPerHour: Number(env.COMPUTE_USD_PER_HOUR) || 0.011,
+    publicUrl: env.CLIPFARM_PUBLIC_URL || "https://clip.techinsiderbytes.com",
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
   };

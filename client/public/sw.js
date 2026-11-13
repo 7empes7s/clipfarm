@@ -50,3 +50,25 @@ self.addEventListener("fetch", (event) => {
     ),
   );
 });
+
+// The daily digest: the server sends a sealed message, shown here as a notification.
+self.addEventListener("push", (event) => {
+  let message = { title: "clipfarm", body: "", url: "/#campaigns" };
+  try {
+    message = { ...message, ...event.data.json() };
+  } catch {
+    // An empty or unreadable push still shows something, as browsers require.
+  }
+  event.waitUntil(self.registration.showNotification(message.title, { body: message.body, icon: "/icons/icon-192.png", data: { url: message.url } }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url ?? "/#campaigns";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((open) => {
+      const tab = open[0];
+      return tab ? tab.navigate(url).then((c) => (c ?? tab).focus()) : self.clients.openWindow(url);
+    }),
+  );
+});

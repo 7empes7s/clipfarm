@@ -245,6 +245,60 @@ const MIGRATIONS: string[] = [
     beat_at TEXT NOT NULL
   );
   `,
+  `
+  -- The growth lab: test campaigns, which post belongs to which variant, and each post's numbers over time.
+  CREATE TABLE growth_campaigns (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    hypothesis TEXT NOT NULL DEFAULT '',
+    config TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    paused_reason TEXT,
+    note TEXT,
+    started_at TEXT,
+    resumed_at TEXT,
+    ends_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE growth_posts (
+    campaign_id INTEGER NOT NULL REFERENCES growth_campaigns(id) ON DELETE CASCADE,
+    slot TEXT NOT NULL,
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    variant_key TEXT NOT NULL,
+    PRIMARY KEY (campaign_id, slot)
+  );
+  CREATE INDEX growth_posts_post ON growth_posts(post_id);
+  CREATE TABLE post_stats (
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    offset_key TEXT NOT NULL,
+    age_hours REAL NOT NULL,
+    at TEXT NOT NULL,
+    metrics TEXT NOT NULL,
+    PRIMARY KEY (post_id, offset_key)
+  );
+  -- The latest reading of everything the platform said about a post (views stay in their own column).
+  ALTER TABLE posts ADD COLUMN metrics TEXT;
+  CREATE TABLE growth_recommendations (
+    id INTEGER PRIMARY KEY,
+    campaign_id INTEGER NOT NULL REFERENCES growth_campaigns(id) ON DELETE CASCADE,
+    variant_key TEXT NOT NULL,
+    text TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    change TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    prev TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (campaign_id, variant_key)
+  );
+  CREATE TABLE push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    tz TEXT NOT NULL DEFAULT 'UTC',
+    last_digest_day TEXT,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

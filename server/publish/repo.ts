@@ -1,6 +1,8 @@
 import type { Db } from "../db/index.js";
 import type { Platform, Post, PostFlag, PostingRules, PostingServiceName, PostStatus } from "../../shared/types.js";
+import type { PostMetrics, StatPoint } from "../../shared/growth.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { mergeMetrics, offsetFor, parseMetrics } from "../growth/series.js";
 import { estimateEarnings } from "./earnings.js";
 import type { PostUpdate, TrackedPost } from "./types.js";
 
@@ -161,10 +163,63 @@ export class PostsRepo {
     }
     const where = "WHERE service = ? AND external_id = ? AND account_id = ?";
     if (sets.length > 0) this.db.prepare(`UPDATE posts SET ${sets.join(", ")} ${where}`).run(...args, service, u.externalId, u.accountId);
-    if (u.flags?.length) {
-      const row = this.db.prepare(`SELECT id FROM posts ${where}`).get(service, u.externalId, u.accountId) as { id: number } | undefined;
-      if (row) for (const flag of u.flags) this.setFlag(row.id, flag, true);
+    const row = this.db.prepare(`SELECT id FROM posts ${where}`).get(service, u.externalId, u.accountId) as { id: number } | undefined;
+    if (!row) return;
+    if (u.metrics || (u.views !== undefined && u.views !== null)) this.addReading(row.id, u.metrics ?? {});
+    if (u.flags?.length) for (const flag of u.flags) this.setFlag(row.id, flag, true);
+  }
+
+  /**
+   * Keeps what a platform said about a post: the latest numbers on the post, and a point in its
+   * time series when the post is at one of the kept ages (1 h, 6 h, 24 h, 72 h, 7 d). A point is
+   * written once and never changed. Numbers the platform did not give stay null.
+   */
+  addReading(postId: number, fresh: Partial<PostMetrics>): void {
+    const row = this.db.prepare("SELECT status, posted_at, scheduled_at, views, metrics FROM posts WHERE id = ?").get(postId) as
+      | { status: PostStatus; posted_at: string | null; scheduled_at: string; views: number | null; metrics: string | null }
+      | undefined;
+    if (!row) return;
+    const now = this.now();
+    if (typeof fresh.views === "number" && fresh.views !== row.views) {
+      this.db.prepare("UPDATE posts SET views = ?, views_source = 'service', views_updated_at = ? WHERE id = ?").run(fresh.views, now.toISOString(), postId);
     }
+    // Views live in their own column (they can also be typed in by hand).
+    const metrics = { ...mergeMetrics(parseMetrics(row.metrics), fresh), views: fresh.views ?? row.views };
+    this.db.prepare("UPDATE posts SET metrics = ? WHERE id = ?").run(JSON.stringify(metrics), postId);
+    if (row.status !== "posted") return;
+    const ageHours = (now.getTime() - new Date(row.posted_at ?? row.scheduled_at).getTime()) / 3600_000;
+    const offset = offsetFor(ageHours);
+    if (!offset) return;
+    this.db
+      .prepare("INSERT OR IGNORE INTO post_stats (post_id, offset_key, age_hours, at, metrics) VALUES (?, ?, ?, ?, ?)")
+      .run(postId, offset, ageHours, now.toISOString(), JSON.stringify(metrics));
+  }
+
+  /** The latest numbers of every post that has any. */
+  metrics(): Map<number, PostMetrics> {
+    const rows = this.db.prepare("SELECT id, views, metrics FROM posts WHERE metrics IS NOT NULL OR views IS NOT NULL").all() as {
+      id: number;
+      views: number | null;
+      metrics: string | null;
+    }[];
+    return new Map(rows.map((r) => [r.id, { ...parseMetrics(r.metrics), views: r.views }]));
+  }
+
+  /** Each post's kept points, oldest age first. */
+  series(): Map<number, StatPoint[]> {
+    const rows = this.db.prepare("SELECT * FROM post_stats ORDER BY post_id, age_hours").all() as {
+      post_id: number;
+      offset_key: StatPoint["offset"];
+      age_hours: number;
+      at: string;
+      metrics: string;
+    }[];
+    const out = new Map<number, StatPoint[]>();
+    for (const r of rows) {
+      const point = { ...parseMetrics(r.metrics), offset: r.offset_key, ageHours: r.age_hours, at: r.at };
+      out.set(r.post_id, [...(out.get(r.post_id) ?? []), point]);
+    }
+    return out;
   }
 
   /**
@@ -220,6 +275,7 @@ export class PostsRepo {
     this.db
       .prepare("UPDATE posts SET views = ?, views_source = 'manual', views_updated_at = ? WHERE id = ?")
       .run(views, this.now().toISOString(), id);
+    this.addReading(id, {});
     return this.get(id);
   }
 

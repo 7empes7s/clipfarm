@@ -8,6 +8,7 @@ import type { JobHandler } from "../jobs/queue.js";
 import { PostsRepo } from "../publish/repo.js";
 import type { VodsRepo } from "../vods/repo.js";
 import { type DemoClipsDeps, makeDemoClips } from "./demo.js";
+import { seedDemoCampaigns } from "./demoGrowth.js";
 
 export const DEMO_DATA_JOB = "demo-data";
 
@@ -34,6 +35,8 @@ export interface DemoDataDeps extends DemoClipsDeps {
   db: Db;
   vods: VodsRepo;
   accountStats: AccountStatsStore;
+  /** Called once the history is in (the growth lab then offers the demo recommendation). */
+  onSeeded?: () => void;
 }
 
 /** Whether "Load demo data" already ran on this database. */
@@ -153,6 +156,8 @@ export function seedDemoHistory(deps: DemoDataDeps, made: { sources: Source[]; c
     db.prepare("UPDATE posts SET views = ?, views_source = 'service', views_updated_at = ? WHERE id = ?").run(views, now.toISOString(), post.id);
     if (whop) writer.markWhopSubmitted(post.id);
   }
+
+  seedDemoCampaigns(db, made, campaigns, now);
 }
 
 /** "Load demo data": the ten demo clips (ffmpeg, about 20 s), then the history around them. */
@@ -162,5 +167,6 @@ export function demoDataHandler(deps: DemoDataDeps, now: () => Date = () => new 
     const made = await makeDemoClips(deps, { tmpDir, signal, progress: (f, m) => progress(f * 0.9, m) });
     progress(0.95, "Adding demo history");
     seedDemoHistory(deps, made, now());
+    deps.onSeeded?.();
   };
 }

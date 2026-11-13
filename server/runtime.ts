@@ -6,6 +6,9 @@ import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
+import { GrowthLab } from "./growth/lab.js";
+import { FakePushSender, PushStore, type PushSender, WebPushSender } from "./growth/push.js";
+import { GrowthRepo } from "./growth/repo.js";
 import { JobQueue } from "./jobs/queue.js";
 import { PicksRepo } from "./picks/repo.js";
 import { pipelineOnFinished } from "./pipeline/chain.js";
@@ -30,6 +33,8 @@ export interface Runtime {
   posts: PostsRepo;
   publisher: Publisher;
   accountStats: AccountStatsStore;
+  growth: GrowthLab;
+  push: PushStore;
   queue: JobQueue;
 }
 
@@ -49,13 +54,35 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const posts = new PostsRepo(db);
   const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
+  const growthRepo = new GrowthRepo(db);
+  const push = new PushStore(db);
+  // Demo mode sends nothing: the digest is only kept in memory.
+  const sender: PushSender = config.fakes ? new FakePushSender() : new WebPushSender({ keys: () => push.keys(), subject: config.publicUrl });
+  const growth = new GrowthLab({
+    repo: growthRepo,
+    posts,
+    clips,
+    sources,
+    publisher,
+    vodTitle: (id) => vods.get(id).title,
+    platformStats: config.platformStats,
+    push: { store: push, sender },
+    computeUsdPerHour: config.computeUsdPerHour,
+  });
   const mediaDir = config.mediaDir;
   const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
   const clipRenderFinished = onRenderFinished(clips);
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
       [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
-      [PICKS_JOB]: picksHandler({ sources, vods, picks, picker: config.picker, maxPicks: config.maxPicks }),
+      [PICKS_JOB]: picksHandler({
+        sources,
+        vods,
+        picks,
+        picker: config.picker,
+        maxPicks: config.maxPicks,
+        preferences: () => growthRepo.defaults(),
+      }),
       [RENDER_JOB]: renderHandler({
         sources,
         vods,
@@ -68,7 +95,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
-      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir }),
+      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir, onSeeded: () => growth.proposeChanges() }),
     },
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
@@ -76,5 +103,5 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, push, queue };
 }
