@@ -40,6 +40,8 @@ export interface ScoutDeps {
   notifier?: Notifier;
   /** Creators on the watchlist, whose streams we already follow. */
   watched?: () => string[];
+  /** Who today's fastest GTA clips are from or about (trend radar); empty without fresh data. */
+  trending?: () => string[];
   maxPages?: number;
   now?: () => Date;
 }
@@ -74,6 +76,7 @@ export class Scout {
     return {
       ourViews,
       knownCreators: [...sources.map((s) => s.creatorName), ...(this.deps.watched?.() ?? [])],
+      trending: this.deps.trending?.() ?? [],
       // One campaign's clips at the shared pace of one account.
       clipsPerDay: this.deps.posts.rules().maxPerDay,
     };

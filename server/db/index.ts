@@ -371,6 +371,52 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- Trend radar: today's fastest short videos (titles and numbers only, never media).
+  CREATE TABLE trend_videos (
+    video_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    duration_sec REAL,
+    views INTEGER NOT NULL,
+    published_at TEXT NOT NULL,
+    views_per_hour INTEGER NOT NULL,
+    streamer TEXT,
+    moment_type TEXT NOT NULL,
+    hook_pattern TEXT NOT NULL
+  );
+  -- Hook lab: one A/B test per clip, and its variants (each on its own burner account).
+  CREATE TABLE hook_tests (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id),
+    status TEXT NOT NULL,
+    note TEXT,
+    ends_at TEXT,
+    winner_variant_id INTEGER,
+    main_posts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX hook_tests_clip ON hook_tests(clip_id);
+  CREATE TABLE hook_variants (
+    id INTEGER PRIMARY KEY,
+    test_id INTEGER NOT NULL REFERENCES hook_tests(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    title TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    -- NULL: variant A, which is the clip's own video.
+    file_path TEXT,
+    rendered INTEGER NOT NULL DEFAULT 0,
+    post_id INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+    views_per_hour INTEGER
+  );
+  CREATE INDEX hook_variants_test ON hook_variants(test_id);
+  -- The title and hook a post went out with when they are a hook variant's; NULL: the clip's own.
+  ALTER TABLE posts ADD COLUMN variant_title TEXT;
+  ALTER TABLE posts ADD COLUMN variant_hook TEXT;
+  `,
+  `
   -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
   CREATE TABLE scouted_campaigns (
     id INTEGER PRIMARY KEY,

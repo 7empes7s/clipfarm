@@ -8,6 +8,8 @@ import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
 import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
+import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
+import { hookVariantsHandler, onHookVariantsFinished } from "./hooklab/render.js";
 import { JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
@@ -25,8 +27,9 @@ import { ScoutRepo } from "./scout/repo.js";
 import { Scout } from "./scout/service.js";
 import type { Settings } from "./settings/store.js";
 import { SourcesRepo } from "./sources/repo.js";
-import { WatchlistRepo } from "./sources/watchlist/repo.js";
+import { TrendRadar } from "./trends/radar.js";
 import { VodsRepo } from "./vods/repo.js";
+import { WatchlistRepo } from "./sources/watchlist/repo.js";
 
 export interface Runtime {
   settings: Settings;
@@ -42,6 +45,9 @@ export interface Runtime {
   growth: GrowthLab;
   scout: Scout;
   queue: JobQueue;
+  watchRepo: WatchlistRepo;
+  radar: TrendRadar;
+  hookLab: HookLab;
   liveRepo: LiveRepo;
   notifier: Notifier;
 }
@@ -70,8 +76,21 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
+  const watchRepo = new WatchlistRepo(db, sources);
+  const radar = new TrendRadar({ db, source: config.trendSource, chat: config.aiChat, watchlist: () => watchRepo.list() });
   const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
   const clipRenderFinished = onRenderFinished(clips);
+  const hookLab = new HookLab({
+    db,
+    clips,
+    sources,
+    posts,
+    publisher,
+    enqueueRender: (testId, clipId) => queue.enqueue(HOOK_VARIANTS_JOB, { testId }, { clipId, maxAttempts: 2 }),
+    chat: config.aiChat,
+    trending: () => radar.boost()?.hookPatterns.map((h) => h.pattern) ?? [],
+  });
+  const hookVariantsFinished = onHookVariantsFinished(hookLab);
   const liveRepo = new LiveRepo(db, config.live.launchAt);
   // Demo mode never reaches a push service.
   const notifier = config.fakes ? new FakeNotifier() : new WebPushNotifier(liveRepo, config.live.pushSubject);
@@ -87,7 +106,6 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     notifier,
     computeUsdPerHour: config.computeUsdPerHour,
   });
-  const watchlist = new WatchlistRepo(db, sources);
   const scout: Scout = new Scout({
     repo: new ScoutRepo(db),
     sources,
@@ -96,7 +114,9 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     fetcher: new PoliteFetcher(config.scout.fetcher, { gapMs: config.scout.gapMs }),
     startUrls: config.scout.startUrls,
     notifier,
-    watched: () => watchlist.list().map((c) => c.name),
+    watched: () => watchRepo.list().map((c) => c.name),
+    // Only while the radar's reading is fresh (boost() is null otherwise).
+    trending: () => (radar.boost() ? radar.videos().map((v) => v.streamer ?? v.channel) : []),
   });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
@@ -109,6 +129,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         picker: config.picker,
         maxPicks: config.maxPicks,
         preferences: () => growthRepo.defaults(),
+        trends: () => radar.boost(),
       }),
       [RENDER_JOB]: renderHandler({
         sources,
@@ -132,6 +153,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         contextSec: config.live.segmentSec * 2,
       }),
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
+      [HOOK_VARIANTS_JOB]: hookVariantsHandler({ lab: hookLab, clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
       [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir, onSeeded: () => growth.proposeChanges() }),
@@ -139,9 +161,29 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
       clipRenderFinished(job);
+      hookVariantsFinished(job, payload);
       liveFinished(job, payload);
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, scout, queue, liveRepo, notifier };
+  return {
+    settings,
+    config,
+    db,
+    sources,
+    vods,
+    picks,
+    clips,
+    posts,
+    publisher,
+    accountStats,
+    growth,
+    scout,
+    queue,
+    watchRepo,
+    radar,
+    hookLab,
+    liveRepo,
+    notifier,
+  };
 }

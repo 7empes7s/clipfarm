@@ -11,6 +11,7 @@ import {
   NICHE_GAMING,
   NICHE_GTA,
   NICHE_OTHER,
+  NICHE_TRENDING,
   RISK_AUDIENCE,
   RISK_LOCKED,
   RISK_NO_AI,
@@ -181,6 +182,17 @@ describe("scoreCampaign", () => {
     expect(step(capped, "TikTok").value).toBe("$4.00");
     expect(step(capped, "TikTok").why).toContain("capped at $4.00 a clip");
     expect(step(capped, "Streams we can clip", { ...ctx, knownCreators: ["pixel rush"] }).why).toBe("Pixel Rush is already in our creators.");
+  });
+
+  it("lifts a creator who is in today's fastest GTA clips (trend radar)", () => {
+    const hot: ScoreContext = { ...ctx, trending: ["Someone Else", "night owl"] };
+    expect(step(nightOwl, "Fit with our channels", hot)).toEqual({
+      label: "Fit with our channels",
+      value: "× 1.80",
+      why: "It is about GTA, which is what our pages post. Night Owl is in today's fastest GTA clips (trend radar).",
+    });
+    expect(scoreCampaign(nightOwl, hot).score).toBeCloseTo(scoreCampaign(nightOwl, ctx).score * NICHE_TRENDING, 3);
+    expect(step(pixelRush, "Fit with our channels", hot).value).toBe("× 1.20");
   });
 
   it("scores nothing for a campaign that ended or does not say what it pays", () => {

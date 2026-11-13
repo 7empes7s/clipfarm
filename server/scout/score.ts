@@ -11,6 +11,8 @@ const ASSUMED_PLATFORMS: Platform[] = ["tiktok", "youtube", "instagram"];
 export const NICHE_GTA = 1.5;
 export const NICHE_GAMING = 1.2;
 export const NICHE_OTHER = 0.7;
+/** On top of the fit: the creator is in today's fastest GTA clips (trend radar). */
+export const NICHE_TRENDING = 1.2;
 export const SOURCE_KNOWN = 1;
 export const SOURCE_STREAMS = 0.7;
 export const SOURCE_NONE = 0.3;
@@ -35,6 +37,8 @@ export interface ScoreContext {
   ourViews: Partial<Record<Platform, number[]>>;
   /** Names of the creators in Sources and on the watchlist, whose streams we can already clip. */
   knownCreators: string[];
+  /** Who today's fastest GTA clips are from or about (trend radar); empty without fresh data. */
+  trending?: string[];
   /** Clips we post a day. */
   clipsPerDay: number;
 }
@@ -119,14 +123,18 @@ export function scoreCampaign(f: ScoutFacts, ctx: ScoreContext): ScoutScore {
   steps.push({ label: "Budget left", value: times(budget), why: budgetWhy });
 
   const words = [f.title, f.creatorName ?? "", f.agency ?? "", ...f.rules].join(" ");
-  const niche = GTA.test(words) ? NICHE_GTA : GAMING.test(words) ? NICHE_GAMING : NICHE_OTHER;
+  const name = f.creatorName?.trim().toLowerCase();
+  const fit = GTA.test(words) ? NICHE_GTA : GAMING.test(words) ? NICHE_GAMING : NICHE_OTHER;
+  const trending = name !== undefined && (ctx.trending ?? []).some((t) => t.trim().toLowerCase() === name);
+  const niche = fit * (trending ? NICHE_TRENDING : 1);
   steps.push({
     label: "Fit with our channels",
     value: times(niche),
-    why: niche === NICHE_GTA ? "It is about GTA, which is what our pages post." : niche === NICHE_GAMING ? "It is gaming or streamer content, close to our pages." : "It is not gaming content.",
+    why:
+      (fit === NICHE_GTA ? "It is about GTA, which is what our pages post." : fit === NICHE_GAMING ? "It is gaming or streamer content, close to our pages." : "It is not gaming content.") +
+      (trending ? ` ${f.creatorName} is in today's fastest GTA clips (trend radar).` : ""),
   });
 
-  const name = f.creatorName?.trim().toLowerCase();
   const known = name !== undefined && ctx.knownCreators.some((c) => c.trim().toLowerCase() === name);
   const source = known || f.channelUrls.length > 0 ? SOURCE_KNOWN : STREAMS.test(words) ? SOURCE_STREAMS : SOURCE_NONE;
   steps.push({
