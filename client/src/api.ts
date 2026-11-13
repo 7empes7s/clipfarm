@@ -38,6 +38,8 @@ import type {
   WhopStep,
 } from "../../shared/types";
 
+import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -121,6 +123,15 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  growth: () => call<GrowthInfo>("/api/growth"),
+  addCampaign: (input: GrowthCampaignInput) => call<GrowthCampaign>("/api/growth/campaigns", { method: "POST", body: JSON.stringify(input) }),
+  campaignAction: (id: number, action: "start" | "pause" | "stop") => call<GrowthCampaign>(`/api/growth/campaigns/${id}/${action}`, { method: "POST" }),
+  removeCampaign: (id: number) => call<unknown>(`/api/growth/campaigns/${id}`, { method: "DELETE" }),
+  campaignReport: (id: number) => call<CampaignReport>(`/api/growth/campaigns/${id}/report`),
+  compareCampaigns: (ids: number[]) => call<CampaignComparison>(`/api/growth/compare?ids=${ids.join(",")}`),
+  recommendation: (id: number, action: "apply" | "undo" | "dismiss") =>
+    call<GrowthInfo>(`/api/growth/recommendations/${id}/${action}`, { method: "POST" }),
+  setDigestZone: (zone: string) => call<GrowthInfo>("/api/growth/digest-zone", { method: "PUT", body: JSON.stringify({ zone }) }),
   live: () => call<LiveInfo>("/api/live"),
   arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
   disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),

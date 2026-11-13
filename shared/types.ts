@@ -1,4 +1,5 @@
 // Types and constants shared by the server and the gallery client.
+import type { CampaignSummary, Recommendation } from "./growth.js";
 
 /**
  * "experiment": a test of what the platforms do to clips posted without the creator's permission.
@@ -769,6 +770,8 @@ export interface Dashboard {
   goals: Goal[];
   earnings: { rows: EarningsRow[]; weekUsd: number; totalUsd: number };
   experiment: ExperimentReport;
+  /** Test campaigns that are running or paused, and changes waiting for a yes or no: the same data as the Campaigns tab. */
+  growth: { campaigns: CampaignSummary[]; recommendations: Recommendation[] };
 }
 
 export const WATCH_PLATFORMS = ["twitch", "kick", "youtube"] as const;

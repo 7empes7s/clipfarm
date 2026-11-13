@@ -6,6 +6,8 @@ import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
+import { GrowthLab } from "./growth/lab.js";
+import { GrowthRepo } from "./growth/repo.js";
 import { JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
@@ -33,6 +35,7 @@ export interface Runtime {
   posts: PostsRepo;
   publisher: Publisher;
   accountStats: AccountStatsStore;
+  growth: GrowthLab;
   queue: JobQueue;
   liveRepo: LiveRepo;
   notifier: Notifier;
@@ -60,11 +63,30 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const liveRepo = new LiveRepo(db, config.live.launchAt);
   // Demo mode never reaches a push service.
   const notifier = config.fakes ? new FakeNotifier() : new WebPushNotifier(liveRepo, config.live.pushSubject);
+  const growthRepo = new GrowthRepo(db);
+  const growth = new GrowthLab({
+    repo: growthRepo,
+    posts,
+    clips,
+    sources,
+    publisher,
+    vodTitle: (id) => vods.get(id).title,
+    platformStats: config.platformStats,
+    notifier,
+    computeUsdPerHour: config.computeUsdPerHour,
+  });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
       [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
-      [PICKS_JOB]: picksHandler({ sources, vods, picks, picker: config.picker, maxPicks: config.maxPicks }),
+      [PICKS_JOB]: picksHandler({
+        sources,
+        vods,
+        picks,
+        picker: config.picker,
+        maxPicks: config.maxPicks,
+        preferences: () => growthRepo.defaults(),
+      }),
       [RENDER_JOB]: renderHandler({
         sources,
         vods,
@@ -89,7 +111,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
-      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir }),
+      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir, onSeeded: () => growth.proposeChanges() }),
     },
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
@@ -98,5 +120,5 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier };
 }

@@ -1,5 +1,6 @@
 import { openAsBlob } from "node:fs";
 import type { DailyPoint, Platform, PostingAccount, PostStatus } from "../../shared/types.js";
+import type { PostMetrics } from "../../shared/growth.js";
 import { callService, type ServiceVoice } from "./errors.js";
 import type { AccountStats, PostingService, PostUpdate, PublishItem, PublishResult, TrackedPost, VideoFile } from "./types.js";
 
@@ -49,6 +50,30 @@ export function viewsFromPostizAnalytics(metrics: PostizAnalytics[]): number | n
   const metric = pick(/^(video )?views$/i) ?? pick(/^impressions$/i);
   if (!metric || metric.data.length === 0) return null;
   return Math.max(...metric.data.map((d) => Number(d.total) || 0));
+}
+
+/**
+ * Everything else Postiz's post analytics names, by label. Postiz passes on what each platform's
+ * own API gives for the connected account, so the labels differ per platform; a number that is
+ * not in the answer is left out (shown as "not available"), never guessed.
+ */
+export function metricsFromPostizAnalytics(metrics: PostizAnalytics[]): Partial<PostMetrics> {
+  const out: Partial<PostMetrics> = {};
+  const labels: [keyof PostMetrics, RegExp, "max" | "last"][] = [
+    ["likes", /^likes?$/i, "max"],
+    ["comments", /^comments?$/i, "max"],
+    ["shares", /^(shares?|reposts?|retweets?)$/i, "max"],
+    ["saves", /^(saves?|saved|bookmarks?)$/i, "max"],
+    ["reach", /^reach$/i, "max"],
+    ["avgWatchPct", /^(average|avg\.?) (view|watch) percentage$/i, "last"],
+    ["followsGained", /^(subscribers gained|new followers|follows)$/i, "max"],
+    ["revenueUsd", /^(estimated )?revenue$/i, "max"],
+  ];
+  for (const [key, re, how] of labels) {
+    const values = (metrics.find((m) => re.test(m.label.trim()))?.data ?? []).map((d) => Number(d.total)).filter(Number.isFinite);
+    if (values.length > 0) out[key] = how === "max" ? Math.max(...values) : values.at(-1)!;
+  }
+  return out;
 }
 
 /**
@@ -240,6 +265,8 @@ export class PostizService implements PostingService {
         const metrics = await this.call<PostizAnalytics[]>(`/analytics/post/${encodeURIComponent(p.id)}?date=30`);
         const views = viewsFromPostizAnalytics(metrics);
         if (views !== null) update.views = views;
+        const more = metricsFromPostizAnalytics(metrics);
+        if (Object.keys(more).length > 0) update.metrics = more;
       }
       updates.push(update);
     }
