@@ -34,7 +34,8 @@ export interface RenderDeps {
 /**
  * pick → 9:16 clip. Downloads only the picked section (plus padding) into the job's temp folder,
  * renders the layout with burned-in karaoke captions, the hook card and the other finishing touches,
- * checks the result, and keeps just the MP4 and a thumbnail in media/. The temp folder (section, captions) is removed by the queue.
+ * checks the result, and keeps just the MP4 and a thumbnail in media/. The temp folder (section,
+ * captions, measurements) is removed by the queue.
  */
 export function renderHandler(deps: RenderDeps): JobHandler {
   return async ({ payload, tmpDir, signal, progress }) => {

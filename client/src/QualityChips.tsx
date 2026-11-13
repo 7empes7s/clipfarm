@@ -20,6 +20,7 @@ export function QualityChips({ clip, onFixed }: { clip: Clip; onFixed: (clip: Cl
       onFixed((await api.fixClip(clip.id)).clip);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
       setBusy(false);
     }
   }

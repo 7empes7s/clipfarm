@@ -169,7 +169,7 @@ describe("finishFilter", () => {
   it("zooms the picture before the captions, then fades to the first frame and puts the bar on top", () => {
     const f = finishFilter("v", "vout", "captions.ass", { zooms: planZooms([], 2, 10), loopFade: true, progressBar: true }, 10);
     expect(f.split(";").map((p) => p.replace(/z='[^']*'/, "z=Z"))).toEqual([
-      "[v]zoompan=z=Z:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30,setsar=1,ass=captions.ass,split[fmain][ffirst]",
+      "[v]fps=30,zoompan=z=Z:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30,setsar=1,ass=captions.ass,split[fmain][ffirst]",
       "[ffirst]trim=end_frame=1,loop=loop=330:size=1,format=yuva420p,fade=t=in:st=9.7:d=0.3:alpha=1[fstill]",
       "[fmain][fstill]overlay=shortest=1[floop]",
       "color=c=0xFFE500:s=1080x10:r=30[fbar]",

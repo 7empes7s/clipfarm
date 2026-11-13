@@ -174,6 +174,8 @@ export function finishFilter(
     parts.push(`[${cur}]${[...chain.splice(0), ...tail].join(",")}[${label}]`);
     cur = label;
   };
+  // The zooms and the held first frame count frames, so the picture is brought to 30 fps first.
+  if (p.zooms.length > 0 || p.loopFade) chain.push(`fps=${OUT_FPS}`);
   if (p.zooms.length > 0) {
     chain.push(
       `zoompan=z='${zoomExpr(p.zooms)}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${OUT_W}x${OUT_H}:fps=${OUT_FPS}`,
