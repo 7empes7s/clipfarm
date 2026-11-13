@@ -10,6 +10,7 @@ import { allowedPlatforms, PostSheet } from "./PostSheet";
 import { QualityChips } from "./QualityChips";
 import { shortDate, usd } from "./format";
 import { filterClips } from "./review";
+import { EmptyState } from "./ui";
 
 const CLIP_STATUS_LABEL: Record<Clip["status"], string> = {
   pending: "To review",
@@ -19,9 +20,27 @@ const CLIP_STATUS_LABEL: Record<Clip["status"], string> = {
 };
 
 const VIEW_TEXT = {
-  approved: { title: "Approved", empty: "No approved clips waiting to post. Approve clips in the Inbox." },
-  posted: { title: "Posted", empty: "Nothing posted yet. Post an approved clip to see it here." },
-  rejected: { title: "Rejected", empty: "No rejected clips." },
+  approved: {
+    title: "Approved",
+    icon: "approved",
+    emptyTitle: "Nothing waiting to post",
+    empty: "No approved clips waiting to post. Approve clips in the Inbox and they line up here, ready to post.",
+    action: { label: "Review the inbox", href: "#inbox" },
+  },
+  posted: {
+    title: "Posted",
+    icon: "posted",
+    emptyTitle: "Nothing posted yet",
+    empty: "Post an approved clip to see it here, with its link and views on each platform.",
+    action: { label: "Go to approved clips", href: "#approved" },
+  },
+  rejected: {
+    title: "Rejected",
+    icon: "reject",
+    emptyTitle: "No rejected clips",
+    empty: "Clips you reject in the Inbox are kept here with the reason, so you can bring one back.",
+    action: { label: "Back to the inbox", href: "#inbox" },
+  },
 } as const;
 
 const WHOP_STEP_DO: Record<WhopStep, string> = { submitted: "Mark sent to Whop", approved: "Mark approved", paid: "Mark paid" };
@@ -114,7 +133,9 @@ export function ClipsTab({
         </p>
       )}
       {clips.length === 0 ? (
-        <p className="empty">{VIEW_TEXT[view].empty}</p>
+        <EmptyState icon={VIEW_TEXT[view].icon} title={VIEW_TEXT[view].emptyTitle} action={VIEW_TEXT[view].action}>
+          {VIEW_TEXT[view].empty}
+        </EmptyState>
       ) : (
         <ul className="stack">
           {clips.map((clip) => {
