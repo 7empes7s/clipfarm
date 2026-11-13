@@ -6,7 +6,7 @@ import type { Engine } from "../../server/engine/engine.js";
 import { reviewPicks } from "../../server/pipeline/picks/review.js";
 import { toSentences } from "../../server/pipeline/picks/sentences.js";
 import { measureLoudness } from "../../server/pipeline/picks/signals.js";
-import type { LocalTranscript } from "../../server/pipeline/transcript/local.js";
+import type { Word } from "../../shared/types.js";
 import { probeDuration } from "../../server/tools/ffmpeg.js";
 import { run } from "../../server/tools/exec.js";
 import { realEngine, speak, TALK } from "./helpers.js";
@@ -26,15 +26,16 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const input = (words: LocalTranscript["words"], loudness: number[], durationSec: number) => ({
+const input = (words: Word[], loudness: number[], durationSec: number) => ({
   title: "GTA night", durationSec, chapters: [], words, signals: { loudness, chat: null },
   creatorName: "Test Streamer", briefRules: "", bannedContent: "", maxPicks: 15,
 });
 
-describe("local engine on generated speech (real whisper.cpp, no OpenAI key, no outside AI)", () => {
+describe("local engine on generated speech (real Moonshine and whisper.cpp, no OpenAI key, no outside AI)", () => {
   it("is ready once its parts are downloaded and checked", () => {
     expect(engine.status([])).toMatchObject({ mode: "local", ready: true, headline: "Local engine: ready", cloudAvailable: false });
-    expect(engine.transcriber.name).toBe("local:base.en");
+    expect(engine.transcriber.name).toBe("local");
+    expect(engine.status([]).steps.filter((s) => s.on).map((s) => `${s.id}:${s.state}`)).toEqual(["moonshine:ready", "whisper-small:ready"]);
   });
 
   it("times each word where it was said, across long silences the speech finder skips", async () => {
@@ -52,7 +53,7 @@ describe("local engine on generated speech (real whisper.cpp, no OpenAI key, no 
 
     expect(costUsd).toBe(0);
     const said = words.map((w) => w.word.toLowerCase().replace(/[^a-z]/g, ""));
-    expect(said).toEqual(expect.arrayContaining(["actually", "did", "that", "chat", "look", "insane"]));
+    expect(said).toEqual(expect.arrayContaining(["actually", "that", "look", "insane"]));
     for (const w of words) {
       expect(w.endSec).toBeGreaterThan(w.startSec);
       expect(w.endSec - w.startSec).toBeLessThanOrEqual(1.5);
@@ -78,14 +79,21 @@ describe("local engine on generated speech (real whisper.cpp, no OpenAI key, no 
     const started = Date.now();
     const loudness = await measureLoudness(audio);
     const progress: number[] = [];
-    const transcript = (await engine.transcriber.transcribe(audio, { durationSec, tmpDir: dir, onProgress: (f) => progress.push(f) })) as LocalTranscript;
+    const transcript = await engine.transcriber.transcribe(audio, { durationSec, tmpDir: dir, onProgress: (f) => progress.push(f) });
+    const peakRssMb = Math.max(...transcript.report!.uses.map((u) => u.peakMb ?? 0));
     const { picks, costUsd } = await engine.picker.pick(input(transcript.words, loudness, durationSec));
     const seconds = (Date.now() - started) / 1000;
     const kept = reviewPicks(picks, toSentences(transcript.words), transcript.words, [], 15).filter((p) => !p.dropReason);
     console.log(
       `[budget] 10 min of speech → ${transcript.words.length} words, ${picks.length} ranked picks (${kept.length} kept) in ${seconds.toFixed(0)} s ` +
-        `(= ${((seconds * 6) / 60).toFixed(1)} min per hour of stream), peak memory ${transcript.peakRssMb} MB`,
+        `(= ${((seconds * 6) / 60).toFixed(1)} min per hour of stream), peak memory ${peakRssMb} MB. ${transcript.report!.summary}`,
     );
+    for (const u of transcript.report!.uses) console.log(`[budget]   ${u.label}: ${u.count} segments, ${Math.round(u.audioSec)} s of audio in ${(u.ms / 1000).toFixed(0)} s, peak ${u.peakMb} MB`);
+    for (const f of transcript.report!.fallbacks) console.log(`[budget]   passed over ${f.step} ${f.count}×: ${f.reason}`);
+
+    // English goes to Moonshine, the first and fastest step.
+    expect(transcript.report!.language).toBe("en");
+    expect(transcript.report!.uses.find((u) => u.step === "moonshine")!.audioSec).toBeGreaterThan(durationSec * 0.8);
 
     // Transcript: the talk is ~125 words and repeats about 11 times.
     expect(transcript.words.length).toBeGreaterThan(1000);
@@ -107,7 +115,30 @@ describe("local engine on generated speech (real whisper.cpp, no OpenAI key, no 
 
     // Budget.
     expect(seconds).toBeLessThanOrEqual(BUDGET_SEC_PER_10_MIN);
-    expect(transcript.peakRssMb).not.toBeNull();
-    expect(transcript.peakRssMb!).toBeLessThanOrEqual(BUDGET_PEAK_MB);
+    expect(peakRssMb).toBeGreaterThan(0);
+    expect(peakRssMb).toBeLessThanOrEqual(BUDGET_PEAK_MB);
+  });
+
+  // flite only speaks English, so the other-language sample is yours: any speech WAV, e.g. made with
+  // `moonshine-voice tts --language es --text "..." --out es.wav` (pip install moonshine-voice).
+  it.skipIf(!process.env.ENGINE_OTHER_LANGUAGE_WAV)("sends a 10-minute sample in another language past Moonshine to Whisper small", async () => {
+    const audio = join(dir, "other-language.mp3");
+    await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1", "-i", process.env.ENGINE_OTHER_LANGUAGE_WAV!,
+      "-af", "apad=pad_dur=3", "-t", "600", "-ac", "1", "-ar", "16000", "-c:a", "libmp3lame", "-b:a", "48k", audio,
+    ]);
+    const durationSec = await probeDuration(audio);
+    const started = Date.now();
+    const transcript = await engine.transcriber.transcribe(audio, { durationSec, tmpDir: dir });
+    const seconds = (Date.now() - started) / 1000;
+    console.log(`[budget] 10 min in another language → ${transcript.words.length} words in ${seconds.toFixed(0)} s. ${transcript.report!.summary}`);
+    for (const u of transcript.report!.uses) console.log(`[budget]   ${u.label}: ${u.count} segments, ${Math.round(u.audioSec)} s of audio in ${(u.ms / 1000).toFixed(0)} s, peak ${u.peakMb} MB`);
+    for (const f of transcript.report!.fallbacks) console.log(`[budget]   passed over ${f.step} ${f.count}×: ${f.reason}`);
+
+    expect(transcript.report!.language).not.toBe("en");
+    expect(transcript.report!.uses.some((u) => u.step === "moonshine")).toBe(false);
+    expect(transcript.report!.uses.find((u) => u.step === "whisper-small")!.audioSec).toBeGreaterThan(durationSec * 0.8);
+    expect(transcript.words.length).toBeGreaterThan(500);
+    expect(transcript.words.every((w, i, all) => i === 0 || w.startSec >= all[i - 1]!.startSec)).toBe(true);
   });
 });

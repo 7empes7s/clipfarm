@@ -48,6 +48,7 @@ export function ingestHandler(deps: IngestDeps): JobHandler {
       tmpDir,
       signal,
       onProgress: (f) => progress(0.4 + f * 0.55, "Transcribing"),
+      run: { vodId },
     });
     deps.vods.saveTranscript(vodId, transcript.words, deps.transcriber.name, transcript.costUsd);
   };

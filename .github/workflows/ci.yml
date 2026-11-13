@@ -25,7 +25,7 @@ jobs:
         with:
           path: data/engine-test
           key: engine-${{ hashFiles('server/engine/catalog.ts') }}
-      - name: Local engine on generated speech (real whisper.cpp, no AI service)
+      - name: Local engine on generated speech (real Moonshine and whisper.cpp, no AI service)
         run: npm run test:engine
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

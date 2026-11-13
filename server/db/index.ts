@@ -313,6 +313,17 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
   ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
   `,
+  // Which engine handled what in each transcript and round of picks (the fallback chain).
+  `
+  CREATE TABLE engine_runs (
+    id INTEGER PRIMARY KEY,
+    vod_id INTEGER,
+    kind TEXT NOT NULL,
+    report TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX engine_runs_vod ON engine_runs(vod_id);
+  `,
   `
   -- Trend radar: today's fastest short videos (titles and numbers only, never media).
   CREATE TABLE trend_videos (

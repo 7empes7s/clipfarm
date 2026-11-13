@@ -1,4 +1,4 @@
-import type { Word } from "../../../shared/types.js";
+import type { EngineReport, Word } from "../../../shared/types.js";
 
 export interface TranscribeOptions {
   /** Length of the audio file in seconds. */
@@ -7,12 +7,16 @@ export interface TranscribeOptions {
   tmpDir: string;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
+  /** The video this transcript is for, so the engine can note which step did what; `add` on a live stream, where each segment adds to the last. */
+  run?: { vodId: number; add?: boolean };
 }
 
 export interface Transcript {
   /** Words with times in seconds from the start of the audio, in order. */
   words: Word[];
   costUsd: number;
+  /** Which engine handled what, with the time each step took. */
+  report?: EngineReport;
 }
 
 /** Speech-to-text with word-level timestamps. Real adapters call paid APIs; tests use the fake. */

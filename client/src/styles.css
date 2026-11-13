@@ -1890,6 +1890,54 @@ button.danger {
 .engine-settings select {
   width: 100%;
 }
+.engine-settings h4 {
+  margin-top: var(--s2);
+}
+.engine-chain {
+  display: grid;
+  gap: var(--s2);
+  padding: 0;
+  list-style: none;
+}
+.engine-step {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+.engine-step > * {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.engine-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.engine-step-actions .switch {
+  margin-right: auto;
+}
+.state-off {
+  color: var(--muted);
+  background: var(--paper);
+}
+.engine-week,
+.vod-engines {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding-left: var(--s4);
+  font-size: 0.875rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.vod-engines {
+  margin-top: var(--s2);
+}
 
 /* Settings: keys and connections, and the setup list on the dashboard */
 .masthead-top {

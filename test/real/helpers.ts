@@ -27,7 +27,8 @@ export async function realEngine(tmpRoot: string, writer: boolean): Promise<Engi
   });
   const db = openDb(":memory:");
   engine.bind(db);
-  engine.saveSettings({ writer });
+  // large-v3-turbo is left out: nothing here needs it, and it is an 870 MB download.
+  engine.saveSettings({ writer, stt: engine.settings().stt.map((s) => (s.id === "whisper-turbo" ? { ...s, on: false } : s)) });
   const queue = new JobQueue(db, { handlers: { [ENGINE_SETUP_JOB]: engineSetupHandler(engine) }, tmpRoot });
   const job = queue.enqueue(ENGINE_SETUP_JOB, {});
   await queue.idle();

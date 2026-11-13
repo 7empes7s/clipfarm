@@ -46,6 +46,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         bannedContent: source.bannedContent,
         maxPicks,
         trendHints: trendHints(trends),
+        run: { vodId },
       },
       signal,
     );
