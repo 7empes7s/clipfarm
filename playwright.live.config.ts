@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { ownPreview } from "./e2e/live/preview.js";
+import { ownPreview, runFolder } from "./e2e/live/preview.js";
 import { liveSettings } from "./e2e/live/settings.js";
 
 // `npm run e2e:live`: the whole flow (link → clips → review → post) against any address.
@@ -14,17 +14,20 @@ const preview = process.env.BASE_URL ? undefined : await ownPreview(process.env,
 const settings = liveSettings({ ...process.env, BASE_URL: preview?.baseUrl ?? process.env.BASE_URL });
 // The workers read the same settings.
 process.env.BASE_URL = settings.baseUrl;
+// Playwright empties its output folder at the start, so each run gets its own.
+const outputDir = `test-results/${runFolder(process.env.E2E_RUN_ID)}`;
 
 export default defineConfig({
   // E2E_TEST_DIR is for the suite's own tests (test/e2e-live-runs.test.ts), which run stand-in steps.
   testDir: process.env.E2E_TEST_DIR ?? "e2e/live",
   testMatch: "*.live.ts",
+  outputDir,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   // A second try would add a second test source and run the pipeline again.
   retries: 0,
   workers: 1,
-  reporter: [["list"], ["./e2e/live/report.ts", { previewDir: preview?.dir }]],
+  reporter: [["list"], ["./e2e/live/report.ts", { previewDir: preview?.dir, outputDir }]],
   metadata: { target: `${settings.baseUrl} (${settings.dryRun ? "dry run: nothing is posted" : "posting through the test posting service"})` },
   use: {
     baseURL: settings.baseUrl,

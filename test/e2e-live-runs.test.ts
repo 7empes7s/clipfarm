@@ -5,7 +5,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { holderIn, ownPreview, tryPort } from "../e2e/live/preview.js";
+import { holderIn, ownPreview, runFolder, tryPort } from "../e2e/live/preview.js";
 
 // `npm run e2e:live` runs side by side in the lab. These start the real config (with a stand-in
 // step that needs no browser: test/fixtures/live-runs) and check that the runs keep out of each other's way.
@@ -36,7 +36,8 @@ function liveRun(env: Record<string, string>): Promise<{ code: number; out: stri
 
 const addressOf = (runId: string) => readFileSync(join(meetDir, `${runId}.up`), "utf8");
 const portOf = (runId: string) => Number(new URL(addressOf(runId)).port);
-const folderOf = (runId: string) => resolve(".e2e-data", `live-${runId}`);
+const folderOf = (runId: string) => resolve(".e2e-data", runFolder(runId));
+const tracesOf = (runId: string) => resolve("test-results", runFolder(runId));
 
 describe("npm run e2e:live with its own preview", () => {
   it("two runs at once both finish, each on its own port", async () => {
@@ -53,6 +54,7 @@ describe("npm run e2e:live with its own preview", () => {
     for (const id of ["pair-a", "pair-b"]) {
       expect(await tryPort(portOf(id)), `the preview of ${id} is still on its port`).toBe(portOf(id));
       expect(existsSync(folderOf(id)), `the folder of ${id} is still there`).toBe(false);
+      expect(existsSync(tracesOf(id)), `the output folder of ${id} is still there`).toBe(false);
     }
   }, 300_000);
 
@@ -63,6 +65,9 @@ describe("npm run e2e:live with its own preview", () => {
     expect(run.out).toContain("Result: FAIL (1 step failed)");
     expect(await tryPort(portOf("fails")), "the preview is still on its port").toBe(portOf("fails"));
     expect(existsSync(folderOf("fails"))).toBe(false);
+    // Its traces stay for whoever looks into the failure; the test tidies them up.
+    expect(existsSync(tracesOf("fails"))).toBe(true);
+    await rm(tracesOf("fails"), { recursive: true, force: true });
   }, 300_000);
 
   it("a taken E2E_PORT fails at the start with the port and the pid holding it, and leaves the holder alone", async () => {

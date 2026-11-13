@@ -41,6 +41,9 @@ export interface OwnPreview {
   webServer: { command: string; url: string; env: Record<string, string>; reuseExistingServer: false; timeout: number };
 }
 
+/** The folder name for what one run writes, under .e2e-data/ (preview) and test-results/ (traces). */
+export const runFolder = (runId: string) => `live-${runId.replace(/[^\w.-]/g, "_")}`;
+
 const quoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
 /**
@@ -70,7 +73,7 @@ export async function ownPreview(
     if (port === null) throw new Error("The system gave no free port for the preview.");
   }
 
-  const dir = resolve(".e2e-data", `live-${runId.replace(/[^\w.-]/g, "_")}`);
+  const dir = resolve(".e2e-data", runFolder(runId));
   const dist = `${dir}/dist`;
   return {
     port,
