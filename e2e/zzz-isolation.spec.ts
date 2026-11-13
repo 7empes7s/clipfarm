@@ -51,6 +51,12 @@ test("Settings, Accounts: a burner group gets a proxy, passes its test, gets its
   await appSheet.getByLabel("OAuth client ID").fill("burner-youtube-client-e2e9");
   await appSheet.getByLabel("Client secret").fill(APP_SECRET);
   await fits();
+  // Nothing in the sheet runs past the screen edge: the fields, Save and the redirect address.
+  for (const part of [appSheet.getByLabel("OAuth client ID"), appSheet.getByLabel("Client secret"), appSheet.getByRole("button", { name: "Save" }), appSheet.locator("code")]) {
+    const box = (await part.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+  }
   await appSheet.getByRole("button", { name: "Save" }).click();
   await expect(appSheet).toBeHidden();
   await expect(burners.getByText("Keys set, ID ends in …e2e9")).toBeVisible();
@@ -69,7 +75,10 @@ test("Settings, Accounts: a burner group gets a proxy, passes its test, gets its
 
   // The setup list on the dashboard knows the burners are kept apart now.
   await page.goto("/#dashboard");
-  await expect(page.getByTestId("setup").getByText("Burners leave from their own address (203.0.113.x) with their own apps.")).toBeVisible();
+  // A step that is done sits under "The other steps".
+  const setup = page.getByTestId("setup");
+  await setup.locator("summary").click();
+  await expect(setup.getByText("Burners leave from their own address (203.0.113.x) with their own apps.")).toBeVisible();
   await fits();
   expect(errors).toEqual([]);
 });

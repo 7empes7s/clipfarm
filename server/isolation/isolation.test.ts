@@ -143,7 +143,7 @@ function setup(opts: { service?: FakePostingService | PostizService } = {}) {
   };
 
   return {
-    app, db, settings, isolation, direct, publisher, posts, real, experiment, newClip, groups, group, setApp, setProxy, testProxy, connect, account,
+    app, db, settings, sources, isolation, direct, publisher, posts, real, experiment, newClip, groups, group, setApp, setProxy, testProxy, connect, account,
     fastPace, post, ready, setNow: (d: Date) => (now = d),
   };
 }
@@ -564,6 +564,40 @@ describe("YouTube quota per app", () => {
     const res = await t.post(t.newClip(t.experiment.id).id, [BURNER_YT]).expect(201);
     expect((res.body.posts as Post[])[0]).toMatchObject({ status: "scheduled", scheduledAt: "2026-11-20T08:00:00.000Z", error: null });
     expect((await t.group(BURNERS_GROUP_ID)).youtubeQuota).toMatchObject({ used: YOUTUBE_DAILY_UNITS, fullUntil: "2026-11-20T08:00:00.000Z" });
+  });
+
+  it("uploads a post once when the timer runs while Post now is still sending it", async () => {
+    const t = setup();
+    await t.ready();
+    fake.reset();
+    let release!: () => void;
+    fake.holdUploads = new Promise<void>((resolve) => (release = resolve));
+    const posting = t.post(t.newClip(t.experiment.id).id, [BURNER_YT]).then((res) => res);
+    await vi.waitFor(() => expect(fake.calls.some((c) => c.path === "/upload/youtube/v3/videos")).toBe(true));
+    expect(await t.direct.runDue()).toBe(0);
+    release();
+    const res = await posting;
+    expect((res.body.posts as Post[])[0]).toMatchObject({ status: "posted" });
+    expect(await t.direct.runDue()).toBe(0);
+    expect(fake.uploads.length).toBe(1);
+    // 1 unit for reading the channel when it was connected, 1,600 for the one upload.
+    expect((await t.group(BURNERS_GROUP_ID)).youtubeQuota.used).toBe(1601);
+  });
+
+  it("does not upload a post that waited for the quota reset once its permission has run out", async () => {
+    const t = setup();
+    await t.ready();
+    const expiring = t.sources.create({ ...campaignInput({ allowedPlatforms: ["youtube"], expiresAt: "2026-11-20T02:00:00.000Z" }), creatorName: "Short Deal" });
+    fake.quotaExceeded = true;
+    const res = await t.post(t.newClip(expiring.id).id, [MAIN_YT]).expect(201);
+    const waiting = (res.body.posts as Post[])[0]!;
+    expect(waiting).toMatchObject({ status: "scheduled", scheduledAt: "2026-11-20T08:00:00.000Z" });
+    fake.reset();
+    t.setNow(new Date("2026-11-20T08:00:30.000Z"));
+    expect(await t.direct.runDue()).toBe(0);
+    expect(t.posts.get(waiting.id)).toMatchObject({ status: "failed", error: "The permission for Short Deal expired on 2026-11-20. Add a current campaign first." });
+    expect(fake.calls).toEqual([]);
+    expect(fake.uploads).toEqual([]);
   });
 
   it("knows the Pacific day and its midnight, across the clock change", () => {

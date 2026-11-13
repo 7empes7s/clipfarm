@@ -741,8 +741,18 @@ textarea {
 }
 .form {
   display: grid;
+  /* minmax(0, …): a long address in a hint wraps instead of pushing the fields past the screen edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s4);
   padding-top: var(--s4);
+}
+.form code {
+  overflow-wrap: anywhere;
+}
+.form input,
+.form button {
+  min-width: 0;
+  max-width: 100%;
 }
 .form label,
 .form legend {

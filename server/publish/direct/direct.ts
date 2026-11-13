@@ -7,6 +7,7 @@ import { HttpError, ValidationError } from "../../errors.js";
 import type { Group, Isolation } from "../../isolation/isolation.js";
 import { maskIp } from "../../isolation/rules.js";
 import type { Settings } from "../../settings/store.js";
+import { requireActivePermission } from "../../sources/permission.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import type { PostsRepo } from "../repo.js";
 import { type Ctx, type Endpoints, PLATFORM_CLIENTS, type PlatformClient, QuotaExceeded, SignInRefused, type Tokens } from "./platforms.js";
@@ -37,6 +38,8 @@ export class DirectPoster {
   lastConnect: IsolationInfo["lastConnect"] = null;
   private states = new Map<string, { groupId: number; platform: DirectPlatform; expires: number }>();
   private running = false;
+  /** Posts being uploaded right now: "Post now" and the timer never send the same one twice. */
+  private sending = new Set<number>();
   private now: () => Date;
 
   constructor(private deps: DirectDeps) {
@@ -149,14 +152,28 @@ export class DirectPoster {
 
   /** Uploads one waiting post now. Never throws: the post ends posted, failed with the reason, or waiting for quota. */
   async send(postId: number): Promise<Post> {
+    const waiting = this.deps.posts.get(postId);
+    if (this.sending.has(postId) || waiting.status !== "scheduled") return waiting;
+    this.sending.add(postId);
+    try {
+      return await this.upload(waiting);
+    } finally {
+      this.sending.delete(postId);
+    }
+  }
+
+  private async upload(post: Post): Promise<Post> {
     const { isolation, accounts, posts, clips, sources, settings } = this.deps;
-    const post = posts.get(postId);
+    const postId = post.id;
     const failed = (error: string) => posts.settle(postId, { status: "failed", error: settings.scrub(error) });
     const account = accounts.list().find((a) => a.id === post.accountId);
     if (!account?.direct) return failed(`${post.accountName} is no longer connected in Settings, Accounts.`);
     // Switched off since it was queued (by hand, or by a strike): what waits does not go out.
     if (!account.enabled) return failed(`${account.name} is switched off, so this post was not sent.`);
     try {
+      // The permission may have run out or been put on hold while the post waited: checked again now.
+      const permission = sources.permission(post.permissionId);
+      requireActivePermission(sources.get(permission.sourceId).creatorName, [permission], this.now(), account.platform, account.role);
       const group = isolation.get(account.groupId);
       const blocked = (await isolation.freshProblem(group)) ?? this.problem(account, group);
       if (blocked) return failed(`${account.name} cannot post: ${blocked}`);
@@ -170,7 +187,7 @@ export class DirectPoster {
           path: clips.filePath(post.clipId),
           title: post.clipTitle,
           caption: post.caption,
-          paidPromotion: sources.permission(post.permissionId).kind === "whop-campaign",
+          paidPromotion: permission.kind === "whop-campaign",
         });
         const exitIp = isolation.exitIp(group);
         console.log(

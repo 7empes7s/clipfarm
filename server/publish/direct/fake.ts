@@ -34,6 +34,8 @@ export class FakePlatforms {
   quotaExceeded = false;
   /** Makes every platform refuse, repeating what it was sent (as some real APIs do). */
   refuseWith: ((sent: string) => string) | null = null;
+  /** A slow upload: YouTube answers the upload only once this settles. */
+  holdUploads: Promise<void> | null = null;
   private tokens = new Map<string, { app: string; channel: string }>();
   private pending = new Map<string, { channel: string; title: string }>();
   private n = 0;
@@ -48,6 +50,7 @@ export class FakePlatforms {
     this.ownIp = "198.51.100.20";
     this.quotaExceeded = false;
     this.refuseWith = null;
+    this.holdUploads = null;
   }
 
   endpoints(): Endpoints {
@@ -140,6 +143,7 @@ export class FakePlatforms {
       if (this.quotaExceeded) {
         return json({ error: { code: 403, message: "The request cannot be completed because you have exceeded your quota.", errors: [{ reason: "quotaExceeded" }] } }, 403);
       }
+      await this.holdUploads;
       const id = `vid-${++this.n}`;
       this.pending.set(id, { channel, title: String((jsonBody().snippet as { title?: string } | undefined)?.title ?? "") });
       return json({}, 200, { location: `${this.base}/upload/youtube/v3/session/${id}` });
