@@ -37,10 +37,10 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
 
-    // Step 16 is the growth lab, step 17 the trend radar and hook lab, step 18 the isolation groups.
+    // Step 16 is the growth lab, step 17 the trend radar and hook lab, step 18 the Google tables, step 19 the isolation groups.
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     expect(tables(db)).toEqual(
-      expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations", "isolation_groups", "trend_videos", "hook_tests"]),
+      expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations", "isolation_groups", "trend_videos", "hook_tests", "google_calls", "clip_thumbs"]),
     );
     const postColumns = db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all();
     expect(postColumns).toEqual(expect.arrayContaining(["metrics", "whop_approved_at", "whop_paid_at"]));
@@ -52,7 +52,7 @@ describe("migrate", () => {
     for (const sql of MIGRATIONS.slice(0, ALL_OF_MAIN)) db.exec(sql);
     db.pragma(`user_version = ${ALL_OF_MAIN}`);
     // The shipped migrations keep their places: the job queue's worker row, the permission proof columns, Live mode,
-    // Clip polish, Campaign import, the engine runs, the growth lab and the trend radar and hook lab all come before the isolation groups.
+    // Clip polish, Campaign import, the engine runs, the growth lab, the trend radar and hook lab and the Google tables all come before the isolation groups.
     expect(tables(db)).toContain("queue_worker");
     expect(tables(db)).toContain("live_captures");
     expect(tables(db)).toContain("engine_runs");
@@ -61,7 +61,7 @@ describe("migrate", () => {
     const permissionCols = (db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name);
     expect(permissionCols).toContain("proof_url");
     expect(permissionCols).toContain("campaign_rules");
-    expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants"]));
+    expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants", "google_calls", "clip_thumbs"]));
     expect(tables(db)).not.toContain("isolation_groups");
 
     expect(() => migrate(db)).not.toThrow();

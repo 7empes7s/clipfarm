@@ -550,7 +550,7 @@ describe("Settings: who may see what", () => {
     const saved = await request(app).put("/api/settings/openai").set("Cf-Access-Jwt-Assertion", signIn.token()).send({ values: { OPENAI_API_KEY: KEYS.openai } });
     expect(saved.status).toBe(200);
     const health = await call("get", "/api/health");
-    expect(health.body).toEqual({ ok: true, configured: { openai: true, twitch: false, youtube: false, postiz: false, "upload-post": false } });
+    expect(health.body).toEqual({ ok: true, configured: { openai: true, google: false, twitch: false, youtube: false, postiz: false, "upload-post": false } });
   });
 });
 

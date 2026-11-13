@@ -7,6 +7,7 @@ import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
+import { ThumbSheet } from "./ThumbSheet";
 import { QualityChips } from "./QualityChips";
 import { shortDate, usd } from "./format";
 import { filterClips } from "./review";
@@ -79,6 +80,7 @@ export function ClipsTab({
   const [skippedNote, setSkippedNote] = useState<string | null>(null);
   const [posting, setPosting] = useState<Clip | null>(null);
   const [exporting, setExporting] = useState<Clip | null>(null);
+  const [thumbsOf, setThumbsOf] = useState<Clip | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -100,6 +102,7 @@ export function ClipsTab({
 
   const closePost = useCallback(() => setPosting(null), []);
   const closeExport = useCallback(() => setExporting(null), []);
+  const closeThumbs = useCallback(() => setThumbsOf(null), []);
   const clips = filterClips(allClips, view);
 
   async function act(fn: () => Promise<unknown>) {
@@ -182,6 +185,9 @@ export function ClipsTab({
                             Export
                           </button>
                         )}
+                        <button type="button" onClick={() => setThumbsOf(clip)}>
+                          Thumbnail
+                        </button>
                       </>
                     )}
                     {clip.status !== "rejected" && clip.postCount === 0 && (
@@ -217,6 +223,7 @@ export function ClipsTab({
           }}
         />
       )}
+      {thumbsOf && <ThumbSheet clip={thumbsOf} onClose={closeThumbs} />}
       {exporting && (
         <ExportSheet
           clip={exporting}

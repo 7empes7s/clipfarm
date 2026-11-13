@@ -417,6 +417,30 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN variant_hook TEXT;
   `,
   `
+  -- Gemini on the Google credit: every call with its estimated cost, and the thumbnail options of a clip.
+  CREATE TABLE google_calls (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    model TEXT NOT NULL,
+    in_tokens INTEGER NOT NULL,
+    out_tokens INTEGER NOT NULL,
+    cost_eur REAL NOT NULL
+  );
+  CREATE INDEX google_calls_at ON google_calls(at);
+  CREATE TABLE clip_thumbs (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    ai INTEGER NOT NULL,
+    cover_path TEXT NOT NULL,
+    wide_path TEXT NOT NULL,
+    chosen INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX clip_thumbs_clip ON clip_thumbs(clip_id);
+  `,
+  `
   -- Account isolation: groups of accounts that share developer apps and a way out to the internet.
   -- Keys and proxy addresses are in the secrets file, not here. A NULL group_id is the built-in
   -- group of the account's role (1 Main, 2 Burners).

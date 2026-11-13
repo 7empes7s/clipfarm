@@ -6,6 +6,8 @@ import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
 import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
+import { proxyMaker, videoReranker } from "./google/rerank.js";
+import { THUMBS_JOB, thumbsHandler, ThumbsRepo } from "./google/thumbs.js";
 import { Isolation } from "./isolation/isolation.js";
 import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
@@ -50,6 +52,7 @@ export interface Runtime {
   hookLab: HookLab;
   liveRepo: LiveRepo;
   notifier: Notifier;
+  thumbs: ThumbsRepo;
 }
 
 /**
@@ -61,11 +64,13 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const config = loadConfig(env, settings);
   const db = openDb(config.dbFile);
   config.engine.bind(db);
+  config.google.bind(db);
   const sources = new SourcesRepo(db);
   const vods = new VodsRepo(db);
   const picks = new PicksRepo(db);
   const clips = new ClipsRepo(db);
   const posts = new PostsRepo(db);
+  const thumbs = new ThumbsRepo(db);
   const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
   const publisher = new Publisher({ sources, clips, posts, service: config.postingService, isolation, vodTitle: (id) => vods.get(id).title });
   const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
@@ -112,6 +117,8 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         picks,
         picker: config.picker,
         maxPicks: config.maxPicks,
+        // Not in demo mode: the stand-in has nothing to see, and a proxy per pick would only slow the demo.
+        rerank: config.fakes ? undefined : videoReranker({ google: config.google, proxy: proxyMaker(config.sectionDownloader) }),
         preferences: () => growthRepo.defaults(),
         trends: () => radar.boost(),
       }),
@@ -137,6 +144,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         contextSec: config.live.segmentSec * 2,
       }),
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
+      [THUMBS_JOB]: thumbsHandler({ clips, thumbs, google: config.google, mediaDir }),
       [HOOK_VARIANTS_JOB]: hookVariantsHandler({ lab: hookLab, clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
@@ -170,5 +178,6 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     hookLab,
     liveRepo,
     notifier,
+    thumbs,
   };
 }

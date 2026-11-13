@@ -3385,3 +3385,45 @@ button.danger {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Google credit card and the thumbnail picker */
+.google-spent {
+  margin: var(--s2) 0 0;
+  font-size: var(--t-md);
+}
+.google-spent strong {
+  font-family: var(--font-head);
+  font-size: var(--t-xl);
+}
+.google-limits {
+  margin-top: var(--s3);
+}
+.thumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+.thumb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s2);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-size: var(--t-sm);
+}
+.thumb.is-chosen {
+  border-color: var(--ok);
+}
+.thumb img {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: calc(var(--radius-small) - 4px);
+  background: var(--sunk);
+}
