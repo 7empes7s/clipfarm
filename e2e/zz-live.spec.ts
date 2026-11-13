@@ -90,6 +90,8 @@ test("launch day: the leak rule before launch, then live clips tagged LIVE in th
   } finally {
     // Back to the real launch time (which stops the recording), then clear what this test made.
     await request.put("/api/live/launch", { data: { launchAt: before.launchAt } });
+    // And the switch back to "off until launch", as the next run (the other screen size) expects to find it.
+    await request.post("/api/live/disarm");
     await expect
       .poll(
         async () => {
