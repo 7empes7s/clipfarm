@@ -96,8 +96,8 @@ export function ScoutCard({ refreshKey, onJoined }: { refreshKey: string; onJoin
                 </p>
               </div>
               <p className="scout-facts">
-                {c.facts.ratePer1kUsd !== null && `${dollars(c.facts.ratePer1kUsd)} per 1,000 views`}
-                {c.facts.platforms.length > 0 && ` on ${c.facts.platforms.map((p) => PLATFORM_LABELS[p]).join(", ")}`}.
+                {c.facts.ratePer1kUsd !== null &&
+                  `${dollars(c.facts.ratePer1kUsd)} per 1,000 views${c.facts.platforms.length > 0 ? ` on ${c.facts.platforms.map((p) => PLATFORM_LABELS[p]).join(", ")}` : ""}.`}
                 {c.facts.budgetLeftUsd !== null &&
                   ` ${dollars(c.facts.budgetLeftUsd)}${c.facts.budgetTotalUsd !== null ? ` of ${dollars(c.facts.budgetTotalUsd)}` : ""} budget left.`}
                 {c.facts.minViews !== null && ` Pays from ${c.facts.minViews.toLocaleString("en")} views.`}
