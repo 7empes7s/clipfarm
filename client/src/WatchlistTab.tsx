@@ -5,6 +5,7 @@ import { channelUrl } from "../../shared/watchlist";
 import { api } from "./api";
 import { ago } from "./format";
 import { Sheet } from "./Sheet";
+import { EmptyState } from "./ui";
 
 const NEEDS_PERMISSION = "Needs permission: join their program";
 
@@ -111,7 +112,9 @@ export function WatchlistTab({ sources, onQueued }: { sources: Source[]; onQueue
       )}
 
       {list && creators.length === 0 ? (
-        <p className="empty">Nobody on the watchlist. Add the streamers you want to clip.</p>
+        <EmptyState icon="watchlist" title="Nobody on the watchlist" action={{ label: "Add your first creator", onClick: () => setEditing("new") }}>
+          Add the streamers you want to clip. Their new streams are found on their own and, with permission, cut into clips.
+        </EmptyState>
       ) : (
         <ul className="stack">
           {shown.map((c) => (

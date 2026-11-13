@@ -3,6 +3,8 @@ import type { IntegrationId, IntegrationStatus, SettingField, SettingsInfo } fro
 import { api } from "./api";
 import { shortDate } from "./format";
 import { Sheet } from "./Sheet";
+import { saveTheme, savedTheme, THEME_LABELS, THEMES } from "./theme";
+import { Skeleton } from "./ui";
 
 /** Where each key comes from: short numbered steps, with the exact values to type on the other site. */
 const STEPS: Record<IntegrationId, { title: string; steps: ReactNode[] }> = {
@@ -139,6 +141,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
     if (loaded && focus) document.getElementById(`settings-${focus}`)?.scrollIntoView({ block: "start" });
   }, [loaded, focus]);
 
+  const [theme, setTheme] = useState(savedTheme);
   const closeSheet = useCallback(() => setEditing(null), []);
   const editingRow = info?.integrations.find((i) => i.id === editing);
 
@@ -160,7 +163,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
           {error}
         </p>
       )}
-      {!info && !error && <p className="hint">Loading…</p>}
+      {!info && !error && <Skeleton shape="card" count={3} />}
       {info && (
         <ul className="stack">
           {info.integrations.map((row) => (
@@ -168,6 +171,25 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
           ))}
         </ul>
       )}
+      <div className="card look" data-testid="settings-look">
+        <h3 id="look-title">Look</h3>
+        <div className="chips" role="radiogroup" aria-labelledby="look-title">
+          {THEMES.map((t) => (
+            <label key={t} className="chip">
+              <input
+                type="radio"
+                name="theme"
+                checked={theme === t}
+                onChange={() => {
+                  saveTheme(t);
+                  setTheme(t);
+                }}
+              />
+              {THEME_LABELS[t]}
+            </label>
+          ))}
+        </div>
+      </div>
       {editingRow && (
         <KeysSheet
           row={editingRow}
