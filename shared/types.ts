@@ -841,6 +841,21 @@ export interface ExperimentReport {
   byCreator: ExperimentRow[];
 }
 
+/** What the box's auto-deploy last did (ops/clipfarm/autodeploy.sh writes it: names and states, never a key). */
+export interface LiveVersion {
+  /** The commit that was tried. */
+  sha: string;
+  at: string;
+  /** "rolled back": it did not start, the version before it is live again. "failed": it could not be built. */
+  result: "live" | "rolled back" | "failed";
+  /** Why, in plain words; empty when it went live. */
+  reason: string;
+  keys: { name: string; state: "Working" | "Failed" | "Not set" }[];
+  /** clipfarm:check: the service, its port, Caddy and the public address. */
+  check: { ok: boolean; problems: string[] };
+  postiz: { state: "healthy" | "not healthy" | "not installed"; detail: string };
+}
+
 export interface Dashboard {
   /** No clips, VODs or posts yet: the app offers "Load demo data". */
   empty: boolean;

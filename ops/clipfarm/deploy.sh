@@ -7,6 +7,9 @@
 #                                If the check fails, "current" goes back to the release that was live.
 #   clipfarm-deploy --rollback   switch to the other kept release without building.
 #
+# Exit code 3: the release was built but did not answer, so the one before it is live again
+# (autodeploy.sh reports that as "rolled back"). Any other failure left the live release alone.
+#
 # The last 2 releases are kept. Layout under /opt/clipfarm-live:
 #   repo/                 git clone, only read (git archive)
 #   releases/<UTC time>-<commit>/
@@ -126,7 +129,7 @@ if [ ! -f "$release/dist/server/index.js" ] || [ ! -f "$release/dist/client/inde
 fi
 
 if ! go_live "$new" "$previous"; then
-  exit 1 # the trap removes the failed release
+  exit 3 # the trap removes the failed release
 fi
 built=1
 
