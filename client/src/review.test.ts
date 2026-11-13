@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Clip, Job, Source } from "../../shared/types";
+import { DEFAULT_EFFECTS } from "../../shared/types";
 import { clipView, decide, filterClips, inboxQueue, merge, nextAfter, tabCounts, undo } from "./review";
 
 function clip(id: number, patch: Partial<Clip> = {}): Clip {
@@ -9,6 +10,8 @@ function clip(id: number, patch: Partial<Clip> = {}): Clip {
     vodId: null,
     title: `Clip ${id}`,
     hook: "",
+    effects: DEFAULT_EFFECTS,
+    quality: null,
     reason: "",
     score: null,
     durationSec: 20,

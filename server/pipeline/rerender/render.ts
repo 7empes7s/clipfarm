@@ -1,27 +1,55 @@
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { FaceCam, Job } from "../../../shared/types.js";
+import type { ClipQuality, FaceCam, Job } from "../../../shared/types.js";
 import type { ClipsRepo, RenderInput } from "../../clips/repo.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import { run } from "../../tools/exec.js";
-import { probeDuration, probeVideoSize } from "../../tools/ffmpeg.js";
+import { probeVideo } from "../../tools/ffmpeg.js";
+import { checkQuality } from "../polish/quality.js";
+import { preparePolish } from "../polish/run.js";
+import { wordsInWindow } from "../../clips/edit.js";
+import { reactionPeak } from "../polish/plan.js";
 import { planRender } from "./plan.js";
 
 export const RENDER_CLIP_JOB = "render-clip";
 
-/** Cuts and lays out one clip from its master into `outPath` (1080×1920, captions burned in). */
+/**
+ * Cuts and lays out one clip from its master into `outPath` (1080×1920, captions burned in, with the
+ * finishing touches the clip has turned on), then checks the result.
+ */
 export async function renderClip(
   input: RenderInput & { faceCam: FaceCam | null },
   outPath: string,
   tmpDir: string,
   signal?: AbortSignal,
-): Promise<number> {
-  const { width, height } = await probeVideoSize(input.masterPath, signal);
-  const plan = planRender({ ...input, outPath, srcW: width, srcH: height });
+): Promise<{ durationSec: number; quality: ClipQuality }> {
+  const master = await probeVideo(input.masterPath, signal);
+  const durationSec = input.endSec - input.startSec;
+  const words = wordsInWindow(input.captionWords, input.startSec, input.endSec).map((w) => ({
+    ...w,
+    startSec: w.startSec - input.startSec,
+    endSec: w.endSec - input.startSec,
+  }));
+  // The measured peak when it is still inside the cut, else the transcript's own peak.
+  const measured = input.peakSec !== null && input.peakSec >= input.startSec && input.peakSec < input.endSec;
+  const polish = await preparePolish({
+    input: input.masterPath,
+    offsetSec: input.startSec,
+    durationSec,
+    effects: input.effects,
+    hook: input.hook,
+    words,
+    peakSec: measured ? input.peakSec! - input.startSec : reactionPeak(words, null, durationSec),
+    hasAudio: master.hasAudio,
+    tmpDir,
+    signal,
+  });
+  const plan = planRender({ ...input, outPath, srcW: master.width, srcH: master.height, polish });
   if (plan.ass) await writeFile(join(tmpDir, "captions.ass"), plan.ass);
   await run("ffmpeg", plan.args, { signal, cwd: tmpDir });
-  return probeDuration(outPath, signal);
+  const quality = await checkQuality(outPath, { ass: plan.ass, effects: input.effects, startSec: input.startSec, signal });
+  return { durationSec: (await probeVideo(outPath, signal)).durationSec, quality };
 }
 
 /**
@@ -35,13 +63,13 @@ export function renderClipHandler(deps: { clips: ClipsRepo; sources: SourcesRepo
     const { faceCam } = deps.sources.get(input.sourceId);
     progress(0.1, "Cutting the new version");
     const out = join(tmpDir, "clip.mp4");
-    const durationSec = await renderClip({ ...input, faceCam }, out, tmpDir, signal);
+    const { durationSec, quality } = await renderClip({ ...input, faceCam }, out, tmpDir, signal);
     progress(0.9, "Saving");
     await mkdir(deps.mediaDir, { recursive: true });
     const dest = join(deps.mediaDir, `clip-${clipId}-${Date.now()}.mp4`);
     try {
       await copyFile(out, dest);
-      deps.clips.setRendered(clipId, dest, durationSec);
+      deps.clips.setRendered(clipId, dest, durationSec, quality);
     } catch (err) {
       await rm(dest, { force: true });
       throw err;

@@ -2028,3 +2028,44 @@ button.danger {
 .flag .hint {
   color: inherit;
 }
+
+/* Quality check: one warning chip per problem found in a render, and the Fix button. */
+.quality {
+  margin: var(--s2) 0;
+  min-width: 0;
+}
+.quality-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quality-chip {
+  max-width: 100%;
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--work);
+  border-left-width: 4px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.quality-fix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin-top: var(--s2);
+}
+.quality-fix button {
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border-color: var(--work);
+}
+.quality-fix .hint {
+  margin: 0;
+}

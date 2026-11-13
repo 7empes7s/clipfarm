@@ -74,7 +74,7 @@ describe("buildAss", () => {
     expect(marginL).toBe(SAFE.left);
   });
 
-  it("shows the hook for the first 2 s and one caption event per word, highlighting it", () => {
+  it("shows the hook for the first 1.5 s and one caption event per word, highlighting it", () => {
     const events = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
     expect(events[0]).toBe(`Dialogue: 1,0:00:00.00,${assTime(HOOK_SECONDS)},Hook,,0,0,0,,HE DID NOT EXPECT THIS`);
     const captions = events.slice(1);

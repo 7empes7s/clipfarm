@@ -1,6 +1,7 @@
 import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Job } from "../../../shared/types.js";
+import type { ClipQuality, Job } from "../../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../../shared/types.js";
 import { HttpError } from "../../errors.js";
 import type { ClipsRepo } from "../../clips/repo.js";
 import type { JobHandler } from "../../jobs/queue.js";
@@ -8,6 +9,9 @@ import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import { probeVideo } from "../../tools/ffmpeg.js";
 import type { VodsRepo } from "../../vods/repo.js";
+import { reactionPeak } from "../polish/plan.js";
+import { checkQuality } from "../polish/quality.js";
+import { preparePolish } from "../polish/run.js";
 import { buildAss, clipWords } from "./captions.js";
 import { planLayout } from "./layout.js";
 import { grabFrame, renderClip } from "./render.js";
@@ -29,8 +33,8 @@ export interface RenderDeps {
 
 /**
  * pick → 9:16 clip. Downloads only the picked section (plus padding) into the job's temp folder,
- * renders the layout with burned-in karaoke captions and the hook, and keeps just the MP4 and a
- * thumbnail in media/. The temp folder (section, captions) is removed by the queue.
+ * renders the layout with burned-in karaoke captions, the hook card and the other finishing touches,
+ * checks the result, and keeps just the MP4 and a thumbnail in media/. The temp folder (section, captions) is removed by the queue.
  */
 export function renderHandler(deps: RenderDeps): JobHandler {
   return async ({ payload, tmpDir, signal, progress }) => {
@@ -58,23 +62,35 @@ export function renderHandler(deps: RenderDeps): JobHandler {
 
     progress(0.3, "Cutting and adding captions");
     const durationSec = pick.endSec - pick.startSec;
+    const offsetSec = pick.startSec - section.startSec;
+    const words = clipWords(vod.words, pick.startSec, pick.endSec);
+    // The reaction peak: the same loudness and transcript score the picks used, inside this clip.
+    const loudness = deps.vods.loudness(pick.vodId).slice(Math.floor(pick.startSec), Math.ceil(pick.endSec));
+    const peakSec = reactionPeak(words, loudness, durationSec);
     let plannedLayout = pick.layout;
+    let quality: ClipQuality | null = null;
     await timed("render", async () => {
       const info = await probeVideo(input, signal);
       const plan = planLayout(pick.layout, info.width, info.height, source.faceCam);
       plannedLayout = plan.layout;
-      await writeFile(join(tmpDir, "captions.ass"), buildAss(clipWords(vod.words, pick.startSec, pick.endSec), pick.hook));
+      const polish = await preparePolish({
+        input, offsetSec, durationSec, effects: DEFAULT_EFFECTS, hook: pick.hook, words, peakSec, hasAudio: info.hasAudio, tmpDir, signal,
+      });
+      const ass = buildAss(words, polish.hookCard ? pick.hook : "");
+      await writeFile(join(tmpDir, "captions.ass"), ass);
       await renderClip({
         input,
-        offsetSec: pick.startSec - section.startSec,
+        offsetSec,
         durationSec,
         plan,
         assFile: "captions.ass",
         cwd: tmpDir,
         output: join(tmpDir, "clip.mp4"),
         preset: deps.preset,
+        polish,
         signal,
       });
+      quality = await checkQuality(join(tmpDir, "clip.mp4"), { ass, effects: DEFAULT_EFFECTS, startSec: offsetSec, signal });
       await grabFrame(join(tmpDir, "clip.mp4"), Math.min(1, durationSec / 2), join(tmpDir, "thumb.jpg"), { signal });
     });
 
@@ -96,7 +112,6 @@ export function renderHandler(deps: RenderDeps): JobHandler {
     }
     const out = await probeVideo(filePath, signal);
     const clipDurationSec = Math.round(out.durationSec * 1000) / 1000;
-    const offsetSec = pick.startSec - section.startSec;
     const clipId =
       pick.clipId ??
       deps.clips.create({
@@ -115,7 +130,11 @@ export function renderHandler(deps: RenderDeps): JobHandler {
         masterDurationSec: section.endSec - section.startSec,
         startSec: offsetSec,
         endSec: offsetSec + durationSec,
+        peakSec: peakSec === null ? null : offsetSec + peakSec,
+        quality,
       }).id;
+    // A pick rendered again keeps its clip; the check applies only while the clip still shows this file.
+    if (pick.clipId && quality && deps.clips.filePath(clipId) === filePath) deps.clips.setQuality(clipId, quality);
     const saved = deps.picks.saveRender(pickId, {
       filePath,
       thumbPath,

@@ -237,6 +237,13 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN strike_at TEXT;
   ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
   `,
+  `
+  -- Clip polish: the effects turned off per clip, where the reaction peaks in the master, and the
+  -- result of the automatic check on the latest render.
+  ALTER TABLE clips ADD COLUMN effects TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE clips ADD COLUMN peak_sec REAL;
+  ALTER TABLE clips ADD COLUMN quality TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

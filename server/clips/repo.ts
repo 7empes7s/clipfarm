@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import type { Db } from "../db/index.js";
-import type { Clip, ClipEditInput, ClipLayout, ClipStatus, RejectReason, Word } from "../../shared/types.js";
+import type { Clip, ClipEditInput, ClipEffects, ClipLayout, ClipQuality, ClipStatus, RejectReason, Word } from "../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { retimeCaptions } from "./edit.js";
 
@@ -23,6 +24,9 @@ interface ClipRow {
   start_sec: number;
   end_sec: number | null;
   version: number;
+  effects: string;
+  peak_sec: number | null;
+  quality: string | null;
   post_count?: number;
   experiment?: number;
   created_at: string;
@@ -45,6 +49,9 @@ export interface NewClip {
   masterDurationSec?: number | null;
   startSec?: number;
   endSec?: number | null;
+  /** Where the reaction peaks, in master seconds (the punch-in zoom lands there). */
+  peakSec?: number | null;
+  quality?: ClipQuality | null;
 }
 
 /** What the renderer needs to make a new version of a clip. */
@@ -57,6 +64,9 @@ export interface RenderInput {
   layout: ClipLayout;
   hook: string;
   captionWords: Word[];
+  effects: ClipEffects;
+  /** Master seconds; null when the peak was never measured. */
+  peakSec: number | null;
 }
 
 export type ReviewAction = "approve" | "reject";
@@ -78,6 +88,8 @@ function toClip(r: ClipRow): Clip {
     endSec: r.end_sec ?? r.start_sec + r.duration_sec,
     masterDurationSec: r.master_duration_sec ?? r.duration_sec,
     captionWords: JSON.parse(r.caption_words) as Word[],
+    effects: { ...DEFAULT_EFFECTS, ...(JSON.parse(r.effects) as Partial<ClipEffects>) },
+    quality: r.quality ? (JSON.parse(r.quality) as ClipQuality) : null,
     postCount: r.post_count ?? 0,
     experiment: r.experiment === 1,
     videoUrl: `/api/clips/${r.id}/video?v=${r.version}`,
@@ -104,7 +116,8 @@ export class ClipsRepo {
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO clips (source_id, vod_id, title, file_path, duration_sec, hook, reason, score, layout, caption_words,
-           master_path, master_duration_sec, start_sec, end_sec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           master_path, master_duration_sec, start_sec, end_sec, peak_sec, quality, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.sourceId,
@@ -121,6 +134,8 @@ export class ClipsRepo {
         c.masterDurationSec ?? null,
         c.startSec ?? 0,
         c.endSec ?? null,
+        c.peakSec ?? null,
+        c.quality ? JSON.stringify(c.quality) : null,
         this.now().toISOString(),
       );
     return this.get(Number(lastInsertRowid));
@@ -219,11 +234,36 @@ export class ClipsRepo {
         .run(id, r.status, r.reject_reason, this.now().toISOString());
       this.db
         .prepare(
-          `UPDATE clips SET title = ?, hook = ?, caption_words = ?, layout = ?, start_sec = ?, end_sec = ?, status = 'rendering',
-             reject_reason = NULL, master_path = COALESCE(master_path, file_path),
+          `UPDATE clips SET title = ?, hook = ?, caption_words = ?, layout = ?, start_sec = ?, end_sec = ?, effects = ?,
+             status = 'rendering', reject_reason = NULL, master_path = COALESCE(master_path, file_path),
              master_duration_sec = COALESCE(master_duration_sec, duration_sec) WHERE id = ?`,
         )
-        .run(edit.title, edit.hook, JSON.stringify(words), edit.layout, edit.startSec, edit.endSec, id);
+        .run(edit.title, edit.hook, JSON.stringify(words), edit.layout, edit.startSec, edit.endSec, JSON.stringify(edit.effects), id);
+    })();
+    return this.get(id);
+  }
+
+  /** Applies the change the quality check suggested and marks the clip "rendering", like an edit. */
+  applyFix(id: number): Clip {
+    const r = this.row(id);
+    const clip = toClip(r);
+    if (clip.status === "rendering") throw new ValidationError("A new version of this clip is already being made.");
+    if (clip.postCount > 0) throw new ValidationError("This clip is already posted, so it cannot be changed.");
+    const fix = clip.quality?.fix;
+    if (!fix) throw new ValidationError("There is no automatic fix for this clip. Use Edit.");
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "INSERT INTO clip_reviews (clip_id, action, reason, prev_status, prev_reject_reason, created_at) VALUES (?, 'edit', NULL, ?, ?, ?)",
+        )
+        .run(id, r.status, r.reject_reason, this.now().toISOString());
+      this.db
+        .prepare(
+          `UPDATE clips SET start_sec = ?, end_sec = ?, effects = ?, status = 'rendering', reject_reason = NULL,
+             master_path = COALESCE(master_path, file_path),
+             master_duration_sec = COALESCE(master_duration_sec, duration_sec) WHERE id = ?`,
+        )
+        .run(fix.startSec ?? clip.startSec, fix.endSec ?? clip.endSec, JSON.stringify({ ...clip.effects, ...fix.effects }), id);
     })();
     return this.get(id);
   }
@@ -240,17 +280,24 @@ export class ClipsRepo {
       layout: r.layout,
       hook: r.hook,
       captionWords: clip.captionWords,
+      effects: clip.effects,
+      peakSec: r.peak_sec,
     };
   }
 
   /** Swaps in a newly rendered file (deleting the previous render, never the master) and puts the clip back in the inbox. */
-  setRendered(id: number, filePath: string, durationSec: number): Clip {
+  setRendered(id: number, filePath: string, durationSec: number, quality: ClipQuality | null = null): Clip {
     const r = this.row(id);
     this.db
-      .prepare("UPDATE clips SET file_path = ?, duration_sec = ?, status = 'pending', version = version + 1 WHERE id = ?")
-      .run(filePath, durationSec, id);
+      .prepare("UPDATE clips SET file_path = ?, duration_sec = ?, quality = ?, status = 'pending', version = version + 1 WHERE id = ?")
+      .run(filePath, durationSec, quality ? JSON.stringify(quality) : null, id);
     if (r.file_path !== filePath && r.file_path !== (r.master_path ?? r.file_path)) rmSync(r.file_path, { force: true });
     return this.get(id);
+  }
+
+  /** Stores the result of the automatic check on the clip's current render. */
+  setQuality(id: number, quality: ClipQuality): void {
+    this.db.prepare("UPDATE clips SET quality = ? WHERE id = ?").run(JSON.stringify(quality), id);
   }
 
   /** When each approve or reject still in force was made, oldest first (review speed on the dashboard). */

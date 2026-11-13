@@ -79,12 +79,17 @@ describe("captionEvents", () => {
 });
 
 describe("buildAss", () => {
-  it("writes the hook for the first 2 s and each caption line, without ASS override braces", () => {
+  it("writes the hook for the first 1.5 s and each caption line, without ASS override braces", () => {
     const ass = buildAss([{ startSec: 0.5, endSec: 1.25, text: "no {way}" }], "WAIT {FOR} IT", 6);
-    expect(ass).toContain("Dialogue: 1,0:00:00.00,0:00:02.00,Hook,,0,0,0,,WAIT FOR IT");
+    expect(ass).toContain("Dialogue: 1,0:00:00.00,0:00:01.50,Hook,,0,0,0,,WAIT FOR IT");
     expect(ass).toContain("Dialogue: 0,0:00:00.50,0:00:01.25,Caption,,0,0,0,,no way");
     // Margins keep the bottom 20 % and the right 15 % clear of the captions.
     expect(ass).toMatch(/Style: Caption,.*,2,90,170,430,1/);
+  });
+
+  it("sets a line with a very long word smaller, so it stays inside the safe width", () => {
+    const ass = buildAss([{ startSec: 0, endSec: 1, text: "Supercalifragilisticexpialidocious ok" }], "", 6);
+    expect(ass).toContain("Caption,,0,0,0,,{\\fs35}Supercalifragilisticexpialidocious ok");
   });
 });
 
@@ -94,7 +99,7 @@ describe("planRender", () => {
   it("seeks to the trim, keeps the length and burns captions from captions.ass", () => {
     const plan = planRender({ ...base, hook: "HOOK", captionWords: words([["hi", 3, 3.5]]) });
     expect(plan.args.slice(plan.args.indexOf("-ss"), plan.args.indexOf("-ss") + 6)).toEqual(["-ss", "2", "-i", "/m.mp4", "-t", "5.5"]);
-    expect(plan.args[plan.args.indexOf("-filter_complex") + 1]).toMatch(/;\[v\]ass=captions\.ass\[vout\]$/);
+    expect(plan.args[plan.args.indexOf("-filter_complex") + 1]).toContain(";[v]ass=captions.ass,format=yuv420p[vout];");
     expect(plan.args).toContain("[vout]");
     expect(plan.ass).toContain("Caption,,0,0,0,,hi");
   });
@@ -102,7 +107,6 @@ describe("planRender", () => {
   it("skips the subtitle pass when there is no hook and no caption", () => {
     const plan = planRender({ ...base, hook: " ", captionWords: [] });
     expect(plan.ass).toBeNull();
-    expect(plan.args).toContain("[v]");
     expect(plan.args.join(" ")).not.toContain("ass=");
   });
 });
