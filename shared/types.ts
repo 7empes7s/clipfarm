@@ -51,6 +51,8 @@ export interface CampaignRules {
   maxSec: number | null;
   /** What was left of the budget when the page was last read. */
   budgetLeftUsd: number | null;
+  /** The clip has to be submitted by hand within 30 minutes of posting (Whop and Content Rewards: yes unless the page says otherwise). */
+  manualSubmit: boolean;
 }
 
 export const NO_CAMPAIGN_RULES: CampaignRules = {
@@ -61,6 +63,7 @@ export const NO_CAMPAIGN_RULES: CampaignRules = {
   minSec: null,
   maxSec: null,
   budgetLeftUsd: null,
+  manualSubmit: true,
 };
 
 /** The fields of a campaign that a page can fill. */
@@ -644,8 +647,21 @@ export interface Post {
   exitIp: string | null;
   /** Something to know about a waiting post, e.g. that it waits for YouTube's quota. */
   note: string | null;
-  /** Views × the campaign's pay per 1,000 (less Whop's 10% fee on a Whop campaign), or 0 under its minimum views. */
+  /** Views × the campaign's pay per 1,000 (less Whop's 10% fee on a Whop campaign), or 0 under its minimum views or after a missed submit window. */
   estimatedEarningsUsd: number;
+  /** A campaign post that has to be submitted by hand within 30 minutes of going live; null for every other post. */
+  submit: PostSubmit | null;
+  /** What a post with a missed submit window would have earned; 0 for every other post. */
+  lostEarningsUsd: number;
+}
+
+export interface PostSubmit {
+  /** When the post went live; null while it waits for its time. */
+  liveAt: string | null;
+  /** The end of the submit window; null while it waits. */
+  dueBy: string | null;
+  /** Set when the window passed without a submit. */
+  missedAt: string | null;
 }
 
 export const WHOP_STEPS = ["submitted", "approved", "paid"] as const;
@@ -686,6 +702,9 @@ export interface Stats {
   approvedClips: number;
   /** Spend so far (transcription) divided by approved clips; null before the first approval. */
   costPerApprovedClipUsd: number | null;
+  /** Campaign posts that were not submitted within 30 minutes, and what they would have earned. */
+  missedWindows: number;
+  lostEarningsUsd: number;
   byCampaign: StatsRow[];
   byPlatform: StatsRow[];
 }

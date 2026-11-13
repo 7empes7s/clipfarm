@@ -82,6 +82,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     posts,
     service: config.postingService,
     isolation,
+    submitWindow: true,
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
   });

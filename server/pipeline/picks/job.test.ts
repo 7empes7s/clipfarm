@@ -92,7 +92,7 @@ describe("picks job", () => {
   });
 
   it("gives the picker the campaign's rules and leaves out picks that break them", async () => {
-    const rules = { requiredTags: ["#ad"], requiredLinks: [], requiredText: [], bannedWords: ["ex"], minSec: null, maxSec: 20, budgetLeftUsd: null };
+    const rules = { requiredTags: ["#ad"], requiredLinks: [], requiredText: [], bannedWords: ["ex"], minSec: null, maxSec: 20, budgetLeftUsd: null, manualSubmit: true };
     // The first pick is 25 s (the campaign takes 20 s); the second says "ex" (at 150 s), which only the campaign's rules ban.
     const { queue, picks, vod, chat, rendered } = setup({ picks: [pick(20, 45, 90), pick(140, 160, 80)] }, false, { briefRules: "Credit the streamer.", rules });
     queue.enqueue(PICKS_JOB, { vodId: vod.id }, { vodId: vod.id });

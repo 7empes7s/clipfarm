@@ -65,6 +65,14 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       data: { url: typeof notice.url === "string" && notice.url.startsWith("/") ? notice.url : "/" },
+      // A campaign clip to submit: "I'm busy" right on the notification (phones show the first two).
+      actions: notice.snooze
+        ? [
+            { action: "snooze-1h", title: "Busy 1 h" },
+            { action: "snooze-3h", title: "Busy 3 h" },
+            { action: "snooze-today", title: "Busy today" },
+          ]
+        : [],
     }),
   );
 });
@@ -72,6 +80,18 @@ self.addEventListener("push", (event) => {
 // A tap opens the app where the notice points (the Inbox for a clip), in the window already open if there is one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  // "I'm busy": campaign posts due in that time move to after it. The app is not opened.
+  if (event.action && event.action.startsWith("snooze-")) {
+    event.waitUntil(
+      fetch("/api/posting/snooze", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ for: event.action.slice("snooze-".length) }),
+      }).catch(() => undefined),
+    );
+    return;
+  }
   const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {

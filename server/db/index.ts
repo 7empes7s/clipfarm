@@ -482,6 +482,15 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (group_id, day)
   );
   `,
+  `
+  -- Submit window: a campaign post that has to be submitted by hand within 30 minutes of going live.
+  -- "held" posts wait in clipfarm and are handed to the posting service when they are due.
+  ALTER TABLE posts ADD COLUMN needs_submit INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE posts ADD COLUMN held INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE posts ADD COLUMN submit_notified_at TEXT;
+  ALTER TABLE posts ADD COLUMN submit_reminded_at TEXT;
+  ALTER TABLE posts ADD COLUMN submit_missed_at TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { clientBuildProblem, createApp } from "./app.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
+import { SubmitWatch } from "./publish/submitWatch.js";
 import { openRuntime } from "./runtime.js";
 import { Campaigns } from "./sources/campaign/service.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
@@ -126,7 +127,10 @@ const refreshTimer = setInterval(() => {
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 // Posts clipfarm uploads itself go out when they are due; every proxy is tested again once a day.
-const directTimer = setInterval(() => void direct.runDue(), 60_000);
+// The same round runs the submit window: held campaign posts go out, "submit within 30 min" is pushed
+// when a post is live and again at 20 minutes, and the window is marked missed at 30.
+const submitWatch = new SubmitWatch({ posts, publisher, notifier, sendDirect: () => direct.runDue() });
+const directTimer = setInterval(() => void submitWatch.tick().catch((err: unknown) => console.error(`[submit window] ${(err as Error).message}`)), 60_000);
 directTimer.unref();
 const proxyTimer = setInterval(() => void isolation.recheckStale(), 3600_000);
 proxyTimer.unref();

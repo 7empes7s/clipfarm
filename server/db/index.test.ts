@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships: all but the last entry, which adds the isolation groups. */
-const ALL_OF_MAIN = MIGRATIONS.length - 1;
+/** Everything main shipped before the isolation groups; the submit window's columns come after those. */
+const ALL_OF_MAIN = MIGRATIONS.length - 2;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -81,7 +81,7 @@ describe("migrate", () => {
     expect(() => migrate(db)).not.toThrow();
     expect(tables(db)).toEqual(expect.arrayContaining(["isolation_groups", "youtube_quota"]));
     // A waiting post keeps the video of its hook variant.
-    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file"]));
+    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at"]));
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

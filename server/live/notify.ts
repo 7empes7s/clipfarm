@@ -7,6 +7,8 @@ export interface Notice {
   body: string;
   /** Where a tap on the notification opens the app. */
   url: string;
+  /** Offers "I'm busy" on the notification itself (a campaign clip to submit). */
+  snooze?: boolean;
 }
 
 /** Tells the manager's phone something happened. Never throws: a missed notification must not stop the work. */

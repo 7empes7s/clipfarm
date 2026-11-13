@@ -98,6 +98,7 @@ export function parseCampaignRules(body: unknown): CampaignRules {
     minSec,
     maxSec,
     budgetLeftUsd: optionalNumber(r.budgetLeftUsd, "The budget left"),
+    manualSubmit: r.manualSubmit !== false,
   };
 }
 

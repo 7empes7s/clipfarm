@@ -55,3 +55,47 @@ describe("installable app", () => {
     expect(html).toContain('class="splash"');
   });
 });
+
+describe("the service worker's notifications", () => {
+  type Handler = (event: Record<string, unknown>) => void;
+  function worker() {
+    const handlers = new Map<string, Handler>();
+    const shown: { title: string; options: { actions: { action: string }[]; data: { url: string } } }[] = [];
+    const fetched: { url: string; body: string }[] = [];
+    const opened: string[] = [];
+    const self = {
+      location: { origin: "https://clips.example" },
+      addEventListener: (name: string, fn: Handler) => handlers.set(name, fn),
+      registration: { showNotification: (title: string, options: (typeof shown)[number]["options"]) => (shown.push({ title, options }), Promise.resolve()) },
+      clients: { matchAll: () => Promise.resolve([]), openWindow: (url: string) => (opened.push(url), Promise.resolve()) },
+    };
+    const fetch = (url: string, init: { body: string }) => (fetched.push({ url, body: init.body }), Promise.resolve());
+    new Function("self", "caches", "fetch", readFileSync(join(pub, "sw.js"), "utf8"))(self, {}, fetch);
+    const fire = async (name: string, event: Record<string, unknown>) => {
+      const waits: Promise<unknown>[] = [];
+      handlers.get(name)!({ ...event, waitUntil: (p: Promise<unknown>) => waits.push(p) });
+      await Promise.all(waits);
+    };
+    return { fire, shown, fetched, opened };
+  }
+  const notice = { title: "TJR clip is live: submit within 30 min", body: "", url: "/#posted/submit-7", snooze: true };
+
+  it("offers “I'm busy” on a submit push, and a tap on it snoozes without opening the app", async () => {
+    const w = worker();
+    await w.fire("push", { data: { json: () => notice } });
+    expect(w.shown[0]!.options.actions.map((a) => a.action)).toEqual(["snooze-1h", "snooze-3h", "snooze-today"]);
+    await w.fire("notificationclick", { action: "snooze-3h", notification: { close: () => undefined, data: w.shown[0]!.options.data } });
+    expect(w.fetched).toEqual([{ url: "/api/posting/snooze", body: JSON.stringify({ for: "3h" }) }]);
+    expect(w.opened).toEqual([]);
+  });
+
+  it("a tap on the push itself opens the clip to submit, and other pushes carry no snooze", async () => {
+    const w = worker();
+    await w.fire("push", { data: { json: () => notice } });
+    await w.fire("notificationclick", { action: "", notification: { close: () => undefined, data: w.shown[0]!.options.data } });
+    expect(w.opened).toEqual(["https://clips.example/#posted/submit-7"]);
+    expect(w.fetched).toEqual([]);
+    await w.fire("push", { data: { json: () => ({ title: "First LIVE clip", body: "", url: "/#inbox" }) } });
+    expect(w.shown[1]!.options.actions).toEqual([]);
+  });
+});

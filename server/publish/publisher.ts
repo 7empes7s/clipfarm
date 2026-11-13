@@ -18,6 +18,7 @@ import type {
 } from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types.js";
 import { noAccountReason, routingBlock, routingBlockText } from "../../shared/routing.js";
+import { needsManualSubmit, nextSubmitTime, type Snooze, snoozeEnd, type SubmitHours, type SubmitWindowInfo } from "../../shared/submitWindow.js";
 import { AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
@@ -29,7 +30,7 @@ import { type DirectPoster, QUOTA_NOTE } from "./direct/direct.js";
 import { campaignProblems, clipTranscript, problemsLine } from "./compliance.js";
 import { assertCanPost } from "./gate.js";
 import type { PostsRepo } from "./repo.js";
-import { nextFreeSlot } from "./spacing.js";
+import { nextFreeSlot, nextSubmitSlot } from "./spacing.js";
 import type { PostingService, PublishItem } from "./types.js";
 
 /** Platform limits in plain words, shown next to the post button. */
@@ -38,6 +39,9 @@ export const PLATFORM_NOTES = [
   "Instagram posting needs a Business or Creator account linked to a Facebook page.",
   "X allows 280 characters, so long titles are shortened; credit, links and hashtags stay.",
 ];
+
+const HOURS_NOTE = "Waits for your submit hours, so you can submit it within 30 minutes of going live.";
+const BUSY_NOTE = "Waits until you are back, so you can submit it within 30 minutes of going live.";
 
 export function slug(title: string): string {
   return (
@@ -75,6 +79,12 @@ export interface PublisherDeps {
    * there are no groups and every account posts through the service.
    */
   isolation?: Isolation;
+  /**
+   * The submit window: campaign clips that have to be submitted by hand go out only when the manager
+   * can submit, and wait here until then. The server always turns it on; left out (tests of other
+   * rules), every post goes out by spacing alone.
+   */
+  submitWindow?: boolean;
   /** The stream a clip was cut from, to match it to an account's niche. */
   vodTitle?: (vodId: number) => string | null;
   /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
@@ -296,7 +306,8 @@ export class Publisher {
     const { clips, posts, service, isolation } = this.deps;
     const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant);
     // Channels connected here are uploaded by clipfarm, through their group; the rest go to the service.
-    const viaService = planned.filter((p) => !p.account.direct);
+    // A campaign post for later stays here until it is due, so "I'm busy" can still move it.
+    const viaService = planned.filter((p) => !p.account.direct && !p.held);
     const results =
       viaService.length > 0
         ? await service.publish(
@@ -305,8 +316,33 @@ export class Publisher {
           )
         : [];
     const made: Post[] = [];
-    for (const { item, account, permission, at, note } of planned) {
+    for (const { item, account, permission, at, note, held } of planned) {
       const groupId = isolation ? account.groupId : null;
+      const needsSubmit = this.needsSubmit(permission);
+      if (held) {
+        made.push(posts.insert({
+          clipId: clip.id,
+          permissionId: permission.id,
+          platform: item.account.platform,
+          accountId: item.account.id,
+          accountName: item.account.name,
+          service: service.name,
+          externalId: null,
+          status: "scheduled",
+          url: null,
+          error: null,
+          caption: item.caption,
+          scheduledAt: at.toISOString(),
+          postedAt: null,
+          groupId,
+          note,
+          variant: variant && { title: variant.title, hook: variant.hook },
+          variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
+          needsSubmit,
+          held: true,
+        }));
+        continue;
+      }
       if (account.direct) {
         const waiting = posts.insert({
           clipId: clip.id,
@@ -327,6 +363,7 @@ export class Publisher {
           variant: variant && { title: variant.title, hook: variant.hook },
           // Kept with the post: it may go out later (a set time, a busy account, a full quota).
           variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
+          needsSubmit,
         });
         // "Post now" uploads at once; a later time is picked up by the timer when it is due.
         made.push(item.when === null && this.direct ? await this.direct.send(waiting.id) : waiting);
@@ -350,9 +387,129 @@ export class Publisher {
         groupId,
         note,
         variant: variant && { title: variant.title, hook: variant.hook },
+        needsSubmit,
       }));
     }
     return { posts: made, skipped };
+  }
+
+  private needsSubmit(permission: Permission): boolean {
+    return this.deps.submitWindow === true && needsManualSubmit(permission);
+  }
+
+  /** The earliest time at or after `t` when a clip that needs a manual submit may go live. */
+  private submitTime(): (t: Date) => Date {
+    const hours = this.deps.posts.submitHours();
+    const snooze = this.deps.posts.snoozeUntil();
+    return (t) => nextSubmitTime(t, hours, snooze);
+  }
+
+  /** Why a campaign post waits, when the manager's hours or snooze moved it. */
+  private waitNote(wanted: Date, at: Date): string | null {
+    const snooze = this.deps.posts.snoozeUntil();
+    if (snooze && wanted.getTime() < snooze.getTime()) return BUSY_NOTE;
+    return nextSubmitTime(wanted, this.deps.posts.submitHours()).getTime() !== wanted.getTime() && at.getTime() !== wanted.getTime() ? HOURS_NOTE : null;
+  }
+
+  /**
+   * Moves the campaign posts that wait in clipfarm and can no longer go out at their time (the
+   * manager is busy, the submit hours changed, the server was away) to the next time that fits,
+   * soonest first, each keeping its account's spacing.
+   */
+  reslot(): void {
+    const { posts } = this.deps;
+    const now = this.now();
+    const allowed = this.submitTime();
+    const accounts = this.accounts.list();
+    const waiting = posts.waitingSubmit();
+    waiting.forEach((p, i) => {
+      const t = new Date(Math.max(p.at.getTime(), now.getTime()));
+      // Due and free to go: it is sent, not moved.
+      if (p.at.getTime() <= now.getTime() && allowed(now).getTime() === now.getTime()) return;
+      // The posts after it in the line are placed after it, so they do not hold it back.
+      const later = waiting.slice(i).map((w) => w.id);
+      const pace = accounts.find((a) => a.id === p.accountId)?.pace ?? posts.rules();
+      const elsewhere = posts.clipTimes(p.clipId, later).filter((c) => c.accountId !== p.accountId).map((c) => c.at);
+      const at = nextSubmitSlot(posts.takenTimes(p.accountId, later), t, pace, elsewhere, allowed);
+      if (at.getTime() !== p.at.getTime()) posts.postpone(p.id, at, this.waitNote(p.at, at) ?? HOURS_NOTE);
+    });
+  }
+
+  /** Hands the held campaign posts whose time has come to the posting service. Returns how many went out. */
+  async sendDueHeld(): Promise<number> {
+    const { posts, clips, sources, service } = this.deps;
+    this.reslot();
+    let sent = 0;
+    for (const id of posts.dueHeld()) {
+      const post = posts.get(id);
+      const failed = (error: string) => posts.handOver(id, { externalId: null, status: "failed", url: null, error, postedAt: null });
+      try {
+        const account = (await this.knownAccounts()).find((a) => a.id === post.accountId);
+        if (!account || account.disabled) {
+          failed(`${post.accountName} is no longer connected, so this post was not sent.`);
+          continue;
+        }
+        const off = skipReason(account);
+        if (off) {
+          failed(off);
+          continue;
+        }
+        // The permission may have run out or been put on hold while the post waited: checked again now.
+        const permission = sources.permission(post.permissionId);
+        requireActivePermission(post.creatorName, [permission], this.now(), account.platform, account.role);
+        const variant = posts.variantOf(id);
+        const [r] = await service.publish(
+          { path: posts.variantFile(id) ?? clips.filePath(post.clipId), fileName: `${slug(variant?.title ?? post.clipTitle)}.mp4` },
+          [{ account, title: variant?.title ?? post.clipTitle, caption: post.caption, when: null, paidPromotion: permission.kind === "whop-campaign" }],
+        );
+        if (!r) failed(`${service.label} did not answer for this account.`);
+        else {
+          posts.handOver(id, r);
+          if (r.status !== "failed") sent++;
+        }
+      } catch (err) {
+        failed((err as Error).message);
+      }
+    }
+    return sent;
+  }
+
+  /** Asks the service about campaign posts it was handed but has not confirmed: their submit window may be running. */
+  async confirmSubmits(): Promise<void> {
+    const { posts, service } = this.deps;
+    const waiting = posts.unconfirmedSubmit(service.name);
+    if (waiting.length === 0) return;
+    try {
+      for (const u of await service.refresh(waiting)) posts.apply(service.name, u);
+    } catch (err) {
+      this.lastRefreshError = (err as Error).message;
+    }
+  }
+
+  submitInfo(): SubmitWindowInfo {
+    const { posts } = this.deps;
+    const waiting = posts.waitingSubmit();
+    return {
+      hours: posts.submitHours(),
+      snoozeUntil: posts.snoozeUntil()?.toISOString() ?? null,
+      waiting: waiting.length,
+      nextAt: waiting[0]?.at.toISOString() ?? null,
+      open: posts.awaitingSubmit().length,
+    };
+  }
+
+  saveSubmitHours(hours: SubmitHours): SubmitWindowInfo {
+    this.deps.posts.saveSubmitHours(hours);
+    this.reslot();
+    return this.submitInfo();
+  }
+
+  /** "I'm busy": campaign posts due before the snooze ends move to after it. null ends the snooze. */
+  snooze(choice: Snooze | null): SubmitWindowInfo {
+    const { posts } = this.deps;
+    posts.setSnooze(choice && snoozeEnd(this.now(), choice, posts.submitHours().timeZone));
+    this.reslot();
+    return this.submitInfo();
   }
 
   /**
@@ -467,16 +624,20 @@ export class Publisher {
     const { isolation } = this.deps;
     // YouTube uploads being planned in this go, per group and Pacific day.
     const reserved = new Map<string, number>();
+    const canSubmitAt = this.submitTime();
     const planned = cleared.map((account) => {
       const elsewhere = clipTimes.filter((c) => c.accountId !== account.id).map((c) => c.at);
       const taken = posts.takenTimes(account.id);
-      let at = nextFreeSlot(taken, wantedAt, account.pace, elsewhere);
-      let note: string | null = null;
+      // A campaign clip that has to be submitted by hand goes out only when the manager can do it.
+      const needsSubmit = this.needsSubmit(routedAt(account, now)!);
+      const slot = (from: Date) => (needsSubmit ? nextSubmitSlot(taken, from, account.pace, elsewhere, canSubmitAt) : nextFreeSlot(taken, from, account.pace, elsewhere));
+      let at = slot(wantedAt);
+      let note: string | null = needsSubmit ? this.waitNote(wantedAt, at) : null;
       // A direct YouTube upload costs the group's app 1,600 of its daily units: when the day is
       // full, the post waits for the reset instead of failing.
       if (isolation && account.direct && account.platform === "youtube") {
         for (let open = isolation.uploadSlot(account.groupId, at, reserved); open.getTime() !== at.getTime(); open = isolation.uploadSlot(account.groupId, at, reserved)) {
-          at = nextFreeSlot(taken, open, account.pace, elsewhere);
+          at = slot(open);
           note = QUOTA_NOTE;
         }
         isolation.reserveUpload(reserved, account.groupId, at);
@@ -492,7 +653,9 @@ export class Publisher {
         when: when === null && at.getTime() === now.getTime() ? null : at,
         paidPromotion: permission.kind === "whop-campaign",
       };
-      return { item, account, permission, at, note };
+      // Kept here until it is due when it goes out later through the posting service.
+      const held = needsSubmit && !account.direct && item.when !== null;
+      return { item, account, permission, at, note, held };
     });
 
     return { clip, planned, skipped };
@@ -575,6 +738,8 @@ export class Publisher {
       estimatedEarningsUsd: Math.round(all.reduce((s, p) => s + p.estimatedEarningsUsd, 0) * 100) / 100,
       approvedClips,
       costPerApprovedClipUsd: approvedClips ? Math.round((posts.spendUsd() / approvedClips) * 10000) / 10000 : null,
+      missedWindows: all.filter((p) => p.submit?.missedAt).length,
+      lostEarningsUsd: Math.round(all.reduce((s, p) => s + p.lostEarningsUsd, 0) * 100) / 100,
       byCampaign: group((p) => String(p.permissionId), campaignLabel),
       byPlatform: group((p) => p.platform, (p) => PLATFORM_LABELS[p.platform]),
     };
