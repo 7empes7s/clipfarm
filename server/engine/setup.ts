@@ -8,16 +8,18 @@ const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
  * Each file is checked against its SHA-256; a retry carries on where the last try stopped.
  */
 export function engineSetupHandler(engine: Engine): JobHandler {
-  return async ({ signal, progress }) => {
+  return async ({ payload, signal, progress }) => {
+    // One step's Download button names the step; without it, everything the settings need is fetched.
+    const { step } = (payload ?? {}) as { step?: string };
     const tried = new Set<string>();
     // Asked again after each round: a model picked in the app while this runs is fetched too.
-    for (let parts = engine.missing(); parts.length > 0; parts = engine.missing().filter((p) => !tried.has(p.id))) {
+    for (let parts = engine.missing(step); parts.length > 0; parts = engine.missing(step).filter((p) => !tried.has(p.id))) {
       const total = parts.reduce((sum, p) => sum + p.bytes, 0);
       let before = 0;
       for (const part of parts) {
         tried.add(part.id);
         // Switched off in the app since this round began (the hook writer, another model): leave it.
-        if (!engine.missing().some((p) => p.id === part.id)) continue;
+        if (!engine.missing(step).some((p) => p.id === part.id)) continue;
         let lastShown = -1;
         await engine.install(part, {
           signal,

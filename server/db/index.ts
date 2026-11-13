@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 export type Db = Database.Database;
 
 // Append-only: never edit a migration that has shipped, add a new one.
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   `
   CREATE TABLE sources (
     id INTEGER PRIMARY KEY,
@@ -307,6 +307,24 @@ const MIGRATIONS: string[] = [
   ALTER TABLE clips ADD COLUMN quality TEXT;
   `,
   `
+  -- Campaign import: a campaign's rules (JSON), when its page was last read, and Whop's approval and payout taps.
+  ALTER TABLE permissions ADD COLUMN campaign_rules TEXT;
+  ALTER TABLE permissions ADD COLUMN campaign_checked_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
+  `,
+  // Which engine handled what in each transcript and round of picks (the fallback chain).
+  `
+  CREATE TABLE engine_runs (
+    id INTEGER PRIMARY KEY,
+    vod_id INTEGER,
+    kind TEXT NOT NULL,
+    report TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX engine_runs_vod ON engine_runs(vod_id);
+  `,
+  `
   -- The growth lab: test campaigns, which post belongs to which variant, and each post's numbers over time.
   CREATE TABLE growth_campaigns (
     id INTEGER PRIMARY KEY,
@@ -351,13 +369,6 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL,
     UNIQUE (campaign_id, variant_key)
   );
-  `,
-  `
-  -- Campaign import: a campaign's rules (JSON), when its page was last read, and Whop's approval and payout taps.
-  ALTER TABLE permissions ADD COLUMN campaign_rules TEXT;
-  ALTER TABLE permissions ADD COLUMN campaign_checked_at TEXT;
-  ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
-  ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
   `,
 ];
 

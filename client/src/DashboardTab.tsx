@@ -351,6 +351,13 @@ function VodCard({ vod }: { vod: VodProgress }) {
         <span>{vod.approvedShare === null ? "None approved yet" : `${Math.round(vod.approvedShare * 100)}% approved`}</span>
         {total > 0 && <span>{duration(total)} in all</span>}
       </div>
+      {vod.engines.length > 0 && (
+        <ul className="vod-engines" data-testid="vod-engines">
+          {vod.engines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

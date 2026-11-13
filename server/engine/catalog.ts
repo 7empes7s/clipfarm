@@ -4,8 +4,9 @@
  * - Silero VAD (MIT, https://github.com/snakers4/silero-vad) in whisper.cpp's format: finds the speech, so silence is skipped.
  * - llama.cpp (MIT, https://github.com/ggml-org/llama.cpp): runs the small model that writes hooks and titles.
  * - Whisper models (MIT, OpenAI) and Qwen2.5-1.5B-Instruct (Apache-2.0, Alibaba Cloud).
+ * - Moonshine (MIT, https://github.com/moonshine-ai/moonshine): its library (with ONNX Runtime, MIT) and the English tiny model.
  */
-export type PartKind = "stt-runtime" | "vad" | "stt" | "llm-runtime" | "llm";
+export type PartKind = "stt-runtime" | "vad" | "stt" | "stt-multi" | "moonshine-runtime" | "moonshine" | "llm-runtime" | "llm";
 
 export interface EnginePartSpec {
   id: string;
@@ -17,6 +18,8 @@ export interface EnginePartSpec {
   bytes: number;
   /** For a program: the file to run inside the unpacked archive. Models are a single file. */
   bin?: string;
+  /** For a model made of several files: where this one goes under the models folder. */
+  file?: string;
   /** Memory the model needs while it runs, in MB (measured on the 4-vCPU box; the guard adds 1 GB spare). */
   needMb?: number;
   /** Shown next to a model choice. */
@@ -25,6 +28,8 @@ export interface EnginePartSpec {
 
 const WHISPER_MODELS = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1";
 const WHISPER_RELEASE = "https://github.com/ggml-org/whisper.cpp/releases/download/b5454";
+const MOONSHINE_RELEASE = "https://github.com/moonshine-ai/moonshine/releases/download/v0.1.6";
+const MOONSHINE_TINY_EN = "https://download.moonshine.ai/model/tiny-en/quantized/tiny-en";
 const LLAMA_RELEASE = "https://github.com/ggml-org/llama.cpp/releases/download/b12328";
 
 /** Ready-made programs exist for Linux on these processors; elsewhere WHISPER_BIN / LLAMA_SERVER_BIN point at your own. */
@@ -48,6 +53,15 @@ const RUNTIMES: Record<string, EnginePartSpec[]> = {
       bytes: 23329789,
       bin: "llama-server",
     },
+    {
+      id: "moonshine-lib",
+      kind: "moonshine-runtime",
+      label: "Moonshine program",
+      url: `${MOONSHINE_RELEASE}/moonshine-voice-linux-x86_64.tar.gz`,
+      sha256: "0e6074838d47f174b0188533f1819d502f376e77dccb771df5c09380737b76ec",
+      bytes: 14692231,
+      bin: "lib/libmoonshine.so",
+    },
   ],
   "linux-arm64": [
     {
@@ -67,6 +81,15 @@ const RUNTIMES: Record<string, EnginePartSpec[]> = {
       sha256: "9386d77e73b08833cfa1472b23a39cb593e57c6ce70091a09a3e6b33370a022f",
       bytes: 18964316,
       bin: "llama-server",
+    },
+    {
+      id: "moonshine-lib",
+      kind: "moonshine-runtime",
+      label: "Moonshine program",
+      url: `${MOONSHINE_RELEASE}/moonshine-voice-linux-arm64.tar.gz`,
+      sha256: "1e0a88f27c428cab43590ce1635fe122406ef9e70236b58d077daf4b95cf162c",
+      bytes: 13423532,
+      bin: "lib/libmoonshine.so",
     },
   ],
 };
@@ -111,6 +134,64 @@ const MODELS: EnginePartSpec[] = [
     note: "Most accurate, about 3 times slower",
   },
   {
+    id: "moonshine-tiny-en/encoder_model.ort",
+    kind: "moonshine",
+    label: "Moonshine English model (encoder_model.ort)",
+    url: `${MOONSHINE_TINY_EN}/encoder_model.ort`,
+    sha256: "94e90a4654fc45cdfedb77c4c08e1739f48862998e58fada384b25118134f221",
+    bytes: 13281600,
+    file: "moonshine-tiny-en/encoder_model.ort",
+    needMb: 300,
+  },
+  {
+    id: "moonshine-tiny-en/decoder_model_merged.ort",
+    kind: "moonshine",
+    label: "Moonshine English model (decoder_model_merged.ort)",
+    url: `${MOONSHINE_TINY_EN}/decoder_model_merged.ort`,
+    sha256: "cf524c4862d36e9e5ab032eddc73637efd822d70e868ac575cf1a46e1e4708a0",
+    bytes: 30412256,
+    file: "moonshine-tiny-en/decoder_model_merged.ort",
+    needMb: 300,
+  },
+  {
+    id: "moonshine-tiny-en/decoder_with_attention.ort",
+    kind: "moonshine",
+    label: "Moonshine English model (decoder_with_attention.ort)",
+    url: `${MOONSHINE_TINY_EN}/decoder_with_attention.ort`,
+    sha256: "b4a4d13752f6ecfb0b42edf23f9a7d675d80b1790f036787de5662d7e94b298b",
+    bytes: 30092072,
+    file: "moonshine-tiny-en/decoder_with_attention.ort",
+    needMb: 300,
+  },
+  {
+    id: "moonshine-tiny-en/tokenizer.bin",
+    kind: "moonshine",
+    label: "Moonshine English model (tokenizer.bin)",
+    url: `${MOONSHINE_TINY_EN}/tokenizer.bin`,
+    sha256: "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d",
+    bytes: 249974,
+    file: "moonshine-tiny-en/tokenizer.bin",
+    needMb: 300,
+  },
+  {
+    id: "small-q8",
+    kind: "stt-multi",
+    label: "Speech model Whisper small (every language)",
+    url: `${WHISPER_MODELS}/ggml-small-q8_0.bin`,
+    sha256: "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f",
+    bytes: 264464607,
+    needMb: 600,
+  },
+  {
+    id: "large-v3-turbo-q8",
+    kind: "stt-multi",
+    label: "Speech model Whisper large-v3-turbo",
+    url: `${WHISPER_MODELS}/ggml-large-v3-turbo-q8_0.bin`,
+    sha256: "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1",
+    bytes: 874188075,
+    needMb: 1300,
+  },
+  {
     id: "qwen2.5-1.5b",
     kind: "llm",
     label: "Hook writer model (Qwen2.5 1.5B)",
@@ -123,6 +204,9 @@ const MODELS: EnginePartSpec[] = [
 
 export const DEFAULT_STT_MODEL = "base.en";
 export const DEFAULT_LLM_MODEL = "qwen2.5-1.5b";
+export const MOONSHINE_MODEL = "moonshine-tiny-en";
+export const WHISPER_SMALL = "small-q8";
+export const WHISPER_TURBO = "large-v3-turbo-q8";
 
 export function defaultCatalog(platform: string = process.platform, arch: string = process.arch): EnginePartSpec[] {
   return [...(RUNTIMES[`${platform}-${arch}`] ?? []), ...MODELS];

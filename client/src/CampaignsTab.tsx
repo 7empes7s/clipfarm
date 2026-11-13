@@ -127,7 +127,6 @@ function Controls({ campaign, onChange }: { campaign: GrowthCampaign; onChange: 
       setError((err as Error).message);
     } finally {
       setBusy(false);
-      setConfirmStop(false);
     }
   }
   const { id, status } = campaign;
@@ -148,7 +147,7 @@ function Controls({ campaign, onChange }: { campaign: GrowthCampaign; onChange: 
         {status !== "draft" &&
           (confirmStop ? (
             <>
-              <button type="button" className="danger" disabled={busy} onClick={() => void run(() => api.campaignAction(id, "stop"))}>
+              <button type="button" className="danger" disabled={busy} onClick={() => void run(() => api.campaignAction(id, "stop")).then(() => setConfirmStop(false))}>
                 Stop for good
               </button>
               <button type="button" className="link" onClick={() => setConfirmStop(false)}>

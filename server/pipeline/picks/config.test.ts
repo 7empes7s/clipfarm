@@ -5,7 +5,7 @@ describe("picker settings", () => {
   it("uses the fakes in demo mode and the local engine otherwise, with or without a key", () => {
     expect(loadConfig({ CLIPFARM_FAKES: "1" }).picker.name).toBe("fake");
     expect(loadConfig({}).picker.name).toBe("local");
-    expect(loadConfig({}).transcriber.name).toBe("local:base.en");
+    expect(loadConfig({}).transcriber.name).toBe("local");
     expect(loadConfig({ LLM_API_KEY: "k", LLM_MODEL: "llama-test", OPENAI_API_KEY: "k" }).picker.name).toBe("local");
     expect(loadConfig({ OPENAI_API_KEY: "k", MAX_PICKS: "" }).maxPicks).toBe(15);
   });

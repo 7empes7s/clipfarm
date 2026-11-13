@@ -526,9 +526,14 @@ export function createApp({
     });
 
     // "Set up the local engine": one download job at a time; a second tap joins the one waiting.
-    app.post("/api/engine/setup", (_req, res) => {
+    // With a step (its Download button), only that step's files are fetched, switched on or not.
+    app.post("/api/engine/setup", (req, res) => {
       const now = status();
-      if (now.mode === "local" && now.downloads.length > 0 && !(now.setupJob && now.setupJob.status !== "failed")) {
+      const step = now.steps.find((s) => s.id === (req.body as { step?: unknown } | undefined)?.step);
+      const waiting = now.setupJob && now.setupJob.status !== "failed";
+      if (step && now.mode !== "test") {
+        if (step.downloadBytes > 0 && !waiting) queue.enqueue(ENGINE_SETUP_JOB, { step: step.id });
+      } else if (now.mode === "local" && now.downloads.length > 0 && !waiting) {
         queue.enqueue(ENGINE_SETUP_JOB, {});
       } else if (now.setupJob?.status === "queued") {
         // Already waiting: make sure the queue is working on it, so the tap is never a dead end.
@@ -557,6 +562,7 @@ export function createApp({
           accounts: accountStats.info(posts.rules()).cards,
           decisionTimes: clips.decisionTimes(),
           growth: growth ? { campaigns: growth.summaries(), recommendations: growth.repo.recommendations() } : undefined,
+          engineReports: engine ? (vodId) => engine.engine.reportsFor(vodId) : undefined,
         }),
       );
     });
