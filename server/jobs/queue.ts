@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,10 @@ export interface JobQueueOptions {
   /** Called after a job ends for good (done, failed after its last try, or cancelled). */
   onFinished?: (job: Job, payload: unknown) => void;
   now?: () => Date;
+  /** How often a started queue looks for jobs another process queued, and says it is still working. */
+  pollMs?: number;
+  /** How long a worker may stay silent before another process takes the queue over. */
+  leaseMs?: number;
 }
 
 interface JobRow {
@@ -67,13 +72,22 @@ function toJob(r: JobRow): Job {
 /**
  * A persistent job queue in SQLite that runs ONE job at a time: the server box is shared,
  * so heavy work (downloads, ffmpeg, transcription) never runs in parallel.
+ *
+ * That holds across processes too: only the queue that holds the lease (the `queue_worker` row)
+ * runs jobs. The server holds it while it is up, so a job queued by `clipfarm-ops` is run by the
+ * server; when no one has renewed the lease for `leaseMs`, the next started queue takes over.
  */
 export class JobQueue {
   private draining: Promise<void> | null = null;
   private current: { id: number; controller: AbortController } | null = null;
   private stopped = false;
+  private timer: NodeJS.Timeout | null = null;
+  private holdsLease = false;
+  private readonly owner = randomUUID();
   private readonly tmpRoot: string;
   private readonly now: () => Date;
+  private readonly pollMs: number;
+  private readonly leaseMs: number;
 
   constructor(
     private db: Db,
@@ -81,20 +95,68 @@ export class JobQueue {
   ) {
     this.tmpRoot = opts.tmpRoot ?? tmpdir();
     this.now = opts.now ?? (() => new Date());
+    this.pollMs = opts.pollMs ?? 2000;
+    this.leaseMs = opts.leaseMs ?? 30_000;
   }
 
-  /** Puts jobs left "running" by a crash back in the queue and starts working. */
+  /**
+   * Starts working, and keeps looking for jobs queued by other processes. Jobs left "running" by
+   * a crash go back in the queue once this queue holds the lease.
+   */
   start(): void {
-    this.db
-      .prepare("UPDATE jobs SET status = 'queued', updated_at = ? WHERE status = 'running'")
-      .run(this.now().toISOString());
     this.stopped = false;
-    this.kick();
+    this.timer ??= setInterval(() => {
+      // A long job keeps the lease by renewing it here; an idle queue takes it and looks for work.
+      if (this.current) this.takeLease();
+      else void this.kick();
+    }, this.pollMs);
+    this.timer.unref();
+    void this.kick();
   }
 
   stop(): void {
     this.stopped = true;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     this.current?.controller.abort();
+    // A running job gives the lease back once it has wound down (see drainLoop).
+    if (!this.draining) this.releaseLease();
+  }
+
+  /** True when this queue is the one that runs jobs right now. */
+  get working(): boolean {
+    return this.holdsLease;
+  }
+
+  /** When the process that runs jobs last said it is alive; null when none is. */
+  workerSeenAt(): Date | null {
+    const row = this.db.prepare("SELECT beat_at FROM queue_worker WHERE id = 1").get() as { beat_at: string } | undefined;
+    if (!row || this.now().getTime() - new Date(row.beat_at).getTime() > this.leaseMs) return null;
+    return new Date(row.beat_at);
+  }
+
+  /** Takes or renews the lease. False while another live process holds it. */
+  private takeLease(): boolean {
+    const now = this.now();
+    const { changes } = this.db
+      .prepare(
+        `INSERT INTO queue_worker (id, owner, beat_at) VALUES (1, @owner, @now)
+         ON CONFLICT(id) DO UPDATE SET owner = @owner, beat_at = @now
+         WHERE queue_worker.owner = @owner OR queue_worker.beat_at < @stale`,
+      )
+      .run({ owner: this.owner, now: now.toISOString(), stale: new Date(now.getTime() - this.leaseMs).toISOString() });
+    const held = changes === 1;
+    if (held && !this.holdsLease) {
+      // Newly ours: whatever is marked running belongs to a worker that is gone.
+      this.db.prepare("UPDATE jobs SET status = 'queued', updated_at = ? WHERE status = 'running'").run(now.toISOString());
+    }
+    this.holdsLease = held;
+    return held;
+  }
+
+  private releaseLease(): void {
+    this.db.prepare("DELETE FROM queue_worker WHERE owner = ?").run(this.owner);
+    this.holdsLease = false;
   }
 
   enqueue(type: string, payload: unknown, opts: { vodId?: number; clipId?: number; maxAttempts?: number } = {}): Job {
@@ -155,7 +217,8 @@ export class JobQueue {
         this.draining = null;
         // A job added after the loop saw an empty queue but before this ran (for example
         // enqueue() right after start()) found the old drain still set: pick it up now.
-        if (!this.stopped && this.hasQueued()) void this.kick();
+        // Only while this queue is the worker: another process's jobs are found by the timer.
+        if (!this.stopped && this.holdsLease && this.hasQueued()) void this.kick();
       });
     }
     return this.draining;
@@ -171,13 +234,14 @@ export class JobQueue {
   }
 
   private async drainLoop(): Promise<void> {
-    while (!this.stopped) {
+    while (!this.stopped && this.takeLease()) {
       const row = this.db
         .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1")
         .get() as JobRow | undefined;
-      if (!row) return;
+      if (!row) break;
       await this.runOne(row);
     }
+    if (this.stopped) this.releaseLease();
   }
 
   private async runOne(row: JobRow): Promise<void> {

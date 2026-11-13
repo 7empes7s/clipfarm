@@ -237,6 +237,14 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN strike_at TEXT;
   ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
   `,
+  `
+  -- Which process works the job queue right now (the server, or clipfarm-ops when it is down).
+  CREATE TABLE queue_worker (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    beat_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {
