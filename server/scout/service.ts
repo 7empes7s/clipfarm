@@ -21,6 +21,8 @@ import { type ScoreContext, scoreCampaign } from "./score.js";
 export const SCOUT_EVERY_HOURS = 24;
 /** Pages one run reads at most: ten minutes at one page every five seconds. The rest waits for the next day. */
 export const SCOUT_MAX_PAGES = 120;
+/** A new campaign is pushed as "worth joining" from this estimate per day. */
+export const WORTH_JOINING_USD_PER_DAY = 1;
 /** Agency pages one run reads at most. */
 export const SCOUT_MAX_AGENCIES = 5;
 
@@ -268,7 +270,7 @@ export class Scout {
     if (!notifier) return;
     const info = this.info();
     const told = new Set(repo.list().filter((r) => r.notified).map((r) => r.id));
-    const fresh = info.suggestions.filter((s) => !told.has(s.id));
+    const fresh = info.suggestions.filter((s) => !told.has(s.id) && s.score.perDayUsd >= WORTH_JOINING_USD_PER_DAY);
     const lines: string[] = [];
     if (fresh.length > 0) {
       const perDay = fresh.reduce((sum, s) => sum + s.score.perDayUsd, 0);

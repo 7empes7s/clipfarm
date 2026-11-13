@@ -96,10 +96,10 @@ describe("a scout run over the fixture site", () => {
     });
   });
 
-  it("pushes the new campaigns once, not again on the next run", async () => {
+  it("pushes the new campaigns worth a dollar a day or more once, not again on the next run", async () => {
     const t = setup();
     await t.scout.run();
-    expect(t.notifier.sent).toEqual([{ title: "clipfarm: campaigns", body: "3 new campaigns worth joining (est. $55.94/day)", url: "/#dashboard" }]);
+    expect(t.notifier.sent).toEqual([{ title: "clipfarm: campaigns", body: "2 new campaigns worth joining (est. $55.73/day)", url: "/#dashboard" }]);
     await t.scout.run();
     expect(t.notifier.sent).toHaveLength(1);
   });
