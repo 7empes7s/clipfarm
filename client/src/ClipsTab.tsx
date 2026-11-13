@@ -261,6 +261,13 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
           <button type="submit">Save</button>
         </form>
       )}
+      {post.proofUrl && (
+        <div className="meta">
+          <a href={post.proofUrl} target="_blank" rel="noreferrer">
+            Proof that clipping is allowed
+          </a>
+        </div>
+      )}
       {post.status === "posted" && post.campaignUrl && (
         <div className="meta">
           {post.whopSubmittedAt ? (

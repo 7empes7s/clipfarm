@@ -246,6 +246,12 @@ const MIGRATIONS: string[] = [
   );
   `,
   `
+  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
+  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
+  `,
+  `
   -- The growth lab: test campaigns, which post belongs to which variant, and each post's numbers over time.
   CREATE TABLE growth_campaigns (
     id INTEGER PRIMARY KEY,

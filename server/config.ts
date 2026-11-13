@@ -17,6 +17,7 @@ import { FakePostingService, NoPostingService } from "./publish/fake.js";
 import { PostizService } from "./publish/postiz.js";
 import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
+import { FakeProofFetcher, HttpProofFetcher, type ProofFetcher } from "./sources/proof.js";
 import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
 import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
@@ -60,6 +61,8 @@ export interface Config {
   computeUsdPerHour: number;
   /** Where the app is reached; names the sender of web push messages. */
   publicUrl: string;
+  /** Reads the proof pages of public clipping allowances. */
+  proofFetcher: ProofFetcher;
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -223,6 +226,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     publicUrl: env.CLIPFARM_PUBLIC_URL || "https://clip.techinsiderbytes.com",
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
+    proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
   };
 }
 
