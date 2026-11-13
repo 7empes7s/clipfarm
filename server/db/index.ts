@@ -238,6 +238,14 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
   `,
   `
+  -- Which process works the job queue right now (the server, or clipfarm-ops when it is down).
+  CREATE TABLE queue_worker (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    beat_at TEXT NOT NULL
+  );
+  `,
+  `
   -- Clip polish: the effects turned off per clip, where the reaction peaks in the master, and the
   -- result of the automatic check on the latest render.
   ALTER TABLE clips ADD COLUMN effects TEXT NOT NULL DEFAULT '{}';
