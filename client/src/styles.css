@@ -2446,16 +2446,10 @@ button.danger {
 }
 /* Light, dark or the phone's own setting. */
 .look {
-  margin: var(--s4) 0 0;
-  min-width: 0;
+  margin-top: var(--s4);
 }
-.look legend {
-  float: left;
-  width: 100%;
-  padding: 0;
-  font-family: var(--font-head);
+.look h3 {
   font-size: var(--t-lg);
-  font-weight: 700;
 }
 .look .chip {
   display: flex;

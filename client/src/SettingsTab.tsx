@@ -171,9 +171,9 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
           ))}
         </ul>
       )}
-      <fieldset className="card look" data-testid="settings-look">
-        <legend>Look</legend>
-        <div className="chips">
+      <div className="card look" data-testid="settings-look">
+        <h3 id="look-title">Look</h3>
+        <div className="chips" role="radiogroup" aria-labelledby="look-title">
           {THEMES.map((t) => (
             <label key={t} className="chip">
               <input
@@ -189,7 +189,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
             </label>
           ))}
         </div>
-      </fieldset>
+      </div>
       {editingRow && (
         <KeysSheet
           row={editingRow}

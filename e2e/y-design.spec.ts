@@ -72,7 +72,12 @@ test("every tab, dashboard section and main action is reachable", async ({ page,
   // Settings from the header, and back.
   await page.getByRole("link", { name: "Settings: keys and connections" }).click();
   await expect(page.getByRole("heading", { name: "Keys and connections" })).toBeVisible();
-  await expect(page.getByTestId("settings-twitch").getByRole("button", { name: "Paste keys" })).toBeVisible();
+  await expect(page.getByTestId("settings-twitch").getByRole("button", { name: /^(Paste keys|Replace)$/ })).toBeVisible();
+  // Light, dark or the device's own: the choice is applied at once.
+  await page.getByTestId("settings-look").getByLabel("Dark").check();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByTestId("settings-look").getByLabel("Same as this device").check();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", /./);
   await expectFits(page);
 
   // Inbox: the three decisions, the reasons with their ×, the edit sheet with its ×, sound, rejected clips.
