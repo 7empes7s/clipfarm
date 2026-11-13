@@ -201,7 +201,8 @@ describe("posting accounts", () => {
     expect(cards.find((c) => c.accountId === "tt-a")).toMatchObject({
       posts: 1,
       avgViewsPerPost: 12000,
-      estimatedEarningsUsd: 18,
+      // 12,000 views × $1.50 per 1,000, less Whop's 10% fee.
+      estimatedEarningsUsd: 16.2,
       claims: null,
       account: { role: "main", health: "healthy" },
     });

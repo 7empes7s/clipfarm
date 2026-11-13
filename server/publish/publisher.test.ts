@@ -224,12 +224,13 @@ describe("posting under a public clipping allowance", () => {
 
 describe("tracking, Whop and stats", () => {
   it("reads views on refresh, takes views by hand, marks Whop submission and estimates earnings over the minimum", async () => {
+    // A Whop campaign: 12,000 views × $1.50 per 1,000, less Whop's 10% fee.
     const { app, clip } = setup({ cpmRateUsd: 1.5, minViews: 3000 });
     const [yt, tt] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] }).expect(201)).body.posts;
 
     await request(app).post("/api/posts/refresh").expect(200);
     let list = (await request(app).get("/api/posts")).body;
-    expect(list.find((p: { id: number }) => p.id === yt.id)).toMatchObject({ views: 12000, viewsSource: "service", estimatedEarningsUsd: 18 });
+    expect(list.find((p: { id: number }) => p.id === yt.id)).toMatchObject({ views: 12000, viewsSource: "service", estimatedEarningsUsd: 16.2 });
 
     await request(app).post(`/api/posts/${tt.id}/views`).send({ views: 2500 }).expect(200);
     await request(app).post(`/api/posts/${tt.id}/whop`).expect(200);
@@ -242,12 +243,12 @@ describe("tracking, Whop and stats", () => {
     });
 
     const stats = (await request(app).get("/api/stats")).body;
-    expect(stats).toMatchObject({ posts: 2, views: 14500, estimatedEarningsUsd: 18, approvedClips: 1, costPerApprovedClipUsd: 0 });
+    expect(stats).toMatchObject({ posts: 2, views: 14500, estimatedEarningsUsd: 16.2, approvedClips: 1, costPerApprovedClipUsd: 0 });
     expect(stats.byPlatform).toEqual([
       { key: "tiktok", label: "TikTok", posts: 1, views: 2500, estimatedEarningsUsd: 0 },
-      { key: "youtube", label: "YouTube Shorts", posts: 1, views: 12000, estimatedEarningsUsd: 18 },
+      { key: "youtube", label: "YouTube Shorts", posts: 1, views: 12000, estimatedEarningsUsd: 16.2 },
     ]);
-    expect(stats.byCampaign).toEqual([{ key: expect.any(String), label: "Test Streamer · whop.com", posts: 2, views: 14500, estimatedEarningsUsd: 18 }]);
+    expect(stats.byCampaign).toEqual([{ key: expect.any(String), label: "Test Streamer · whop.com", posts: 2, views: 14500, estimatedEarningsUsd: 16.2 }]);
   });
 
   it("does not let a later refresh overwrite views entered by hand with nothing", async () => {

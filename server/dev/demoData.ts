@@ -151,7 +151,7 @@ export function seedDemoHistory(deps: DemoDataDeps, made: { sources: Source[]; c
       postedAt: at.toISOString(),
     });
     db.prepare("UPDATE posts SET views = ?, views_source = 'service', views_updated_at = ? WHERE id = ?").run(views, now.toISOString(), post.id);
-    if (whop) writer.markWhopSubmitted(post.id);
+    if (whop) writer.setWhopStep(post.id, "submitted", true);
   }
 }
 
