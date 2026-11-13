@@ -245,7 +245,7 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
                 links and words are added to the caption for you.
               </p>
               <label>
-                Tags the caption must carry <span className="hint">like #ad @creator</span> {check("requiredTags")}
+                Tags the caption must carry <span className="hint">like #ad @theirname</span> {check("requiredTags")}
                 <input name="requiredTags" autoComplete="off" autoCapitalize="none" defaultValue={r?.requiredTags.join(" ")} />
               </label>
               <label>

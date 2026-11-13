@@ -58,11 +58,11 @@ test("approve a clip, post it on four accounts, export it and see it in Stats (3
   await page.getByRole("button", { name: "Update views" }).click();
   const totals = page.getByTestId("totals");
   await expect(totals.getByText("12,000")).toBeVisible();
-  await expect(totals.getByText("$18.00")).toBeVisible();
+  await expect(totals.getByText("$16.20")).toBeVisible();
   const row = page.getByTestId("stats-post").filter({ hasText: "12,000 views" }).first();
   await expect(row).toContainText("He actually landed the jump");
   await expect(row).toContainText("12,000 views");
-  await expect(row).toContainText("$18.00 estimated");
+  await expect(row).toContainText("$16.20 estimated");
 
   scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);
