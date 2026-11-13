@@ -4,6 +4,7 @@ import { Engine } from "./engine/engine.js";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
+import { thresholdsFromEnv } from "./pipeline/transcript/chain.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
 import type { Transcriber } from "./pipeline/transcript/types.js";
@@ -152,6 +153,15 @@ function liveCloudPicker(settings: Settings): () => Picker | null {
   };
 }
 
+/** The cloud model as a hook writer (the last step of the picks chain); null until a key is set. */
+function liveCloudChat(settings: Settings): () => ChatClient | null {
+  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  return () => {
+    const c = cur();
+    return c && { name: c.name, complete: (req, signal) => guarded(settings, () => c.complete(req, signal)) };
+  };
+}
+
 function livePostingService(settings: Settings): PostingService {
   const cur = live(settings, POSTING_SETTINGS, postingService);
   return {
@@ -203,6 +213,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     llamaServerBin: env.LLAMA_SERVER_BIN || undefined,
     cloudTranscriber: liveCloudTranscriber(settings),
     cloudPicker: liveCloudPicker(settings),
+    cloudChat: liveCloudChat(settings),
+    pythonBin: env.PYTHON_BIN || undefined,
+    thresholds: thresholdsFromEnv(env),
   });
   const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
   const fakePicker = fakes || env.PICKER === "fake";

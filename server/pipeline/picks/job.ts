@@ -41,6 +41,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
         maxPicks,
+        run: { vodId },
       },
       signal,
     );

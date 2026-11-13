@@ -1,4 +1,5 @@
 import type {
+  EngineReport,
   AccountCard,
   Clip,
   Dashboard,
@@ -15,6 +16,7 @@ import type {
   Vod,
   VodProgress,
 } from "../../shared/types.js";
+import { vodEngineLines } from "../engine/runs.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types.js";
 import { average, costPerApprovedClip, dayOf, etaSeconds, round2, secondsPerReview, towards, weekStart } from "../../shared/metrics.js";
 
@@ -28,6 +30,8 @@ export interface DashboardInput {
   accounts: AccountCard[];
   /** When each approve or reject (not undone) was made. */
   decisionTimes: string[];
+  /** Which engine handled a video's transcript and picks; left out, the cards say nothing about it. */
+  engineReports?: (vodId: number) => EngineReport[];
 }
 
 const JOB_LABELS: Record<string, string> = {
@@ -72,7 +76,7 @@ function stageOf(stage: StageName, jobs: Job[]): VodProgress["stages"][number] {
   };
 }
 
-export function vodProgress(vod: Vod, jobs: Job[], clips: Clip[], creatorName: string): VodProgress {
+export function vodProgress(vod: Vod, jobs: Job[], clips: Clip[], creatorName: string, engines: string[] = []): VodProgress {
   // Jobs come newest first. Transcript and picks: the latest try counts. Render: one job per pick,
   // so every render job queued after the latest picks run counts.
   const mine = jobs.filter((j) => j.vodId === vod.id);
@@ -102,6 +106,7 @@ export function vodProgress(vod: Vod, jobs: Job[], clips: Clip[], creatorName: s
     approved,
     approvedShare: made.length ? approved / made.length : null,
     createdAt: vod.createdAt,
+    engines,
   };
 }
 
@@ -276,7 +281,7 @@ export function buildDashboard(input: DashboardInput): Dashboard {
     });
 
   const creator = (sourceId: number) => sources.find((s) => s.id === sourceId)?.creatorName ?? "Unknown creator";
-  const progress = vods.slice(0, 10).map((v) => vodProgress(v, jobs, clips, creator(v.sourceId)));
+  const progress = vods.slice(0, 10).map((v) => vodProgress(v, jobs, clips, creator(v.sourceId), vodEngineLines(input.engineReports?.(v.id) ?? [])));
   const rows = earningsRows(posts, sources, now);
 
   return {

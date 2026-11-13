@@ -103,7 +103,8 @@ export const api = {
   setFollowers: (accountId: string, followers: number) =>
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
   engine: () => call<EngineStatus>("/api/engine"),
-  setupEngine: () => call<EngineStatus>("/api/engine/setup", { method: "POST" }),
+  /** Fetches what the engine misses; with a step, only that step's files. */
+  setupEngine: (step?: string) => call<EngineStatus>("/api/engine/setup", { method: "POST", body: JSON.stringify(step ? { step } : {}) }),
   saveEngineSettings: (change: Partial<EngineSettings>) =>
     call<EngineStatus>("/api/engine/settings", { method: "PUT", body: JSON.stringify(change) }),
   loadDemoData: () => call<Job>("/api/demo-data", { method: "POST" }),

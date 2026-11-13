@@ -96,6 +96,7 @@ env-only.
 | `OPENAI_API_KEY` | – | Optional. Only for "Use cloud AI for speed" on the Dashboard; without it everything runs locally |
 | `TRANSCRIBER` | local engine | `fake` skips real transcription |
 | `WHISPER_BIN` / `LLAMA_SERVER_BIN` | downloaded | Your own whisper.cpp `whisper-cli` / llama.cpp `llama-server` (needed where there is no ready-made Linux build, e.g. macOS) |
+| `PYTHON_BIN` | `python3` | Python 3 for the Moonshine step (standard library only; without it the chain starts at Whisper small) |
 | `DOWNLOADER` | `yt-dlp` | `yt-dlp` or `fake` |
 | `YT_DLP_BIN` | `yt-dlp` | Path to the yt-dlp binary |
 | `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, picker, posting) and adds a demo-clip button for e2e |
@@ -339,8 +340,10 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   interface with a fake.
 - `server/engine/`: clipfarm's own engine. `catalog.ts` pins every program and model to a
   SHA-256, `download.ts` fetches with resume and checks it, `memory.ts` is the guard, `llama.ts`
-  runs the hook writer for one picking session, and `engine.ts` reports status, keeps the
-  settings and hands the pipeline its transcriber and picker (local by default, cloud as an option).
+  runs the hook writer for one picking session, `moonshine.ts` runs Moonshine through its sidecar,
+  `runs.ts` keeps which step handled what (table `engine_runs`), and `engine.ts` reports status,
+  keeps the settings and hands the pipeline its transcriber and picker (local by default, cloud
+  as an option). The fallback chain itself is `server/pipeline/transcript/chain.ts`.
 - `server/pipeline/ingest/`: yt-dlp downloads **audio only** (`-f bestaudio`, ~60 MB per hour)
   plus title, duration and chapters. The video is not downloaded here; the render step will fetch
   only the picked sections.
@@ -404,30 +407,58 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 By default clipfarm transcribes and picks on its own machine; OpenAI is only an optional speed-up
 ("Use cloud AI for speed" on the Dashboard, once an OpenAI key is set in Settings).
 
-- **Speech-to-text**: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) with
-  [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) first, so only speech is transcribed.
-  One word per segment gives the word times the captions need. Default model `base.en`
-  (`tiny.en` and `small.en` can be picked on the Dashboard).
+- **Speech-to-text** is a chain, the most efficient engine first. The audio is cut at pauses into
+  parts of about a minute, and each part goes to the first step that can take it:
+  1. [Moonshine](https://github.com/moonshine-ai/moonshine) (MIT) `tiny-en`: English only, the
+     fastest and lightest. It runs in a sidecar: a few lines of Python (standard library only, in
+     `server/engine/moonshine.ts`) load Moonshine's own library and write the words with their times.
+  2. [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (MIT) `small` (8-bit), every language,
+     with [Silero VAD](https://github.com/snakers4/silero-vad) (MIT) first, so only speech is transcribed.
+  3. whisper.cpp `large-v3-turbo` (8-bit), for parts the earlier steps got wrong, and only when
+     free memory allows.
+  4. Cloud (OpenAI), only when every local step failed and "Fall back to cloud AI" is on.
+
+  The language is told from the first 30 s of speech (Whisper's language ID); anything but
+  English skips Moonshine. A part goes to the next step when a step fails, runs out of memory,
+  takes too long or comes back poor: Whisper's average log-probability under -1, no words for
+  over 60% of the speech it heard, Moonshine's confidence under 50%, the same word 8 times in a
+  row or the same three words 5 times. Those numbers are `DEFAULT_THRESHOLDS` in
+  `server/pipeline/transcript/chain.ts`, each with an `STT_…` env override (`thresholdsFromEnv`).
+  Only that part is retried, never the whole stream, and each word keeps the time of the step
+  that heard it. When every local answer for a part is poor, the last one is kept; when every
+  step fails and cloud is off, the job fails and says what each step said. The order and each
+  step's on/off are set on the Dashboard's engine card, which also shows each step as ready or
+  missing (with a Download button), its measured speed on this server, and how often each
+  fallback was used in the last 7 days. Each stream's card says which step handled what, e.g.
+  "Transcript: Moonshine 92% in 41 s, Whisper small 8% (Spanish segment) in 12 s". The English
+  Whisper models (`tiny.en`, `base.en`, `small.en`) are an optional extra step, off by default.
 - **Picks**: signals that need no AI rank the moments (loudness spikes, speech rate, hype and
   laughing words, shouted lines, chat spikes when there are any), and a keyword screen flags
   spoilers, endings, leaks and cutscenes. Hooks and titles are the line said at the peak, or, with
   the hook writer on, written by Qwen2.5-1.5B-Instruct (Apache-2.0) on
   [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT) with a JSON schema. The writer is
-  loaded only while picking and can add flags, never clear them.
+  loaded only while picking and can add flags, never clear them. This is a chain too: signal
+  scoring, then the local writer, then a cloud model only when cloud is enabled; whatever no
+  writer could write keeps its hook from the transcript, so picks always come out.
 - **Setup**: on first start a job called "Engine setup" downloads the ready-made programs and the
-  models into `DATA_DIR/models` (about 1.3 GB with the writer, 160 MB without). Every file is
+  models into `DATA_DIR/models` (about 2.4 GB with the writer, 1.3 GB without; a step that is
+  switched off is not downloaded). Every file is
   pinned to a SHA-256 in `server/engine/catalog.ts`; an interrupted download carries on where it
   stopped. The Dashboard shows "Local engine: ready" or what is missing, with a button.
 - **Memory guard**: a model is not started when free memory is below its need plus 1 GB (or it
   does not fit under the service's own cap); the job says why. Without room for the writer, picks
   still come out, with transcript hooks and the reason on each pick.
-- **Measured** on the 4-vCPU box with `base.en`: 10 minutes of generated speech → transcript and
-  ranked picks in about 62 s (6 min per hour of stream), peak 440 MB. The writer adds about 15 s
-  per moment (about 8 min for 30) at a 1.9 GB peak.
+- **Measured** on the 4-vCPU box, 10 minutes of generated speech each: English → Moonshine, 37 s
+  for the transcript (39 s with ranked picks, about 4 min per hour of stream), peak 217 MB.
+  Spanish → Whisper small, 107 s, peak 522 MB. Whisper large-v3-turbo takes about 50 s per minute
+  of audio at a 1.1 GB peak, which is why it only gets the parts the others got wrong. The writer
+  adds about 15 s per moment (about 8 min for 30) at a 1.9 GB peak.
 
 `npm run test:engine` runs the real engine on speech generated by ffmpeg (flite voice): it
 downloads the pinned parts into `data/engine-test`, checks word times across silences, and holds
-a 10-minute sample to the budget (250 s, 2.5 GB). CI runs it. `npm run test:engine:writer` does
+a 10-minute sample to the budget (250 s, 2.5 GB). CI runs it. flite only speaks English, so the
+other-language run takes your own sample: `ENGINE_OTHER_LANGUAGE_WAV=/path/to/speech.wav npm run
+test:engine` checks that it skips Moonshine and goes to Whisper small. `npm run test:engine:writer` does
 the same for the hook writer (1.1 GB download, needs about 2.9 GB of free memory; not in CI).
 
 ## Manual check with a real link (not run in CI)

@@ -1,4 +1,4 @@
-import type { Chapter, PickFlags, Word } from "../../../shared/types.js";
+import type { Chapter, EngineReport, PickFlags, Word } from "../../../shared/types.js";
 import type { Signals } from "./signals.js";
 
 export interface PickInput {
@@ -13,6 +13,8 @@ export interface PickInput {
   /** What the creator does not want clipped. */
   bannedContent: string;
   maxPicks: number;
+  /** The video these picks are for, so the engine can note which step did what; `add` on a live stream, where each segment adds to the last. */
+  run?: { vodId: number; add?: boolean };
 }
 
 /** What a picker proposes. Times are seconds in the VOD; they get snapped and checked afterwards. */
@@ -31,6 +33,8 @@ export interface RawPick {
 export interface PickerResult {
   picks: RawPick[];
   costUsd: number;
+  /** Which step ranked and which wrote the hooks, with the time each took. */
+  report?: EngineReport;
 }
 
 /** Ranks highlight windows in a transcribed VOD. Real adapters call a paid LLM; tests use fakes. */
