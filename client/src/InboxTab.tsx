@@ -5,6 +5,8 @@ import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { EditSheet } from "./EditSheet";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
+import { buzz, swipeIntent, type SwipeIntent } from "./swipe";
+import { Avatar, EmptyState, Icon } from "./ui";
 
 /** Wide screens get the "Up next" grid beside the clip. */
 function useWide(): boolean {
@@ -131,7 +133,15 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
 
   const closeEdit = useCallback(() => setEditing(null), []);
 
-  if (clips.length === 0) return <EmptyGallery jobs={jobs} refresh={refresh} />;
+  const onSwipe = (intent: SwipeIntent) => {
+    if (intent === "approve" || intent === "reject") {
+      buzz();
+      act(intent);
+    } else if (intent === "next") step(1);
+    else if (intent === "back") step(-1);
+  };
+
+  if (clips.length === 0) return <EmptyGallery jobs={jobs} sources={sources} refresh={refresh} />;
 
   return (
     <section aria-labelledby="inbox-title" className={wide ? "inbox inbox-wide" : "inbox"}>
@@ -162,8 +172,15 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
 
       {current ? (
         <div className="review">
-          <ClipHead clip={current} position={`${index + 1} of ${queue.length}`} />
-          <ClipFrame current={current} next={next} muted={muted} onToggleSound={() => setMuted((m) => !m)} onSwipe={(dir) => (dir === "right" ? act("approve") : setRejecting(true))} />
+          <ClipFrame
+            current={current}
+            next={next}
+            source={sources.find((s) => s.id === current.sourceId)}
+            position={`${index + 1} of ${queue.length}`}
+            muted={muted}
+            onToggleSound={() => setMuted((m) => !m)}
+            onSwipe={onSwipe}
+          />
           <ClipDetails clip={current} source={sources.find((s) => s.id === current.sourceId)} />
           <div className="decide" data-testid="decide">
             {rejecting ? (
@@ -182,12 +199,15 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
             ) : (
               <div className="decide-buttons">
                 <button type="button" className="decide-reject" onClick={() => setRejecting(true)}>
+                  <Icon name="reject" />
                   Reject{wide && <kbd>R</kbd>}
                 </button>
                 <button type="button" onClick={() => setEditing(current)}>
+                  <Icon name="edit" />
                   Edit{wide && <kbd>E</kbd>}
                 </button>
                 <button type="button" className="decide-approve" onClick={() => act("approve")}>
+                  <Icon name="approve" />
                   Approve{wide && <kbd>A</kbd>}
                 </button>
               </div>
@@ -220,20 +240,26 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
           )}
         </div>
       ) : (
-        <div className="caught-up">
-          <p>
-            <strong>All caught up.</strong> New clips land here as streams are cut.
-          </p>
-          {last && (
-            <button type="button" onClick={takeBack}>
-              Undo last ({last.action.action === "approve" ? "approved" : "rejected"} “{last.title}”)
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon="approved"
+          title="All caught up"
+          action={{ label: "Paste a stream link", href: "#sources" }}
+          extra={
+            last && (
+              <button type="button" onClick={takeBack}>
+                Undo last ({last.action.action === "approve" ? "approved" : "rejected"} “{last.title}”)
+              </button>
+            )
+          }
+        >
+          Every clip is reviewed. New ones land here as streams are cut; paste another stream link to make more.
+        </EmptyState>
       )}
 
       <p className="inbox-links">
-        {wide && <span className="hint">Keys: A approve · R reject · E edit · ← → move · Z undo</span>}
+        <span className="hint">
+          {wide ? "Keys: A approve, R reject, E edit, ← → move, Z undo" : "Swipe right to approve, left to reject, up for the next clip."}
+        </span>
         <a href="#rejected">Rejected clips ({rejectedCount})</a>
       </p>
 
@@ -258,19 +284,23 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
 function ClipFrame({
   current,
   next,
+  source,
+  position,
   muted,
   onToggleSound,
   onSwipe,
 }: {
   current: Clip;
   next: Clip | null;
+  source?: Source;
+  position: string;
   muted: boolean;
   onToggleSound: () => void;
-  onSwipe: (dir: "left" | "right") => void;
+  onSwipe: (intent: SwipeIntent) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
-  const [dragX, setDragX] = useState(0);
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
 
   // Play the current clip, keep the preloaded next one paused.
   useEffect(() => {
@@ -289,34 +319,43 @@ function ClipFrame({
     start.current = { x: e.clientX, y: e.clientY };
   };
   const move = (e: PointerEvent) => {
-    if (start.current) setDragX(e.clientX - start.current.x);
+    const s = start.current;
+    if (!s) return;
+    const to = { x: e.clientX - s.x, y: e.clientY - s.y };
+    // A tick in the hand at the point where letting go starts to count.
+    if (swipeOf(to) && !swipeOf(drag)) buzz(8);
+    setDrag(to);
   };
   const up = (e: PointerEvent) => {
     const s = start.current;
     start.current = null;
-    setDragX(0);
+    setDrag(null);
     if (!s) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy)) onSwipe(dx > 0 ? "right" : "left");
-    else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) onToggleSound();
+    const intent = swipeIntent(e.clientX - s.x, e.clientY - s.y);
+    if (intent === "tap") onToggleSound();
+    else if (intent) onSwipe(intent);
   };
+
+  const pending = swipeOf(drag);
+  // The clip follows the finger: sideways with a tilt, or a little up and down.
+  const sideways = drag !== null && Math.abs(drag.x) >= Math.abs(drag.y);
+  const transform = !drag ? undefined : sideways ? `translateX(${drag.x}px) rotate(${drag.x / 40}deg)` : `translateY(${drag.y / 3}px)`;
 
   // Stable order by id, so the preloaded next video keeps its element (and its loaded data).
   const shown = [current, ...(next ? [next] : [])].sort((a, b) => a.id - b.id);
   return (
     <div
       ref={frame}
-      className="frame"
+      className={drag ? "frame is-dragging" : "frame"}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
       onPointerCancel={() => {
         start.current = null;
-        setDragX(0);
+        setDrag(null);
       }}
-      style={dragX ? { transform: `translateX(${dragX}px) rotate(${dragX / 40}deg)` } : undefined}
-      data-swipe={dragX > 70 ? "approve" : dragX < -70 ? "reject" : undefined}
+      style={transform ? { transform } : undefined}
+      data-swipe={pending ?? undefined}
     >
       {shown.map((c) => (
         <video
@@ -333,6 +372,30 @@ function ClipFrame({
           aria-hidden={c.id !== current.id}
         />
       ))}
+      <div className="clip-over" key={current.id} data-testid="current-clip" data-clip={current.id}>
+        <div className="over-top">
+          <span className="score" aria-label={`Score ${current.score ?? "unknown"} of 100`}>
+            {current.score === null ? "–" : Math.round(current.score)}
+            <small>score</small>
+          </span>
+          <span className="over-chip">{position}</span>
+        </div>
+        <div>
+          {current.hook && <p className="hook">{current.hook}</p>}
+          <h3>{current.title}</h3>
+          <div className="over-chips">
+            <span className="over-chip">
+              {source && <Avatar name={source.creatorName} />}
+              {source?.creatorName ?? "Unknown creator"}
+            </span>
+            <span className="over-chip">
+              <Icon name="clock" size={16} />
+              {Math.round(current.durationSec)} s
+            </span>
+            {current.experiment && <ExperimentBadge />}
+          </div>
+        </div>
+      </div>
       <button
         type="button"
         className="sound"
@@ -341,42 +404,31 @@ function ClipFrame({
         onPointerUp={(e) => e.stopPropagation()}
         onClick={onToggleSound}
       >
-        {muted ? "Sound off" : "Sound on"}
+        <Icon name={muted ? "muted" : "sound"} />
       </button>
+      {pending && (
+        <span className="stamp" aria-hidden="true">
+          {STAMP[pending]}
+        </span>
+      )}
     </div>
   );
 }
 
-function ClipHead({ clip, position }: { clip: Clip; position: string }) {
-  return (
-    <div className="clip-head" data-testid="current-clip" data-clip={clip.id}>
-      <span className="score" aria-label={`Score ${clip.score ?? "unknown"} of 100`}>
-        {clip.score === null ? "–" : Math.round(clip.score)}
-      </span>
-      <div>
-        {clip.hook && <p className="hook">{clip.hook}</p>}
-        <h3>{clip.title}</h3>
-        {clip.experiment && <ExperimentBadge />}
-        <p className="hint">score · {position}</p>
-      </div>
-    </div>
-  );
+const STAMP = { approve: "Approve", reject: "Reject", next: "Next clip", back: "Back" } as const;
+
+/** The swipe a drag would be if the finger lifted now; null for none (or a tap). */
+function swipeOf(drag: { x: number; y: number } | null): Exclude<SwipeIntent, "tap"> | null {
+  const intent = drag ? swipeIntent(drag.x, drag.y) : null;
+  return intent === "tap" ? null : intent;
 }
 
 function ClipDetails({ clip, source }: { clip: Clip; source?: Source }) {
   const perm = source?.permissions.at(-1);
   return (
     <div className="clip-details">
-      <dl className="stub">
-        <div>
-          <dt>Creator</dt>
-          <dd>{source?.creatorName ?? "Unknown"}</dd>
-        </div>
-        <div>
-          <dt>Length</dt>
-          <dd>{Math.round(clip.durationSec)} s</dd>
-        </div>
-        {perm && (
+      {perm && (
+        <dl className="stub">
           <div className="wide">
             <dt>Campaign</dt>
             <dd>
@@ -389,8 +441,8 @@ function ClipDetails({ clip, source }: { clip: Clip; source?: Source }) {
               )}
             </dd>
           </div>
-        )}
-      </dl>
+        </dl>
+      )}
       {clip.reason && <p className="why">Why it was picked: {clip.reason}</p>}
     </div>
   );
@@ -415,35 +467,47 @@ function UpNext({ queue, currentId, onPick }: { queue: Clip[]; currentId: number
   );
 }
 
-function EmptyGallery({ jobs, refresh }: { jobs: Job[]; refresh: () => Promise<void> }) {
+function EmptyGallery({ jobs, sources, refresh }: { jobs: Job[]; sources: Source[]; refresh: () => Promise<void> }) {
   const [error, setError] = useState<string | null>(null);
   const demo = jobs.find((j) => j.type === "demo-clips" && (j.status === "queued" || j.status === "running"));
+  const hasCampaign = sources.some((s) => s.permissionState === "active");
   return (
     <section aria-labelledby="inbox-title" className="inbox">
-      <h2 id="inbox-title">Inbox</h2>
-      <div className="caught-up">
-        <p>No clips yet. They show up here once a stream from a campaign is cut into clips.</p>
-        <p className="hint">Want to try the review first? Load ten demo clips made from test patterns. They can never be posted.</p>
-        {demo ? (
-          <p role="status">Making demo clips… {Math.round(demo.progress * 100)}%</p>
-        ) : (
-          <button
-            type="button"
-            className="primary"
-            onClick={() => {
-              setError(null);
-              void api.loadDemo().then(refresh, (err: Error) => setError(err.message));
-            }}
-          >
-            Load demo clips
-          </button>
-        )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
+      <div className="section-head">
+        <h2 id="inbox-title">Inbox</h2>
       </div>
+      <EmptyState
+        icon="inbox"
+        title="No clips to review yet"
+        action={hasCampaign ? { label: "Paste a stream link", href: "#sources" } : { label: "Add a creator", href: "#sources" }}
+        extra={
+          <>
+            <p className="hint">Want to try the review first? Load ten demo clips made from test patterns. They can never be posted.</p>
+            {demo ? (
+              <p role="status">Making demo clips… {Math.round(demo.progress * 100)}%</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  void api.loadDemo().then(refresh, (err: Error) => setError(err.message));
+                }}
+              >
+                Load demo clips
+              </button>
+            )}
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+          </>
+        }
+      >
+        {hasCampaign
+          ? "Paste a stream link on a campaign in Sources. Its best moments are cut into vertical clips and land here to review."
+          : "Add a creator who allows clipping in Sources, then paste one of their stream links. The clips land here to review."}
+      </EmptyState>
     </section>
   );
 }

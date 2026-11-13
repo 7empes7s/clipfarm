@@ -16,7 +16,7 @@ import type {
   VodProgress,
 } from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types.js";
-import { average, costPerApprovedClip, dayOf, etaSeconds, round2, secondsPerReview, towards, weekStart } from "../../shared/metrics.js";
+import { average, costPerApprovedClip, dayOf, etaSeconds, lastDays, round2, secondsPerReview, towards, weekStart } from "../../shared/metrics.js";
 
 export interface DashboardInput {
   now: Date;
@@ -268,6 +268,21 @@ export function buildDashboard(input: DashboardInput): Dashboard {
       };
     });
 
+  // A week of daily numbers for the sparklines.
+  const days = lastDays(now, 7);
+  const perDay = (value: (day: string) => number) => days.map((date) => ({ date, value: round2(value(date)) }));
+  const sent = live.filter((p) => p.status === "posted");
+  const accountDays = accounts.flatMap((a) => a.viewsPerDay);
+  const trends = {
+    views: perDay((day) =>
+      viewsTodayFrom === "accounts"
+        ? accountDays.filter((d) => d.date === day).reduce((s, d) => s + d.value, 0)
+        : sent.filter((p) => dayOf(postTime(p)) === day).reduce((s, p) => s + (p.views ?? 0), 0),
+    ),
+    clips: perDay((day) => clips.filter((c) => dayOf(c.createdAt) === day).length),
+    earnings: perDay((day) => sent.filter((p) => !p.experiment && dayOf(postTime(p)) === day).reduce((s, p) => s + p.estimatedEarningsUsd, 0)),
+  };
+
   const creator = (sourceId: number) => sources.find((s) => s.id === sourceId)?.creatorName ?? "Unknown creator";
   const progress = vods.slice(0, 10).map((v) => vodProgress(v, jobs, clips, creator(v.sourceId)));
   const rows = earningsRows(posts, sources, now);
@@ -285,6 +300,7 @@ export function buildDashboard(input: DashboardInput): Dashboard {
       costWeekUsd: Math.round(costWeek * 10000) / 10000,
       costPerApprovedClipUsd: costPerApprovedClip(spend, approvedClips),
     },
+    trends,
     running,
     vods: progress,
     goals: goals(progress, clips, input.decisionTimes),

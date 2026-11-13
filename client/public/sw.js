@@ -1,7 +1,7 @@
 // clipfarm's service worker: keeps the app shell so the installed app opens without a network.
 // API answers are never cached (they must be current); built assets are cached as they load.
-const CACHE = "clipfarm-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/apple-touch-icon.png"];
+const CACHE = "clipfarm-shell-v2";
+const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

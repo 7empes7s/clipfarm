@@ -13,6 +13,7 @@ import { StatsTab } from "./StatsTab";
 import { WatchlistTab } from "./WatchlistTab";
 import { Clips } from "./Clips";
 import { clock, shortDate, usd } from "./format";
+import { EmptyState, Icon, type IconName, Logo, Skeleton } from "./ui";
 
 const STATE_LABEL = { active: "Allowed", expired: "Expired", none: "No permission" } as const;
 const VOD_STATUS_LABEL: Record<Vod["status"], string> = {
@@ -48,7 +49,7 @@ const TABS = [
   { id: "watchlist", label: "Watchlist" },
   { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
-] as const;
+] as const satisfies readonly { id: IconName; label: string }[];
 /** "rejected" is reached from the inbox, "settings" from the ⋯ in the header: neither is in the tab bar. */
 type Tab = (typeof TABS)[number]["id"] | "rejected" | "settings";
 // Older links keep working.
@@ -81,6 +82,9 @@ export function App() {
   const [picks, setPicks] = useState<Pick[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // False until the first answer from the server: screens show loading shapes, not "nothing yet".
+  const [loaded, setLoaded] = useState(false);
+  const nav = useRef<HTMLElement>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [permissionFor, setPermissionFor] = useState<Source | null>(null);
   const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
@@ -102,6 +106,7 @@ export function App() {
       setPicks(p);
       if (edits === clipsEdits.current) setClips(c);
       setLoadError(null);
+      setLoaded(true);
     } catch (err) {
       setLoadError((err as Error).message);
     }
@@ -135,30 +140,42 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // On phones the sections are a rail that scrolls sideways: keep the open one in sight.
+  useEffect(() => {
+    const rail = nav.current;
+    const open = rail?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (rail && open) rail.scrollTo({ left: open.offsetLeft - (rail.clientWidth - open.offsetWidth) / 2 });
+  }, [tab]);
+
+  // The lists below come with the first load; until then they would wrongly say "nothing yet".
+  const waiting = !loaded && !loadError;
+
   return (
-    <div className="page">
-      <header className="masthead">
-        <div className="masthead-top">
-          <h1>
-            <span className="tally" aria-hidden="true" />
+    <div className="shell">
+      <div className="side">
+        <header className="appbar">
+          <h1 className="brand">
+            <Logo />
             clipfarm
           </h1>
           <a className="more" href="#settings" aria-label="Settings: keys and connections" title="Settings" aria-current={tab === "settings" ? "page" : undefined}>
-            ⋯
+            <Icon name="settings" size={22} />
           </a>
-        </div>
-        <p>Streams in, vertical clips out. Only from creators who said yes.</p>
-      </header>
+        </header>
 
-      <nav className="tabs" aria-label="Sections">
-        {TABS.map((t) => (
-          <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
-            {t.label}
-            {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && <span className="count">{counts[t.id]}</span>}
-          </a>
-        ))}
-      </nav>
+        <nav className="tabs" aria-label="Sections" ref={nav}>
+          {TABS.map((t) => (
+            <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
+              <Icon name={t.id} />
+              {t.label}
+              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && <span className="count">{counts[t.id]}</span>}
+            </a>
+          ))}
+        </nav>
+        <p className="tagline">Streams in, vertical clips out. Only from creators who said yes.</p>
+      </div>
 
+      <main className="page">
       {loadError && (
         <p className="error" role="alert">
           Could not reach the server: {loadError}
@@ -166,10 +183,9 @@ export function App() {
       )}
 
       {tab === "dashboard" && <DashboardTab view={dashView} clips={clips} sources={sources} jobs={jobs} />}
-      {tab === "inbox" && <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />}
-      {(tab === "approved" || tab === "posted" || tab === "rejected") && (
-        <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />
-      )}
+      {tab === "inbox" && (waiting ? <Skeleton shape="frame" /> : <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />)}
+      {(tab === "approved" || tab === "posted" || tab === "rejected") &&
+        (waiting ? <Skeleton shape="card" count={2} /> : <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />)}
       {tab === "stats" && <StatsTab />}
       {tab === "settings" && <SettingsTab focus={sub} />}
       {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
@@ -182,10 +198,13 @@ export function App() {
               Add a campaign
             </button>
           </div>
-          {sources.length === 0 ? (
-            <p className="empty">
-              No campaigns yet. Add one from a clipping program (like Whop Content Rewards) before adding any stream.
-            </p>
+          {waiting ? (
+            <Skeleton shape="card" count={2} />
+          ) : sources.length === 0 ? (
+            <EmptyState icon="sources" title="Start with a creator who allows clipping" action={{ label: "Add your first campaign", onClick: () => setFormOpen(true) }}>
+              No campaigns yet. A campaign is a creator plus the permission to clip them, from a clipping program like Whop Content
+              Rewards. Once it is saved you can paste their stream links.
+            </EmptyState>
           ) : (
             <ul className="stack">
               {sources.map((s) => (
@@ -208,8 +227,12 @@ export function App() {
         <section aria-labelledby="jobs-title">
           <h2 id="jobs-title">Jobs</h2>
           <p className="hint">One job at a time, so the server stays light.</p>
-          {jobs.length === 0 ? (
-            <p className="empty">Nothing running. Add a stream link to a campaign in Sources to start.</p>
+          {waiting ? (
+            <Skeleton shape="rows" count={3} />
+          ) : jobs.length === 0 ? (
+            <EmptyState icon="jobs" title="Nothing is running" action={{ label: "Paste a stream link", href: "#sources" }}>
+              Paste a stream link on a campaign in Sources, and the work of turning it into clips shows up here.
+            </EmptyState>
           ) : (
             <ul className="jobs">
               {jobs.map((j) => (
@@ -246,6 +269,7 @@ export function App() {
           }}
         />
       )}
+      </main>
     </div>
   );
 }

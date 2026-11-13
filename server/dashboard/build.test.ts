@@ -287,6 +287,31 @@ describe("buildDashboard", () => {
     expect(d.today).toMatchObject({ viewsToday: 1500, viewsTodayFrom: "accounts" });
   });
 
+  it("gives a week of daily numbers for the sparklines, oldest first, ending today", () => {
+    const d = buildDashboard({
+      ...base,
+      clips: [clip({ createdAt: "2026-11-19T09:00:00.000Z" }), clip({ createdAt: "2026-11-19T10:00:00.000Z" }), clip({ createdAt: "2026-11-17T10:00:00.000Z" }), clip({ createdAt: "2026-11-01T10:00:00.000Z" })],
+      accounts: [],
+    });
+    const days = ["2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19"];
+    expect(d.trends.clips.map((p) => p.date)).toEqual(days);
+    expect(d.trends.clips.map((p) => p.value)).toEqual([0, 0, 0, 0, 1, 0, 2]);
+    // Views and estimated pay of the posts that went out each day; the scheduled one has neither yet.
+    expect(d.trends.views.map((p) => p.value)).toEqual([0, 0, 0, 0, 0, 9000, 5000]);
+    expect(d.trends.earnings.map((p) => p.value)).toEqual([0, 0, 0, 0, 0, 13.5, 7.5]);
+  });
+
+  it("draws the views sparkline from the accounts when the service has daily views", () => {
+    const d = buildDashboard({
+      ...base,
+      accounts: [
+        card({ viewsPerDay: [{ date: "2026-11-18", value: 900 }, { date: "2026-11-19", value: 1200 }] }),
+        card({ accountId: "tt", viewsPerDay: [{ date: "2026-11-19", value: 300 }] }),
+      ],
+    });
+    expect(d.trends.views.map((p) => p.value)).toEqual([0, 0, 0, 0, 0, 900, 1500]);
+  });
+
   it("is empty on a new database", () => {
     const d = buildDashboard({ now, clips: [], posts: [], vods: [], jobs: [], sources: [], accounts: [], decisionTimes: [] });
     expect(d.empty).toBe(true);

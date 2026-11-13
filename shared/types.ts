@@ -545,6 +545,15 @@ export interface DashboardToday {
   costPerApprovedClipUsd: number | null;
 }
 
+export interface DashboardTrends {
+  /** Views per day: from the accounts when the posting service has them, else of the posts sent that day. */
+  views: DailyPoint[];
+  /** New clips per day. */
+  clips: DailyPoint[];
+  /** Estimated pay of the posts sent each day. */
+  earnings: DailyPoint[];
+}
+
 /** Experiment posts added up for one burner account or one creator. */
 export interface ExperimentRow {
   key: string;
@@ -572,6 +581,8 @@ export interface Dashboard {
   empty: boolean;
   demoLoaded: boolean;
   today: DashboardToday;
+  /** The last 7 days, oldest first, for the sparklines under the big numbers. */
+  trends: DashboardTrends;
   running: RunningJob[];
   vods: VodProgress[];
   goals: Goal[];

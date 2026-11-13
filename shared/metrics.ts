@@ -12,6 +12,11 @@ export function dayOf(d: Date | string): string {
   return (typeof d === "string" ? new Date(d) : d).toISOString().slice(0, 10);
 }
 
+/** The last `n` days (YYYY-MM-DD, UTC), oldest first, ending on the day of `now`. */
+export function lastDays(now: Date, n: number): string[] {
+  return Array.from({ length: n }, (_, i) => dayOf(new Date(now.getTime() - (n - 1 - i) * DAY_MS)));
+}
+
 /** Monday 00:00 UTC of the week `now` is in. */
 export function weekStart(now: Date): Date {
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
