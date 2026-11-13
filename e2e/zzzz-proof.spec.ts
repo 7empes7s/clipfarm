@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // The server runs with CLIPFARM_FAKES=1: the "latest video" of kick.com/tjr is a generated test
 // pattern, the pipeline is the real one, and nothing leaves the box.
 
-test("daily proof: Run proof now, the numbers against the target, play a proof clip, and the Proof tag in the Inbox", async ({ page, request }, testInfo) => {
+test("daily proof: Run proof now, the numbers against the target, play a proof clip, and the Proof tag in the Inbox", async ({ page, request }) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
@@ -14,8 +14,9 @@ test("daily proof: Run proof now, the numbers against the target, play a proof c
   const card = page.getByTestId("proof-card");
   await expect(card.getByRole("heading", { name: "Daily proof" })).toBeVisible();
 
-  // The phone run makes the proof; the laptop run finds it on the card.
-  if (testInfo.project.name === "phone") {
+  // The first run (the phone's) makes the proof; later ones (the laptop's, a retry) find it on the card.
+  const fresh = ((await (await request.get("/api/proof")).json()) as { runs: unknown[] }).runs.length === 0;
+  if (fresh) {
     await expect(card.getByText("No proof has run yet.")).toBeVisible();
     await expect(card.getByTestId("launch-ready")).toHaveText("Launch ready: no");
     await expect(card.getByTestId("launch-reasons")).toContainText("No proof has finished yet.");
@@ -34,8 +35,8 @@ test("daily proof: Run proof now, the numbers against the target, play a proof c
   const campaign = card.getByTestId("proof-run").filter({ hasText: "Campaign video" });
   await expect(campaign.getByText("Met the target")).toBeVisible({ timeout: 150_000 });
   await expect(campaign.getByText(/^TJR: /)).toBeVisible();
-  await expect(campaign.locator(".is-ok").filter({ hasText: "Clips" })).toContainText("Met: at least 1");
-  await expect(campaign.locator(".is-ok").filter({ hasText: "Time to all clips" })).toContainText("Met: under 30 min");
+  await expect(campaign.locator(".is-ok").filter({ has: page.getByText("Clips", { exact: true }) })).toContainText("Met: at least 1");
+  await expect(campaign.locator(".is-ok").filter({ has: page.getByText("Time to all clips", { exact: true }) })).toContainText("Met: under 30 min");
   for (const fact of ["Video length", "Time to first clip", "Engine", "Cost", "Memory peak"]) await expect(campaign.getByText(fact, { exact: true })).toBeVisible();
   await expect(campaign.getByText("Stand-in (demo)")).toBeVisible();
   // No creator with a public allowance has a GTA V video here: said, not failed.
@@ -62,8 +63,8 @@ test("daily proof: Run proof now, the numbers against the target, play a proof c
   const proofClips = clips.filter((c) => c.proof);
   expect(proofClips.length).toBeGreaterThan(0);
   expect(proofClips.every((c) => c.postCount === 0)).toBe(true);
-  // The Inbox opens on the newest video's clips: right after the phone run, that is the proof's.
-  if (testInfo.project.name === "phone") {
+  // The Inbox opens on the newest video's clips: right after the proof, that is the proof's.
+  if (fresh) {
     await page.goto("/#inbox");
     await expect(page.getByTestId("proof-tag")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
