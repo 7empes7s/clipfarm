@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, PostFlag, RejectReason } from "../shared/types.js";
+import type { Platform, PostFlag, RejectReason, WatchChannel } from "../shared/types.js";
 import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
 import { accessGate, type AccessVerifier } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
@@ -24,7 +24,9 @@ import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
+import type { AllowanceChecker } from "./sources/proof.js";
 import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
+import { addSuggested, listSuggested, type SeedCreator } from "./sources/suggested.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
 import type { TrendRadar } from "./trends/radar.js";
@@ -40,6 +42,10 @@ export interface AppDeps {
   publisher: Publisher;
   /** Account stats from the posting service, for the dashboard. */
   accountStats?: AccountStatsStore;
+  /** Re-reads the proof of public clipping allowances ("Check again" and the weekly check). */
+  allowance?: AllowanceChecker;
+  /** The starter list of creators who publicly allow clipping. */
+  suggested?: SeedCreator[];
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
@@ -92,6 +98,8 @@ export function createApp({
   posts,
   publisher,
   accountStats,
+  allowance,
+  suggested = [],
   watchlist,
   engine,
   settings,
@@ -117,6 +125,33 @@ export function createApp({
   app.post("/api/sources", (req, res) => {
     res.status(201).json(sources.create(parseNewSource(req.body)));
   });
+
+  app.get("/api/sources/suggested", (_req, res) => {
+    res.json(listSuggested(suggested, sources.list()));
+  });
+
+  // The manager picks from the starter list, each shown with its proof; nothing is added unasked.
+  app.post("/api/sources/suggested", (req, res) => {
+    const names = ((req.body ?? {}) as { names?: unknown }).names;
+    const picked = Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
+    const added = addSuggested(picked, suggested, { sources, watchlist: watchlist?.repo, now: new Date() });
+    res.status(201).json({ added, suggested: listSuggested(suggested, sources.list()) });
+  });
+
+  if (allowance) {
+    // "Check again": re-reads the proof page of a public allowance and stores the outcome.
+    app.post("/api/permissions/:id/check", async (req, res) => {
+      const id = idParam(req.params.id);
+      const result = await allowance.check(id);
+      res.json({ ...result, source: sources.get(sources.permission(id).sourceId) });
+    });
+
+    // "Look for a clipping allowance" in Add a creator: reads the creator's own channel pages.
+    app.post("/api/allowance/find", async (req, res) => {
+      const { channels } = parseWatchedCreator({ name: "-", channels: ((req.body ?? {}) as { channels?: WatchChannel[] }).channels });
+      res.json(await allowance.find(channels));
+    });
+  }
 
   // Another record for a creator we already have (an experiment, or a campaign that replaces an old one).
   app.post("/api/sources/:id/permissions", (req, res) => {
@@ -334,7 +369,11 @@ export function createApp({
     app.put("/api/watchlist/:id/auto-ingest", async (req, res) => {
       const id = idParam(req.params.id);
       const on = (req.body ?? {}).on === true;
-      if (on && repo.get(id).permissionState !== "active") {
+      const state = repo.get(id).permissionState;
+      if (on && state === "needs-review") {
+        throw new ValidationError("Their clipping allowance needs review: check it again in Sources first.");
+      }
+      if (on && state !== "active") {
         throw new ValidationError("Needs permission: join their program and add it as a campaign first.");
       }
       repo.setAutoIngest(id, on);

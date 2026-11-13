@@ -358,6 +358,7 @@ export class Publisher {
       targets: [{ platform, role: "main" }],
       now: this.now(),
     });
+    const permission = covering!;
     return {
       clipId: clip.id,
       platform,
@@ -367,9 +368,15 @@ export class Publisher {
         title: clip.title,
         creatorName: source.creatorName,
         channelUrl: source.channelUrls[0] ?? null,
-        briefRules: covering!.briefRules,
+        briefRules: permission.briefRules,
         platform,
       }),
+      permission: {
+        kind: permission.kind,
+        campaignUrl: permission.campaignUrl,
+        proofUrl: permission.proofUrl,
+        proofQuote: permission.proofQuote,
+      },
     };
   }
 

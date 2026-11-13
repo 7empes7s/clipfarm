@@ -1,6 +1,13 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { NewSourceInput, PermissionKind, Platform, Source } from "../../shared/types";
-import { EXPERIMENT_DAYS, PERMISSION_KIND_LABELS, PERMISSION_KINDS, PLATFORM_LABELS, PLATFORMS } from "../../shared/types";
+import {
+  ALLOWANCE_VALID_DAYS,
+  EXPERIMENT_DAYS,
+  PERMISSION_KIND_LABELS,
+  PERMISSION_KINDS,
+  PLATFORM_LABELS,
+  PLATFORMS,
+} from "../../shared/types";
 import { api } from "./api";
 
 interface Props {
@@ -48,6 +55,9 @@ export function CampaignForm({ source, onClose, onSaved }: Props) {
         allowedPlatforms: platforms,
         // The campaign runs through the end of the chosen day.
         expiresAt: expires ? new Date(`${expires}T23:59:59`).toISOString() : null,
+        proofUrl: text("proofUrl") || null,
+        proofQuote: text("proofQuote") || null,
+        proofCheckedAt: text("proofCheckedAt") || null,
       },
     };
     setSaving(true);
@@ -83,16 +93,33 @@ export function CampaignForm({ source, onClose, onSaved }: Props) {
           </button>
         </header>
         <form onSubmit={submit} className="form">
-          <label>
-            Permission
-            <select ref={firstField} value={kind} onChange={(e) => setKind(e.target.value as PermissionKind)}>
+          {/* The select sits beside its label, not inside it: an option's words ("Creator publicly…") are not the label. */}
+          <div className="field">
+            <label htmlFor="campaign-kind">Permission</label>
+            <select id="campaign-kind" ref={firstField} value={kind} onChange={(e) => setKind(e.target.value as PermissionKind)}>
               {PERMISSION_KINDS.map((k) => (
                 <option key={k} value={k}>
                   {PERMISSION_KIND_LABELS[k]}
                 </option>
               ))}
             </select>
-          </label>
+          </div>
+          {kind === "public-allowance" && (
+            <>
+              <label>
+                Link to where they say it <span className="hint">channel panel, about page, post, Discord rule…</span>
+                <input name="proofUrl" type="url" inputMode="url" placeholder="https://…" required />
+              </label>
+              <label>
+                Their words <span className="hint">copy the sentence that allows clipping</span>
+                <textarea name="proofQuote" rows={2} maxLength={300} required />
+              </label>
+              <label>
+                Checked on <span className="hint">the day you read it</span>
+                <input name="proofCheckedAt" type="date" required defaultValue={new Date().toLocaleDateString("en-CA")} />
+              </label>
+            </>
+          )}
           {experiment && (
             <>
               <p className="hint">
@@ -106,7 +133,7 @@ export function CampaignForm({ source, onClose, onSaved }: Props) {
               </label>
             </>
           )}
-          {kind !== "own-content" && !experiment && (
+          {kind !== "own-content" && kind !== "public-allowance" && !experiment && (
             <label>
               {kind === "whop-campaign" ? "Whop campaign link" : "Link to the permission (email, doc…)"}
               <input name="campaignUrl" type="url" inputMode="url" placeholder="https://whop.com/…" required={kind === "whop-campaign"} />
@@ -124,7 +151,7 @@ export function CampaignForm({ source, onClose, onSaved }: Props) {
               </label>
             </>
           )}
-          {!experiment && (
+          {kind !== "public-allowance" && !experiment && (
             <div className="row">
               <label>
                 Pay per 1,000 views ($)
@@ -149,13 +176,23 @@ export function CampaignForm({ source, onClose, onSaved }: Props) {
           </fieldset>
           <label>
             Ends on{" "}
-            <span className="hint">{experiment ? `leave empty to end in ${EXPERIMENT_DAYS} days` : "leave empty if it does not end"}</span>
+            <span className="hint">
+              {kind === "public-allowance"
+                ? `leave empty: it ends ${ALLOWANCE_VALID_DAYS} days after the last check and is checked again every week`
+                : experiment
+                  ? `leave empty to end in ${EXPERIMENT_DAYS} days`
+                  : "leave empty if it does not end"}
+            </span>
             <input name="expiresAt" type="date" />
           </label>
           {!experiment && (
             <label>
               Brief rules
-              <textarea name="briefRules" rows={4} placeholder="Paste the campaign brief: length, credit, hashtags…" />
+              <textarea
+                name="briefRules"
+                rows={4}
+                placeholder={kind === "public-allowance" ? "Their conditions: credit me, no TikTok…" : "Paste the campaign brief: length, credit, hashtags…"}
+              />
             </label>
           )}
           {!source && (

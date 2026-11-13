@@ -14,6 +14,7 @@ interface PostRow {
   creator_name: string;
   permission_id: number;
   campaign_url: string | null;
+  proof_url: string | null;
   cpm_rate_usd: number | null;
   min_views: number | null;
   platform: Platform;
@@ -40,7 +41,7 @@ interface PostRow {
 const FLAG_COLUMNS: Record<PostFlag, string> = { claim: "claim_at", removal: "removal_at", strike: "strike_at" };
 
 const SELECT = `
-  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.cpm_rate_usd, m.min_views, m.kind
+  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.proof_url, m.cpm_rate_usd, m.min_views, m.kind
   FROM posts p
   JOIN clips c ON c.id = p.clip_id
   JOIN sources s ON s.id = c.source_id
@@ -65,6 +66,7 @@ function toPost(r: PostRow): Post {
     postedAt: r.posted_at,
     permissionId: r.permission_id,
     campaignUrl: r.campaign_url,
+    proofUrl: r.proof_url,
     views: r.views,
     viewsUpdatedAt: r.views_updated_at,
     viewsSource: r.views_source,
