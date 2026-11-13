@@ -1,6 +1,6 @@
 import { mkdir, readdir, rm, rmdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { LiveCreatorStatus, LiveInfo, WatchedCreator } from "../../shared/types.js";
+import type { LiveCreatorStatus, LiveInfo, LiveNow, WatchedCreator } from "../../shared/types.js";
 import { ValidationError } from "../errors.js";
 import type { JobQueue } from "../jobs/queue.js";
 import { Backoff } from "../sources/watchlist/backoff.js";
@@ -78,6 +78,8 @@ export class LiveManager {
   private recordings = new Set<Promise<void>>();
   private syncing: Promise<void> = Promise.resolve();
   private timers: NodeJS.Timeout[] = [];
+  /** The creator a launch drill is recording, with the stream it found live. */
+  private drill: { creatorId: number; live: LiveNow } | null = null;
 
   constructor(private deps: LiveManagerDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -96,6 +98,11 @@ export class LiveManager {
     void look();
     this.timers = [setInterval(() => this.roll(), rollMs), setInterval(() => void look(), syncMs)];
     for (const t of this.timers) t.unref();
+  }
+
+  /** True between start() and stop(): segments roll by themselves. */
+  get started(): boolean {
+    return this.timers.length > 0;
   }
 
   /** Stops every recorder. Recordings stay "recording" in the database and are closed by the next start. */
@@ -138,9 +145,15 @@ export class LiveManager {
     );
   }
 
+  /** The stream a creator is live with: what the watchlist saw, or what the drill found a moment ago. */
+  private liveOf(creator: WatchedCreator): LiveNow | null {
+    return creator.live ?? (this.drill?.creatorId === creator.id ? this.drill.live : null);
+  }
+
   private decide(creator: WatchedCreator, live: { title: string; game: string | null } | null): CaptureDecision {
     const launch = this.deps.repo.launch();
     return decideCapture({
+      drill: this.drill?.creatorId === creator.id,
       armed: isArmed(launch, this.now()),
       beforeLaunch: beforeLaunch(launch, this.now()),
       creatorOn: !launch.off.includes(creator.id),
@@ -179,7 +192,8 @@ export class LiveManager {
         this.reasons.delete(creator.id);
         continue;
       }
-      const decision = this.decide(creator, creator.live);
+      const live = this.liveOf(creator);
+      const decision = this.decide(creator, live);
       const backoff = this.backoffs.get(creator.id);
       if (!decision.capture) this.reasons.set(creator.id, decision.reason);
       else if (this.guard) this.reasons.set(creator.id, this.guard);
@@ -187,14 +201,13 @@ export class LiveManager {
       else if (this.deps.repo.activeCaptures().length >= this.maxStreams) {
         // The watchlist is in order of size, so the biggest creators got the places.
         this.reasons.set(creator.id, `Waiting: ${this.maxStreams} streams are being recorded, the most this server takes at once`);
-      } else this.begin(creator, rank);
+      } else this.begin(creator, rank, live!);
     }
     await this.cleanup();
     this.roll();
   }
 
-  private begin(creator: WatchedCreator, rank: number): void {
-    const live = creator.live!;
+  private begin(creator: WatchedCreator, rank: number, live: LiveNow): void {
     try {
       // The same gate as "Add link" and the watchlist's auto-ingest, checked against the database now.
       this.deps.sources.assertCanUse(creator.sourceId!);
@@ -325,6 +338,30 @@ export class LiveManager {
       // The folder goes with its last segment.
       await rmdir(dirname(seg.filePath)).catch(() => undefined);
     }
+  }
+
+  /**
+   * The launch drill: records this creator's live stream now, whatever the switches say. The
+   * permission gate and the leak rules still decide. Throws with the reason when it cannot record.
+   */
+  async startDrill(creatorId: number, live: LiveNow): Promise<Capture> {
+    this.drill = { creatorId, live };
+    this.backoffs.delete(creatorId);
+    await this.sync();
+    const capture = this.deps.repo.lastCapture(creatorId);
+    if (capture?.status === "recording") return capture;
+    this.drill = null;
+    throw new ValidationError(this.reasons.get(creatorId) ?? "The stream could not be recorded.");
+  }
+
+  /** Ends the drill's recording; segments already recorded are still worked through. */
+  async endDrill(): Promise<void> {
+    const drill = this.drill;
+    this.drill = null;
+    if (!drill) return;
+    await this.syncing;
+    const capture = this.deps.repo.lastCapture(drill.creatorId);
+    if (capture) await this.end(capture, "The launch drill is over.", true);
   }
 
   async arm(armed: boolean): Promise<void> {

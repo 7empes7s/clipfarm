@@ -231,3 +231,98 @@ describe("clipfarm-ops run, clips and status (fakes; real ffmpeg on a generated 
     expect(out.some((l) => l.startsWith("Done in"))).toBe(false);
   });
 });
+
+describe("clipfarm-ops proof and drill", () => {
+  it("proof runs the campaign channel's latest video on the real pipeline, keeps it private and prints the numbers against the target", async () => {
+    await addTjr();
+    // One clip is enough here: the stand-in video is 20 s long, and every clip is a real ffmpeg render.
+    const proofEnv = { ...env, PROOF_MAX_PICKS: "1" };
+    const { code, out, err } = await ops(["proof"], proofEnv);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(out[0]).toBe("The clipfarm service is not running, so this command does the work.");
+    const report = out.slice(out.findIndex((l) => l.startsWith("Campaign video:")));
+    expect(report[0]).toMatch(/^Campaign video: PASSED {2}TJR: /);
+    expect(report).toEqual(
+      expect.arrayContaining([
+        "       Video length: 20 s",
+        "  ok   Clips: 1 (target: at least 1)",
+        expect.stringMatching(/^ {2}ok {3}Time to all clips: (under 1|\d+) min \(target: under 30 min\)$/),
+        expect.stringMatching(/^ {7}Time to first clip: (under 1|\d+) min$/),
+        expect.stringMatching(/^ {2}ok {3}Quality check: 1 of 1 passed$/),
+        "       Approved by you: No swipes yet (target: half)",
+        "       Engine: Stand-in (demo)",
+        expect.stringMatching(/^ {7}Cost: (under )?\$0\.\d+$/),
+        expect.stringMatching(/^ {7}Memory peak: \d+\.\d GB$/),
+        "GTA video: SKIPPED  (No creator with a public clipping allowance is in Sources yet. Add one from the suggested list.)",
+        "Kept private: nothing was posted. The clips wait in the Inbox, tagged Proof.",
+        "Launch ready: no",
+      ]),
+    );
+
+    // Stored in SQLite, and the clips are real files waiting for review, tagged Proof.
+    const rt = openRuntime(proofEnv);
+    try {
+      const [campaign] = rt.proof.info().runs;
+      expect(campaign).toMatchObject({ status: "passed", askedBy: "ops", metrics: { vodSec: 20, engine: "Stand-in (demo)" } });
+      const clips = rt.clips.list();
+      expect(clips).toHaveLength(1);
+      expect(campaign!.clipIds.sort()).toEqual(clips.map((c) => c.id).sort());
+      for (const c of clips) {
+        expect(c).toMatchObject({ proof: true, status: "pending", postCount: 0 });
+        expect(await probeVideo(rt.clips.filePath(c.id)!)).toMatchObject({ width: 1080, height: 1920 });
+      }
+      expect(rt.posts.list()).toEqual([]);
+    } finally {
+      rt.db.close();
+    }
+
+    const status = await ops(["proof", "status"]);
+    expect(status.code).toBe(0);
+    expect(status.out[0]).toMatch(/^Campaign video: PASSED/);
+    expect(status.out).toContain("The daily timer is off (PROOF_HOUR).");
+    expect(status.out).toContain("  - No live drill has run yet. Run one while an allowed creator is live.");
+  }, 120_000);
+
+  it("proof exits non-zero with the reason when there is nothing to run on", async () => {
+    const { code, out, err } = await ops(["proof"]);
+    expect(code).toBe(1);
+    expect(out).toContain("Campaign video: SKIPPED  (No source has the channel https://kick.com/tjr. Add its campaign in Sources.)");
+    expect(err).toEqual(["clipfarm-ops: The proof had no video to run on."]);
+  });
+
+  it("drill live loads the launch-day watchlist, records an allowed live creator and reports the time from moment to LIVE clip", async () => {
+    // Launch time is behind us here, so the stand-in GTA VI streams are no leak; short segments keep it quick.
+    const drillEnv = { ...env, LAUNCH_AT: "2026-01-01T00:00:00Z", LIVE_SEGMENT_SEC: "20", LIVE_OVERLAP_SEC: "0", LIVE_MAX_PICKS: "1" };
+    const { code, out, err } = await ops(["drill", "live", "--minutes", "0.25"], drillEnv);
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(out[0]).toMatch(/^Launch-day watchlist: \d+ creators, \d+ with a permission record in force \(\d+ loaded from the list, \d+ added with a public allowance\)\.$/);
+    const report = out.slice(out.findIndex((l) => l.startsWith("Drill:")));
+    expect(report[0]).toMatch(/^Drill: PASSED {2}/);
+    expect(report).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^ {2}ok {3}Moment to LIVE clip: \d+ s \(target: under 15 min\)$/),
+        expect.stringMatching(/^ {2}ok {3}LIVE clips: \d+ \(target: at least 1\)$/),
+        "  ok   Segments dropped: 0 of 1 (target: none)",
+        expect.stringMatching(/^ {7}Memory peak: \d+\.\d GB$/),
+      ]),
+    );
+
+    const rt = openRuntime(drillEnv);
+    try {
+      expect(rt.watchRepo.list().length).toBeGreaterThan(10);
+      expect(rt.liveRepo.activeCaptures()).toEqual([]);
+      const clips = rt.clips.list();
+      expect(clips.length).toBeGreaterThan(0);
+      expect(clips.every((c) => c.proof && c.live !== null && c.status === "pending" && c.postCount === 0)).toBe(true);
+    } finally {
+      rt.db.close();
+    }
+    // The second time nothing is loaded twice.
+    const again = await ops(["drill", "live", "nobody-by-this-name"], drillEnv);
+    expect(again.code).toBe(1);
+    expect(again.out[0]).toMatch(/^Launch-day watchlist: \d+ creators, \d+ with a permission record in force\.$/);
+    expect(again.err).toEqual(["clipfarm-ops: nobody-by-this-name is not on the watchlist with a permission record in force."]);
+  }, 120_000);
+});

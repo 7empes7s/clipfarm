@@ -97,6 +97,8 @@ export interface Config {
     /** The app's web address, named to the push services as the sender of notifications. */
     pushSubject: string;
   };
+  /** The daily live proof: whose latest video it runs on, the hour it starts by itself (null: only on demand), and the longest video it takes by choice. */
+  proof: { campaignChannel: string; dailyHour: number | null; maxVodHours: number; /** Most clips a proof makes from one video; null: as many as the target needs. */ maxPicks: number | null };
   /** Reads the proof pages of public clipping allowances. */
   proofFetcher: ProofFetcher;
   /** Reads Whop / Content Rewards campaign pages. */
@@ -355,6 +357,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     },
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
+    proof: {
+      campaignChannel: env.PROOF_CHANNEL || "https://kick.com/tjr",
+      // Demo mode makes no clips by itself: the proof runs when it is asked for.
+      dailyHour: /^\d+$/.test(env.PROOF_HOUR ?? "") ? Math.min(23, Number(env.PROOF_HOUR)) : env.PROOF_HOUR === "off" || fakes ? null : 6,
+      maxVodHours: Number(env.PROOF_MAX_VOD_HOURS) || 4,
+      maxPicks: Number(env.PROOF_MAX_PICKS) >= 1 ? Math.floor(Number(env.PROOF_MAX_PICKS)) : null,
+    },
     proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
     campaignFetcher: fakes ? new FakeCampaignFetcher() : new HttpProofFetcher(),
     campaignChat: fakes ? () => null : liveCampaignChat(settings, engine),

@@ -48,6 +48,8 @@ export interface CaptureCheck {
   permission: PermissionState;
   live: { title: string; game: string | null } | null;
   games: string[];
+  /** A launch drill on this creator: the switches and their games do not matter, the permission and leak rules do. */
+  drill?: boolean;
 }
 
 export type CaptureDecision = { capture: true } | { capture: false; reason: string };
@@ -64,6 +66,7 @@ export function decideCapture(c: CaptureCheck): CaptureDecision {
   if (mentionsLeak(c.live.title)) return { capture: false, reason: "The title mentions a leak" };
   const isLaunchGame = mentionsGame(c.live.title, LAUNCH_GAME) || (c.live.game !== null && mentionsGame(c.live.game, LAUNCH_GAME));
   if (c.beforeLaunch && isLaunchGame) return { capture: false, reason: LEAK_REASON };
+  if (c.drill) return { capture: true };
   if (!matchVod({ title: c.live.title, category: c.live.game }, c.games).matched) return { capture: false, reason: "Not streaming one of their games" };
   if (!c.armed) return { capture: false, reason: c.beforeLaunch ? "Live mode is off until launch time" : "Live mode is disarmed" };
   if (!c.creatorOn) return { capture: false, reason: "Switched off for this creator" };
