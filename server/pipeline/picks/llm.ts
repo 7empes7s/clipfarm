@@ -1,7 +1,7 @@
 import type { PickFlags } from "../../../shared/types.js";
 import { type Candidate, candidateWindows, secondScores } from "./signals.js";
 import { MAX_CLIP_SEC, MIN_CLIP_SEC, type Sentence, toSentences } from "./sentences.js";
-import type { PickInput, Picker, PickerResult, RawPick } from "./types.js";
+import { type PickInput, type Picker, type PickerResult, type RawPick, trendHintLine } from "./types.js";
 
 export interface ChatRequest {
   system: string;
@@ -214,6 +214,7 @@ export function buildPrompt(input: PickInput, candidates: Candidate[], sentences
       : "Chapters: (none)",
     `Campaign brief: ${input.briefRules || "(none)"}`,
     `Off limits: ${input.bannedContent || "(none)"}`,
+    ...[trendHintLine(input)].filter((line) => line !== null),
     `Pick up to ${input.maxPicks} clips from these candidate moments (loud, fast or hype speech). You may move start/end within a candidate's lines.`,
   ];
   candidates.forEach((c, i) => {

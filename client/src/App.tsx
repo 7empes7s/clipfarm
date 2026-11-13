@@ -41,6 +41,7 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   render: "Cutting a clip",
   "live-segment": "Live segment",
   "render-clip": "New version",
+  "hook-variants": "Hook variants",
   "demo-clips": "Demo clips",
 };
 

@@ -22,6 +22,13 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
+/** Everything main ships: all but the last entry, which adds the trend radar and hook lab tables. */
+const ALL_OF_MAIN = MIGRATIONS.length - 1;
+
+function tables(db: Database.Database): string[] {
+  return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
+}
+
 describe("migrate", () => {
   it("upgrades a database that main already took to version 15", () => {
     const db = new Database(":memory:");
@@ -30,11 +37,32 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
 
-    expect(db.pragma("user_version", { simple: true })).toBe(16);
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").pluck().all();
-    expect(tables).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations"]));
+    expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
+    expect(tables(db)).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations"]));
     const postColumns = db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all();
     expect(postColumns).toEqual(expect.arrayContaining(["metrics", "whop_approved_at", "whop_paid_at"]));
+    db.close();
+  });
+
+  it("upgrades a database that already ran all of main's migrations", () => {
+    const db = new Database(":memory:");
+    for (const sql of MIGRATIONS.slice(0, ALL_OF_MAIN)) db.exec(sql);
+    db.pragma(`user_version = ${ALL_OF_MAIN}`);
+    // The shipped migrations keep their places: the job queue's worker row, the permission proof columns, Live mode,
+    // Clip polish, Campaign import, the engine runs and the growth lab all come before the trend radar and hook lab tables.
+    expect(tables(db)).toContain("queue_worker");
+    expect(tables(db)).toContain("live_captures");
+    expect(tables(db)).toContain("engine_runs");
+    expect(tables(db)).toContain("growth_campaigns");
+    expect((db.prepare("PRAGMA table_info(clips)").all() as { name: string }[]).map((c) => c.name)).toContain("quality");
+    const permissionCols = (db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name);
+    expect(permissionCols).toContain("proof_url");
+    expect(permissionCols).toContain("campaign_rules");
+    expect(tables(db)).not.toContain("trend_videos");
+
+    expect(() => migrate(db)).not.toThrow();
+    expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants"]));
+    expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });
 });

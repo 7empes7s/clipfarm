@@ -14,7 +14,7 @@ export interface ComplianceInput {
   durationSec: number;
 }
 
-function says(text: string, term: string): boolean {
+export function says(text: string, term: string): boolean {
   const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
   return new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}($|[^\\p{L}\\p{N}_])`, "iu").test(text);
 }
