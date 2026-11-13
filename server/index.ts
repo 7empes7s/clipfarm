@@ -4,6 +4,7 @@ import { clientBuildProblem, createApp } from "./app.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { openRuntime } from "./runtime.js";
+import { Campaigns } from "./sources/campaign/service.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
 import { parseSuggested } from "./sources/suggested.js";
@@ -24,6 +25,7 @@ if (config.proofFetcher instanceof FakeProofFetcher) {
   for (const c of suggested) config.proofFetcher.set(c.proofUrl, { status: 200, text: `<p>${c.proofQuote}</p>` });
 }
 const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
+const campaigns = new Campaigns({ sources, fetcher: config.campaignFetcher, chat: config.campaignChat });
 const live = new LiveManager({
   repo: liveRepo,
   watchlist: watchRepo,
@@ -65,6 +67,7 @@ const app = createApp({
   publisher,
   accountStats,
   allowance,
+  campaigns,
   suggested,
   watchlist: { repo: watchRepo, poller },
   live: { manager: live, repo: liveRepo },
@@ -91,6 +94,8 @@ poller.start(config.watchPollMinutes * 60_000);
 void live.start();
 // Looks every 6 hours for public allowances whose proof was last read a week or more ago.
 allowance.start(6 * 3600_000);
+// Looks every hour for running campaigns whose page was last read a day or more ago.
+campaigns.start(3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -104,6 +109,7 @@ function shutdown() {
   poller.stop();
   live.stop();
   allowance.stop();
+  campaigns.stop();
   server.close(() => {
     void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();

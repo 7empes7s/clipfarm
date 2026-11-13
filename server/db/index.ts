@@ -299,6 +299,13 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  -- Campaign import: a campaign's rules (JSON), when its page was last read, and Whop's approval and payout taps.
+  ALTER TABLE permissions ADD COLUMN campaign_rules TEXT;
+  ALTER TABLE permissions ADD COLUMN campaign_checked_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {
