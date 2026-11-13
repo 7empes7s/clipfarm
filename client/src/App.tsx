@@ -1,8 +1,9 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
+import type { CampaignDraft, CampaignRules, Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
+import { CampaignImport } from "./CampaignImport";
 import { CampaignsTab } from "./CampaignsTab";
 import { ClipsTab } from "./ClipsTab";
 import { DASH_VIEWS, DashboardTab, type DashView } from "./DashboardTab";
@@ -86,6 +87,7 @@ export function App() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [draft, setDraft] = useState<CampaignDraft | null>(null);
   const [suggestedOpen, setSuggestedOpen] = useState(false);
   const [permissionFor, setPermissionFor] = useState<Source | null>(null);
   const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
@@ -126,6 +128,7 @@ export function App() {
   const closeForm = useCallback(() => {
     setFormOpen(false);
     setPermissionFor(null);
+    setDraft(null);
   }, []);
   const closeSuggested = useCallback(() => setSuggestedOpen(false), []);
   const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
@@ -195,6 +198,7 @@ export function App() {
               Add suggested creators
             </button>
           </p>
+          <CampaignImport onDraft={setDraft} />
           {sources.length === 0 ? (
             <p className="empty">
               No campaigns yet. Add one from a clipping program (like Whop Content Rewards) before adding any stream.
@@ -238,9 +242,10 @@ export function App() {
         </section>
       )}
 
-      {(formOpen || permissionFor) && (
+      {(formOpen || permissionFor || draft) && (
         <CampaignForm
           source={permissionFor ?? undefined}
+          draft={draft ?? undefined}
           onClose={closeForm}
           onSaved={() => {
             closeForm();
@@ -288,6 +293,8 @@ function SourceCard({
   onAddPermission: () => void;
 }) {
   const perm = source.permissions.at(-1);
+  // A campaign the daily check put on hold is "Paused"; an allowance whose proof is gone "Needs review".
+  const paused = source.permissionState === "needs-review" && source.permissions.find((p) => p.reviewReason)?.kind === "whop-campaign";
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -322,7 +329,7 @@ function SourceCard({
     <li className="card" data-testid="campaign">
       <div className="card-head">
         <h3>{source.creatorName}</h3>
-        <span className={`state state-${source.permissionState}`}>{STATE_LABEL[source.permissionState]}</span>
+        <span className={`state state-${source.permissionState}`}>{paused ? "Paused" : STATE_LABEL[source.permissionState]}</span>
       </div>
       {perm && (
         <dl className="stub">
@@ -358,6 +365,25 @@ function SourceCard({
             <dt>Post to</dt>
             <dd>{perm.allowedPlatforms.map((p) => PLATFORM_LABELS[p]).join(", ")}</dd>
           </div>
+          {perm.rules && <CampaignRulesRows rules={perm.rules} />}
+          {perm.kind === "whop-campaign" && perm.campaignUrl && /^https:\/\/([^/]+\.)?(whop|contentrewards)\.com\//.test(perm.campaignUrl) && (
+            <div className="wide" data-testid="campaign-check">
+              <dt>Campaign page{perm.campaignCheckedAt ? `, last read ${shortDate(perm.campaignCheckedAt)}` : ""}</dt>
+              <dd>
+                <span className="meta">
+                  <span>Read again every day: if it has ended or its budget is out, this creator is paused.</span>
+                  <button type="button" className="link" disabled={checking} onClick={() => void checkAgain(perm.id)}>
+                    {checking ? "Checking…" : "Check again"}
+                  </button>
+                </span>
+                {checkNote && (
+                  <p className="hint" role="status">
+                    {checkNote}
+                  </p>
+                )}
+              </dd>
+            </div>
+          )}
           {perm.proofUrl && (
             <div className="wide" data-testid="proof">
               <dt>Proof{perm.proofCheckedAt ? `, last seen ${shortDate(perm.proofCheckedAt)}` : ""}</dt>
@@ -422,7 +448,9 @@ function SourceCard({
       ) : (
         <p className="blocked">
           {source.permissionState === "needs-review"
-            ? `Needs review: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until then: tap Check again once the page says it again, or add a current campaign.`
+            ? paused
+              ? `Paused: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until then: tap Check again if the campaign is running again, or add a current campaign.`
+              : `Needs review: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until then: tap Check again once the page says it again, or add a current campaign.`
             : `${source.permissionState === "expired" ? "This permission has expired." : "There is no permission yet."} ${
                 perm?.proofUrl ? "Tap Check again to read the proof once more, or add" : "Add"
               } a current campaign before adding streams.`}
@@ -437,6 +465,47 @@ function SourceCard({
         </ul>
       )}
     </li>
+  );
+}
+
+/** The campaign's own rules on its card: what a caption must carry, what is banned, how long a clip may be. */
+function CampaignRulesRows({ rules }: { rules: CampaignRules }) {
+  const must = [...rules.requiredTags, ...rules.requiredLinks, ...rules.requiredText.map((t) => `“${t}”`)];
+  const length =
+    rules.minSec !== null && rules.maxSec !== null
+      ? `${rules.minSec} to ${rules.maxSec} s`
+      : rules.maxSec !== null
+        ? `${rules.maxSec} s at most`
+        : rules.minSec !== null
+          ? `${rules.minSec} s at least`
+          : null;
+  return (
+    <>
+      {must.length > 0 && (
+        <div className="wide">
+          <dt>Caption must carry</dt>
+          <dd>{must.join(", ")}</dd>
+        </div>
+      )}
+      {rules.bannedWords.length > 0 && (
+        <div className="wide">
+          <dt>Banned</dt>
+          <dd>{rules.bannedWords.join(", ")}</dd>
+        </div>
+      )}
+      {length && (
+        <div>
+          <dt>Clip length</dt>
+          <dd>{length}</dd>
+        </div>
+      )}
+      {rules.budgetLeftUsd !== null && (
+        <div>
+          <dt>Budget left</dt>
+          <dd>{usd(rules.budgetLeftUsd)}</dd>
+        </div>
+      )}
+    </>
   );
 }
 
