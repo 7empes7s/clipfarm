@@ -1,0 +1,10 @@
+# Runs clipfarm-ytdlp-update.service once a day, before the nightly backups.
+[Unit]
+Description=Daily yt-dlp update for clipfarm
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

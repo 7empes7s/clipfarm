@@ -102,6 +102,7 @@ const app = createApp({
   scout,
   seedDemoClip,
   clientDir,
+  deployStatusFile: join(dirname(config.dbFile), "deploy-status.json"),
   access: config.access ?? undefined,
 });
 

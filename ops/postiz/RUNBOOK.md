@@ -27,6 +27,11 @@ Redis 96, Temporal 384, Temporal's Postgres 160). Idle use is usually well below
 
 ## 1. Install (IT: one command)
 
+On a box with clipfarm's auto-deploy (`ops/clipfarm/RUNBOOK.md`, "Auto-deploy") this command is
+not needed: the installer runs by itself on the first auto-deploy, after every change under
+`ops/postiz/`, when Postiz stops answering, and when a key file is dropped in
+`/etc/clipfarm/pending-keys/` (instead of `--keys-from`). The command below is for a box without it.
+
 ```bash
 systemd-run --pipe --wait --collect --quiet /bin/bash -c 'test -d /opt/postiz/repo/.git || git clone --depth 1 https://github.com/7empes7s/clipfarm.git /opt/postiz/repo; git -C /opt/postiz/repo pull --ff-only && /opt/postiz/repo/ops/postiz/install.sh'
 ```

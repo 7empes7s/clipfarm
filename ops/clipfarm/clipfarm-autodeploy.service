@@ -1,0 +1,14 @@
+# Puts the newest CI-green main live (autodeploy.sh). Installed by install-autodeploy.sh.
+[Unit]
+Description=clipfarm auto-deploy (origin/main, only when its GitHub checks are green)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+# A root-owned copy of ops/ (install-autodeploy.sh): root never runs a file the app's user can change.
+ExecStart=/usr/local/lib/clipfarm/ops/clipfarm/autodeploy.sh
+# A wait for a running job (20 min), the build, and a first Postiz start (10 min) fit in this.
+TimeoutStartSec=60min
+Nice=10

@@ -6,6 +6,7 @@ import { PERMISSION_KIND_LABELS, WATCH_PLATFORMS } from "../../shared/types.js";
 import { channelUrl, normalizeHandle } from "../../shared/watchlist.js";
 import { openSettings } from "../config.js";
 import { HttpError, ValidationError } from "../errors.js";
+import type { Notifier } from "../live/notify.js";
 import { INGEST_JOB } from "../pipeline/ingest/ingest.js";
 import { RENDER_JOB } from "../pipeline/render/job.js";
 import { openRuntime, type Runtime } from "../runtime.js";
@@ -24,6 +25,8 @@ export interface OpsIo {
   pollMs?: number;
   /** Aborted on Ctrl+C or SIGTERM: `run` stops waiting and puts its job back in the queue. */
   signal?: AbortSignal;
+  /** Tests: where `notify` sends, instead of the push services. */
+  notifier?: Notifier;
 }
 
 const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
@@ -43,7 +46,9 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
       Download, transcribe, pick and render. The clips wait in the gallery; nothing is posted.
   clipfarm-ops clips [--since 2h | 3d | 2026-11-12]
   clipfarm-ops status
-      Jobs, the queue and the disk.`;
+      Jobs, the queue and the disk.
+  clipfarm-ops notify <title> <text>
+      Sends a push notification to every phone that turned notifications on (auto-deploy uses it).`;
 
 /** A mistake in how the command was typed (exit code 2). */
 class UsageError extends Error {}
@@ -348,7 +353,7 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   let scrub = (line: string) => line;
   try {
     if (command === "test-keys" && args.length === 0) return await testKeys(io);
-    if (!["source", "run", "clips", "status"].includes(command) || (command === "status" && args.length > 0)) {
+    if (!["source", "run", "clips", "status", "notify"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
       throw new UsageError(`Unknown command "${argv.join(" ")}".\n\n${USAGE}`);
     }
     rt = openRuntime(io.env, { pollMs: io.pollMs });
@@ -357,6 +362,12 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
     if (command === "source") return sourceCommand(rt, safe, args);
     if (command === "run") return await run(rt, safe, args);
     if (command === "clips") return listClips(rt, safe, args);
+    if (command === "notify") {
+      const phones = rt.liveRepo.pushSubscriptions().length;
+      await (io.notifier ?? rt.notifier).notify({ title: scrub(args[0]!), body: scrub(args[1]!), url: "/#dashboard" });
+      safe.out(phones ? `Sent to ${phones} ${phones === 1 ? "phone or browser" : "phones or browsers"}.` : "Nobody turned notifications on in the app, so nothing was sent.");
+      return 0;
+    }
     return status(rt, safe);
   } catch (err) {
     // Plain reasons (ours, and the platforms') are shown as they are; node's own argument errors too.

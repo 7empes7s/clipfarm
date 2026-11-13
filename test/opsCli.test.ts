@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openSettings } from "../server/config.js";
+import { FakeNotifier } from "../server/live/notify.js";
 import { runOps } from "../server/ops/commands.js";
 import { openRuntime } from "../server/runtime.js";
 import { probeVideo } from "../server/tools/ffmpeg.js";
@@ -93,6 +94,38 @@ describe("clipfarm-ops test-keys", () => {
     const { code, err } = await ops(["test-keys"]);
     expect(code).toBe(1);
     expect(err).toEqual(["clipfarm-ops: No key is saved yet. Paste them in the app under Settings."]);
+  });
+});
+
+describe("clipfarm-ops notify", () => {
+  it("sends the title and text to the phones that turned notifications on, with saved keys taken out", async () => {
+    const live = { DATA_DIR: dir, MEDIA_DIR: join(dir, "media") };
+    openSettings(live).save({ OPENAI_API_KEY: KEYS.openai });
+    const notifier = new FakeNotifier();
+    const send = (args: string[]) => {
+      const out: string[] = [];
+      return runOps(args, { env: live, out: (l) => out.push(l), err: (l) => out.push(l), notifier }).then((code) => ({ code, out }));
+    };
+
+    expect(await send(["notify", "clipfarm update rolled back", "Update 1a2b3c4 did not start."])).toEqual({
+      code: 0,
+      out: ["Nobody turned notifications on in the app, so nothing was sent."],
+    });
+
+    const rt = openRuntime(live);
+    rt.liveRepo.addPushSubscription({ endpoint: "https://push.example/abc", keys: { p256dh: "p", auth: "a" } }, new Date());
+    rt.db.close();
+    expect(await send(["notify", "clipfarm update failed", `The key test said: ${KEYS.openai}`])).toEqual({ code: 0, out: ["Sent to 1 phone or browser."] });
+    expect(notifier.sent).toHaveLength(2);
+    expect(notifier.sent[0]).toEqual({ title: "clipfarm update rolled back", body: "Update 1a2b3c4 did not start.", url: "/#dashboard" });
+    expect(notifier.sent[1]!.body).not.toContain(KEYS.openai);
+    expect(notifier.sent[1]!.body).toContain("The key test said:");
+  });
+
+  it("wants exactly a title and a text", async () => {
+    const { code, err } = await ops(["notify", "only a title"]);
+    expect(code).toBe(2);
+    expect(err[0]).toContain('Unknown command "notify only a title"');
   });
 });
 
