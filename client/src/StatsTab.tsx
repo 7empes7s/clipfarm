@@ -4,6 +4,7 @@ import { PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { postStatusLabel } from "./ClipsTab";
 import { usd } from "./format";
+import { EmptyState } from "./ui";
 
 export function StatsTab() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -79,7 +80,9 @@ export function StatsTab() {
       )}
       <h3 className="sub">Posts</h3>
       {posts.length === 0 ? (
-        <p className="empty">No posts yet. Approve a clip in Clips, then post it.</p>
+        <EmptyState icon="stats" title="No posts yet" action={{ label: "Go to approved clips", href: "#approved" }}>
+          Approve a clip in the Inbox, then post it from Approved. Its views, cost and earnings are counted here.
+        </EmptyState>
       ) : (
         <ul className="stack posts">
           {posts.map((p) => (

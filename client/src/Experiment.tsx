@@ -4,6 +4,7 @@ import { PLATFORM_LABELS, POST_FLAG_LABELS, POST_FLAGS } from "../../shared/type
 import { api } from "./api";
 import { postStatusLabel } from "./ClipsTab";
 import { compact, duration, shortDate } from "./format";
+import { EmptyState } from "./ui";
 
 /** Marks a clip that may only go to burner accounts. */
 export function ExperimentBadge() {
@@ -27,10 +28,10 @@ export function ExperimentView({ report, posts, onChange }: { report: Experiment
         exports and Whop never get them.
       </p>
       {total.posts === 0 ? (
-        <p className="empty">
-          No experiment posts yet. In Sources, add a permission of the kind Experiment to a creator. In Accounts, mark an account
-          as Burner. Then post an approved clip.
-        </p>
+        <EmptyState icon="sources" title="No experiment posts yet" action={{ label: "Add an Experiment permission", href: "#sources" }}>
+          In Sources, add a permission of the kind Experiment to a creator. In Accounts, mark an account as Burner. Then post an
+          approved clip.
+        </EmptyState>
       ) : (
         <>
           <Facts row={total} testId="experiment-total" />

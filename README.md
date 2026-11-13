@@ -19,6 +19,7 @@ npm install
 npm run dev        # API on :3000 (tsx watch) + Vite client on :5173 with /api proxied
 npm run build      # server to dist/server, client to dist/client
 npm run preview    # built client + API on one port ($PORT, default 3000)
+npm run icons      # redraw the app icons from the logo (client/scripts/make-icons.ts, needs ffmpeg)
 ```
 
 On an empty gallery, the Inbox has a **Load demo clips** button: a queued job makes two demo
