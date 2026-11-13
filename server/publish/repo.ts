@@ -97,6 +97,8 @@ export interface NewPost {
   caption: string;
   scheduledAt: string;
   postedAt: string | null;
+  /** The title and hook it goes out with, when they are not the clip's own (a hook variant). */
+  variant?: { title: string; hook: string };
 }
 
 export class PostsRepo {
@@ -109,7 +111,7 @@ export class PostsRepo {
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO posts (clip_id, permission_id, platform, account_id, account_name, service, external_id, status,
-           url, error, caption, scheduled_at, posted_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           url, error, caption, scheduled_at, posted_at, created_at, variant_title, variant_hook) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         p.clipId,
@@ -126,8 +128,18 @@ export class PostsRepo {
         p.scheduledAt,
         p.postedAt,
         this.now().toISOString(),
+        p.variant?.title ?? null,
+        p.variant?.hook ?? null,
       );
     return this.get(Number(lastInsertRowid));
+  }
+
+  /** The hook variant a post went out as; null when it went out with the clip's own title and hook. */
+  variantOf(id: number): { title: string; hook: string } | null {
+    const row = this.db.prepare("SELECT variant_title AS title, variant_hook AS hook FROM posts WHERE id = ?").get(id) as
+      | { title: string | null; hook: string | null }
+      | undefined;
+    return row?.title != null && row.hook != null ? { title: row.title, hook: row.hook } : null;
   }
 
   get(id: number): Post {

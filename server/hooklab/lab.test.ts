@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AccountRole, NewSourceInput, PostingAccount } from "../../shared/types.js";
-import { PERMISSION_KINDS } from "../../shared/types.js";
+import { NO_CAMPAIGN_RULES, PERMISSION_KINDS } from "../../shared/types.js";
 import { HOOK_PATTERNS } from "../../shared/trends.js";
 import { campaignInput } from "../../test/helpers.js";
 import { ClipsRepo } from "../clips/repo.js";
@@ -222,6 +222,81 @@ describe("hook lab (faked posting)", () => {
     const [test] = t.lab.info().tests;
     expect(test!.variants.find((v) => v.winner)!.label).toBe("C");
     expect(t.service.published.slice(3).map((i) => i.title)).toEqual([test!.variants[2]!.title, test!.variants[2]!.title]);
+  });
+
+  it("never writes or posts a variant that breaks the campaign's rules", async () => {
+    const t = await setup({ permission: { rules: { ...NO_CAMPAIGN_RULES, bannedWords: ["believe"] } } });
+    t.lab.saveSettings({ on: true });
+    await t.lab.tick();
+    // The "can't believe" template is passed over for the next pattern.
+    expect(t.lab.info().tests[0]!.variants.map((v) => [v.label, v.pattern])).toEqual([["A", "other"], ["B", "question"], ["C", "wait-for-it"]]);
+    t.render();
+    await t.lab.tick();
+    t.service.viewsFor.set("fake-post-2", 6000);
+    t.setNow(new Date(T0.getTime() + 7 * HOUR));
+    await t.lab.tick();
+    expect(t.sentTo()).toHaveLength(5);
+    expect(t.service.published.filter((i) => /believe/i.test(`${i.title}\n${i.caption}`))).toEqual([]);
+    expect(t.lab.info().tests[0]!.variants.filter((v) => /believe/i.test(`${v.title}\n${v.hook}`))).toEqual([]);
+  });
+
+  it("starts no test, and says why, when every other hook would break the campaign's rules", async () => {
+    const t = await setup({ permission: { rules: { ...NO_CAMPAIGN_RULES, bannedWords: ["jump"] } } });
+    t.lab.saveSettings({ on: true });
+    await t.lab.tick();
+    await t.lab.tick();
+    expect(t.queued).toEqual([]);
+    expect(t.service.published).toEqual([]);
+    expect(t.lab.info().tests).toHaveLength(1);
+    expect(t.lab.info().tests[0]).toMatchObject({
+      status: "stopped",
+      variants: [],
+      note: "Every other hook would break the campaign's rules, so there was nothing to test. Nothing was sent.",
+    });
+  });
+
+  it("checks the campaign's rules on the variant's own title and hook when it posts", async () => {
+    const ban = (t: Awaited<ReturnType<typeof setup>>, word: string) =>
+      t.db.prepare("UPDATE permissions SET campaign_rules = ?").run(JSON.stringify({ ...NO_CAMPAIGN_RULES, bannedWords: [word] }));
+    // The rules change after the variants were written: B's title now breaks them.
+    const t = await setup({ permission: { rules: NO_CAMPAIGN_RULES } });
+    t.lab.saveSettings({ on: true });
+    await t.lab.tick();
+    t.render();
+    ban(t, "believe");
+    await t.lab.tick();
+    expect(t.service.published.map((i) => i.title)).toEqual(["He actually landed the jump"]);
+    expect(t.lab.info().tests[0]).toMatchObject({ status: "stopped" });
+    expect(t.lab.info().tests[0]!.note).toMatch(/the title says “believe”, which the campaign bans/);
+    t.setNow(new Date(T0.getTime() + 24 * HOUR));
+    await t.lab.tick();
+    expect(t.sentTo()).toEqual(["tt-b1"]);
+
+    // The banned word is only in C's on-screen hook ("Did that really just happen?").
+    const u = await setup({ permission: { rules: NO_CAMPAIGN_RULES } });
+    u.lab.saveSettings({ on: true });
+    await u.lab.tick();
+    u.render();
+    ban(u, "happen");
+    await u.lab.tick();
+    expect(u.sentTo()).toEqual(["tt-b1", "tt-b3"]);
+    expect(u.lab.info().tests[0]).toMatchObject({ status: "stopped" });
+  });
+
+  it("a winner that broke the rules since is not marked as sent to Whop", async () => {
+    const t = await setup({ permission: { rules: NO_CAMPAIGN_RULES } });
+    t.lab.saveSettings({ on: true });
+    await t.lab.tick();
+    t.render();
+    await t.lab.tick();
+    t.service.viewsFor.set("fake-post-2", 6000);
+    t.setNow(new Date(T0.getTime() + 7 * HOUR));
+    await t.lab.tick();
+    const main = t.posts.list().find((p) => p.accountId === "tt-main")!;
+    expect(main.caption).toMatch(/can't believe this/);
+    t.db.prepare("UPDATE permissions SET campaign_rules = ?").run(JSON.stringify({ ...NO_CAMPAIGN_RULES, bannedWords: ["believe"] }));
+    // The clip's own title and hook keep the rules; what was posted does not.
+    expect(() => t.publisher.markWhop(main.id, "submitted", true)).toThrow(/Not marked as sent.*“believe”/);
   });
 
   it("waits while it is switched off, and picks up again when switched on", async () => {

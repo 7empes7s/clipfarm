@@ -17,6 +17,7 @@ import type { Db } from "../db/index.js";
 import { ValidationError } from "../errors.js";
 import type { ChatClient } from "../pipeline/picks/llm.js";
 import type { Publisher } from "../publish/publisher.js";
+import { says } from "../publish/compliance.js";
 import type { PostsRepo } from "../publish/repo.js";
 import { isActive, isExperimentOnly } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
@@ -189,13 +190,24 @@ export class HookLab {
       const source = sources.get(clip.sourceId);
       const burners = burnersFor(source.permissions, accounts, this.now());
       if (burners.length < 2) continue;
+      // A hook that breaks a campaign's rules is never written: the publisher would refuse it anyway.
+      const banned = source.permissions.filter((p) => isActive(p, this.now())).flatMap((p) => p.rules?.bannedWords ?? []);
       const copies = await writeVariants({
         clip,
         creatorName: source.creatorName,
         count: Math.min(MAX_VARIANTS, burners.length),
         prefer: [...(this.deps.trending?.() ?? []), ...won],
         chat: this.deps.chat?.() ?? null,
+        allowed: (c) => !banned.some((word) => says(`${c.title}\n${c.hook}`, word)),
       });
+      if (copies.length < 2) {
+        db.prepare("INSERT INTO hook_tests (clip_id, status, note, created_at) VALUES (?, 'stopped', ?, ?)").run(
+          clip.id,
+          "Every other hook would break the campaign's rules, so there was nothing to test. Nothing was sent.",
+          this.now().toISOString(),
+        );
+        continue;
+      }
       const testId = db.transaction(() => {
         const { lastInsertRowid } = db
           .prepare("INSERT INTO hook_tests (clip_id, status, created_at) VALUES (?, 'rendering', ?)")
@@ -229,7 +241,7 @@ export class HookLab {
       let last = 0;
       try {
         for (const v of variants) {
-          const variant = { title: v.title, filePath: v.file_path ?? clips.filePath(test.clip_id) };
+          const variant = { title: v.title, hook: v.hook, filePath: v.file_path ?? clips.filePath(test.clip_id) };
           const out = await publisher.post(test.clip_id, [v.account_id], null, variant);
           const post = out.posts[0];
           if (!post || post.status === "failed") throw new Error(post?.error ?? out.skipped[0]?.reason ?? "The post was not sent.");
@@ -290,7 +302,7 @@ export class HookLab {
         continue;
       }
       try {
-        const variant = { title: winner.v.title, filePath: winner.v.file_path ?? clips.filePath(clip.id) };
+        const variant = { title: winner.v.title, hook: winner.v.hook, filePath: winner.v.file_path ?? clips.filePath(clip.id) };
         const out = await publisher.post(clip.id, picked.map((c) => c.account.id), null, variant);
         const sent = out.posts.filter((p) => p.status !== "failed").length;
         this.end(test.id, "done", `${won} and went to ${sent} main account${sent === 1 ? "" : "s"}.`, winner.v.id, sent);

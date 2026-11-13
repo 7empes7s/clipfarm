@@ -366,6 +366,9 @@ export const MIGRATIONS: string[] = [
     views_per_hour INTEGER
   );
   CREATE INDEX hook_variants_test ON hook_variants(test_id);
+  -- The title and hook a post went out with when they are a hook variant's; NULL: the clip's own.
+  ALTER TABLE posts ADD COLUMN variant_title TEXT;
+  ALTER TABLE posts ADD COLUMN variant_hook TEXT;
   `,
 ];
 

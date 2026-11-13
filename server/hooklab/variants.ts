@@ -19,6 +19,8 @@ export interface VariantsInput {
   prefer: HookPattern[];
   /** The AI writer; null writes from the templates below. */
   chat: ChatClient | null;
+  /** False for a hook and title that must not be used (they break the campaign's rules); another pattern is tried. */
+  allowed?: (copy: VariantCopy) => boolean;
   signal?: AbortSignal;
 }
 
@@ -106,21 +108,26 @@ async function aiCopies(input: VariantsInput, patterns: HookPattern[]): Promise<
 /**
  * The hooks to test for one clip: A is the clip as it was approved, the others use different
  * patterns (the preferred ones first). The AI writes them when there is one and its lines pass the
- * checks; otherwise they come from the templates.
+ * checks; otherwise they come from the templates. A line that is not allowed is passed over for the
+ * next pattern, so there can be fewer than asked for.
  */
 export async function writeVariants(input: VariantsInput): Promise<VariantCopy[]> {
   const { clip, creatorName } = input;
   const own: VariantCopy = { pattern: keywordHook(clip.title), hook: clip.hook, title: clip.title };
   const order = [...new Set([...input.prefer, ...TEMPLATE_ORDER])].filter((p) => p !== own.pattern && TEMPLATES[p]);
-  const patterns = order.slice(0, Math.max(0, input.count - 1));
-  const written = await aiCopies(input, patterns);
+  const wanted = Math.max(0, input.count - 1);
+  const written = await aiCopies(input, order.slice(0, wanted));
   const subject = subjectOf(clip.title, creatorName);
+  const allowed = input.allowed ?? (() => true);
   const used = new Set([own.hook.toLowerCase()]);
-  const others = patterns.map((p) => {
+  const others: VariantCopy[] = [];
+  for (const p of order) {
+    if (others.length === wanted) break;
     const ai = written.get(p);
-    const copy = ai && !used.has(ai.hook.toLowerCase()) ? ai : template(p, creatorName, subject);
+    const copy = [ai && !used.has(ai.hook.toLowerCase()) ? ai : null, template(p, creatorName, subject)].find((c) => c && allowed(c));
+    if (!copy) continue;
     used.add(copy.hook.toLowerCase());
-    return copy;
-  });
+    others.push(copy);
+  }
   return [own, ...others];
 }
