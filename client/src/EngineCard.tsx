@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { EngineSettings, EngineStatus, Job } from "../../shared/types";
+import type { EngineSettings, EngineStatus, EngineStepStatus, Job } from "../../shared/types";
 import { api } from "./api";
 import { Meter } from "./charts";
 
@@ -39,6 +39,15 @@ export function EngineCard({ jobs }: { jobs: Job[] }) {
   const job = status.setupJob;
   const downloading = job !== null && job.status !== "failed";
   const total = status.downloads.reduce((sum, d) => sum + d.bytes, 0);
+  const order = status.settings.stt;
+  /** Moves a step one place up or down the chain. */
+  const move = (index: number, by: -1 | 1) => {
+    const next = [...order];
+    [next[index], next[index + by]] = [next[index + by]!, next[index]!];
+    save({ stt: next });
+  };
+  const stepState = (s: EngineStepStatus) =>
+    !s.on ? "Off" : s.state === "ready" ? "Ready" : s.state === "missing" ? "Missing" : s.id === "cloud" ? "No key" : "Waiting";
 
   return (
     <section className="card engine" aria-labelledby="engine-title" data-testid="engine">
@@ -74,8 +83,61 @@ export function EngineCard({ jobs }: { jobs: Job[] }) {
       )}
       {status.mode !== "test" && (
         <div className="engine-settings">
+          <h4 id="engine-chain-title">Speech-to-text, in this order</h4>
+          <p className="hint">The first step that can take a part of the stream does it. A part that fails, takes too long or comes back poor goes to the next step.</p>
+          <ol className="engine-chain" aria-labelledby="engine-chain-title">
+            {status.steps.map((s, i) => (
+              <li key={s.id} className="engine-step" data-testid={`engine-step-${s.id}`}>
+                <div className="card-head">
+                  <strong>
+                    {i + 1}. {s.label}
+                  </strong>
+                  <span className={`state ${s.on && s.state === "ready" ? "state-active" : s.on ? "state-none" : "state-off"}`}>{stepState(s)}</span>
+                </div>
+                <p className="hint">{s.note}</p>
+                {s.on && s.problem && <p className="hint">{s.problem}</p>}
+                <p className="hint">
+                  {s.speed === null ? "Speed on this server: not measured yet" : `Speed on this server: ${s.speed} s of stream per second`}
+                </p>
+                <div className="engine-step-actions">
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={s.on}
+                      disabled={busy || (s.id === "cloud" && !s.on && !status.cloudAvailable)}
+                      aria-label={s.id === "cloud" ? "Fall back to cloud AI" : `Use ${s.label}`}
+                      onChange={(e) => save({ stt: order.map((x) => (x.id === s.id ? { ...x, on: e.target.checked } : x)) })}
+                    />
+                    {s.id === "cloud" ? "Fall back to cloud AI" : "Use"}
+                  </label>
+                  <button type="button" disabled={busy || i === 0} aria-label={`Move ${s.label} earlier`} onClick={() => move(i, -1)}>
+                    ↑
+                  </button>
+                  <button type="button" disabled={busy || i === status.steps.length - 1} aria-label={`Move ${s.label} later`} onClick={() => move(i, 1)}>
+                    ↓
+                  </button>
+                  {s.state === "missing" && !downloading && (
+                    <button type="button" disabled={busy} onClick={() => act(api.setupEngine(s.id))}>
+                      Download ({size(s.downloadBytes)})
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+          <h4>Last 7 days</h4>
+          {status.week.lines.length === 0 ? (
+            <p className="hint">No streams transcribed yet. Once there are, this says how often each step and each fallback was used.</p>
+          ) : (
+            <ul className="engine-week" data-testid="engine-week">
+              {status.week.lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          )}
           <label>
-            Speech model
+            Speech model for the Whisper English step
             <select value={status.settings.sttModel} disabled={busy || status.settings.cloud} onChange={(e) => save({ sttModel: e.target.value })}>
               {status.sttModels.map((m) => (
                 <option key={m.id} value={m.id}>
