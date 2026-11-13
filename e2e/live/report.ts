@@ -58,7 +58,6 @@ export default class StepTableReporter implements Reporter {
   private linkToClipsMs: Record<string, number> = {};
   private projects: string[] = [];
   private target = "";
-
   private passed = false;
 
   constructor(private options: { previewDir?: string; outputDir?: string } = {}) {}
