@@ -1,6 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import type { ClipProgram, Source, WatchedCreator, WatchedCreatorInput, Watchlist, WatchPlatform } from "../../shared/types";
-import { CLIP_PROGRAM_LABELS, CLIP_PROGRAMS, WATCH_PLATFORM_LABELS, WATCH_PLATFORMS } from "../../shared/types";
+import type { AllowanceFind, ClipProgram, Source, WatchedCreator, WatchedCreatorInput, Watchlist, WatchPlatform } from "../../shared/types";
+import { CLIP_PROGRAM_LABELS, CLIP_PROGRAMS, PERMISSION_KIND_LABELS, WATCH_PLATFORM_LABELS, WATCH_PLATFORMS } from "../../shared/types";
 import { channelUrl } from "../../shared/watchlist";
 import { api } from "./api";
 import { ago } from "./format";
@@ -174,7 +174,13 @@ function CreatorRow({
           {c.name}
         </h3>
         <span className={`state state-${allowed ? "active" : c.permissionState}`}>
-          {allowed ? "Allowed" : c.permissionState === "expired" ? "Permission expired" : "Needs permission"}
+          {allowed
+            ? "Allowed"
+            : c.permissionState === "expired"
+              ? "Permission expired"
+              : c.permissionState === "needs-review"
+                ? "Needs review"
+                : "Needs permission"}
         </span>
       </div>
       <div className="badges">
@@ -193,7 +199,13 @@ function CreatorRow({
           </a>
         )}
       </p>
-      {!allowed && <p className="blocked">{NEEDS_PERMISSION}, then add it as a campaign in Sources.</p>}
+      {!allowed && (
+        <p className="blocked">
+          {c.permissionState === "needs-review"
+            ? "Their clipping allowance needs review: check it again in Sources."
+            : `${NEEDS_PERMISSION}, then add it as a campaign in Sources.`}
+        </p>
+      )}
       {c.live && (
         <p className="meta">
           Live on {WATCH_PLATFORM_LABELS[c.live.platform]}
@@ -256,7 +268,29 @@ function WatchSheet({
   const [program, setProgram] = useState<ClipProgram>(creator?.program ?? "none");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [find, setFind] = useState<AllowanceFind | null>(null);
+  const [addAllowance, setAddAllowance] = useState(true);
   const handle = (p: WatchPlatform) => creator?.channels.find((c) => c.platform === p)?.handle ?? "";
+
+  /** Reads the channels typed so far for a clear "clipping is allowed". */
+  async function lookForAllowance(form: HTMLFormElement) {
+    const f = new FormData(form);
+    const channels = WATCH_PLATFORMS.map((platform) => ({ platform, handle: String(f.get(platform) ?? "").trim() })).filter((c) => c.handle);
+    setLooking(true);
+    setError(null);
+    setFind(null);
+    try {
+      const result = await api.findAllowance(channels);
+      setFind(result);
+      setAddAllowance(true);
+      if (result.found) setProgram("public");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLooking(false);
+    }
+  }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -275,6 +309,22 @@ function WatchSheet({
     setSaving(true);
     setError(null);
     try {
+      if (find?.found && addAllowance) {
+        // The manager saw the proof and left the box ticked: the permission record goes in with it.
+        const source = await api.addSource({
+          creatorName: input.name,
+          channelUrls: input.channels.map(channelUrl),
+          permission: {
+            kind: "public-allowance",
+            allowedPlatforms: ["tiktok", "youtube", "instagram"],
+            proofUrl: find.found.proofUrl,
+            proofQuote: find.found.proofQuote,
+            proofCheckedAt: find.found.checkedAt,
+          },
+        });
+        input.sourceId = source.id;
+        input.programUrl ??= find.found.proofUrl;
+      }
       if (creator) await api.updateWatched(creator.id, input);
       else await api.addWatched(input);
       onSaved();
@@ -314,6 +364,33 @@ function WatchSheet({
             ))}
           </div>
         </fieldset>
+        {(!creator || creator.permissionState === "none") && (
+          <div className="allowance-find">
+            <button type="button" disabled={looking} onClick={(e) => void lookForAllowance(e.currentTarget.form!)}>
+              {looking ? "Reading their pages…" : "Look for a clipping allowance"}
+            </button>
+            {find && !find.found && (
+              <p className="hint" role="status">
+                {find.note}
+              </p>
+            )}
+            {find?.found && (
+              <div data-testid="allowance-found" role="status">
+                <p className="hint">Their page says:</p>
+                <blockquote className="proof">“{find.found.proofQuote}”</blockquote>
+                <p className="meta">
+                  <a href={find.found.proofUrl} target="_blank" rel="noreferrer">
+                    See the proof
+                  </a>
+                </p>
+                <label className="allowance-pick">
+                  <input type="checkbox" checked={addAllowance} onChange={(e) => setAddAllowance(e.target.checked)} />
+                  Add the permission “{PERMISSION_KIND_LABELS["public-allowance"]}” with this proof
+                </label>
+              </div>
+            )}
+          </div>
+        )}
         <div className="row">
           <label>
             Language

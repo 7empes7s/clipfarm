@@ -181,6 +181,31 @@ Views come from the service on a timer, or by hand. "Mark sent to Whop" records 
 counted once a post reaches the campaign's minimum views) per campaign and platform, plus cost per
 approved clip.
 
+## Creators who publicly allow clipping
+
+A fourth permission kind, **Creator publicly allows clipping** (`public-allowance`), covers streamers
+who say so in public (channel panel, about page, post, Discord rule, a clipping-program listing).
+It is only as good as its proof, so the record keeps the **link** to where they say it, **their
+words** and the **day it was read**; without all three it cannot be saved. Their conditions
+("credit me", "no TikTok") go in the brief rules and the allowed platforms, as for other kinds.
+
+- **It runs out.** With no end date of its own it ends 90 days after the proof was last seen; an
+  end date set by hand (a campaign that closes on a day) is kept.
+- **It is read again.** Every week the server fetches the proof link (and **Check again** on the
+  source does it on a tap). Page still carries the words: the allowance is good for another 90
+  days. Page gone (404/410) or words missing: the record **needs review**, which stops new links,
+  running jobs and posts for that source and says why on it. A page that could not be read this
+  time (server error, blocked, network) changes nothing.
+- **The proof travels.** The clip in the gallery, every post and the export pack link to it.
+- **Starter list.** `server/sources/seed/public-allowance.json` is an editable list of GTA / GTA RP
+  streamers with the proof link and quote for each. **Add suggested creators** in Sources shows
+  every entry with its proof; the ones ticked become sources and go on the watchlist with
+  auto-ingest on. The vendor posts that say clipping is "generally fine" are not proof; only an
+  entry whose link was read counts, and the weekly check keeps it honest.
+- **Add a creator** (Watchlist) has **Look for a clipping allowance**: it reads the creator's own
+  channel pages and, when one clearly says clipping is allowed, offers the permission pre-filled
+  with that proof. Nothing is saved until Save.
+
 ## Watchlist
 
 The **Watchlist** tab follows the streamers worth clipping: their Twitch, Kick and YouTube channels,
@@ -229,7 +254,7 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 ## How it works
 
 - `server/sources/`: a source is a creator plus permission records (`whop-campaign`,
-  `direct-permission` or `own-content`, with campaign link, brief rules, pay per 1,000 views,
+  `direct-permission`, `own-content` or `public-allowance` with its proof; with campaign link, brief rules, pay per 1,000 views,
   minimum views, allowed platforms and end date). The server refuses to ingest from a source
   without an active record, both when the link is added and again when the job runs.
   A fifth kind, `experiment`, tests what the platforms do to clips posted without the creator's

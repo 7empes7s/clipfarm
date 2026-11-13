@@ -245,6 +245,12 @@ const MIGRATIONS: string[] = [
     beat_at TEXT NOT NULL
   );
   `,
+  `
+  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
+  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

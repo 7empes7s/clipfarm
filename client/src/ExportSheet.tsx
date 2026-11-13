@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Clip, ExportPack, Platform } from "../../shared/types";
-import { PLATFORM_LABELS } from "../../shared/types";
+import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { Sheet } from "./Sheet";
 
@@ -78,6 +78,14 @@ export function ExportSheet({ clip, platforms, onClose }: { clip: Clip; platform
               Caption
               <textarea readOnly rows={6} value={pack.caption} data-testid="export-caption" />
             </label>
+            {pack.permission.proofUrl && (
+              <p className="proof" data-testid="export-proof">
+                {PERMISSION_KIND_LABELS[pack.permission.kind]}: “{pack.permission.proofQuote}”{" "}
+                <a href={pack.permission.proofUrl} target="_blank" rel="noreferrer">
+                  See the proof
+                </a>
+              </p>
+            )}
             <div className="actions">
               <a className="button" href={pack.videoUrl} download={pack.fileName}>
                 Download MP4

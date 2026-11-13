@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { campaignInput } from "../../test/helpers.js";
+import { allowanceInput, campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
@@ -38,7 +38,7 @@ function setup(perm: Parameters<typeof campaignInput>[0] = {}, opts: { clipStatu
   const source = sources.create(campaignInput(perm));
   const clip = clips.create({ sourceId: source.id, vodId: null, title: "He actually landed the jump", filePath: videoPath, durationSec: 24 });
   if ((opts.clipStatus ?? "approved") === "approved") clips.setStatus(clip.id, "approved");
-  return { db, app, service, publisher, clip, source, posts, setNow: (d: Date) => (now = d) };
+  return { db, app, service, publisher, clip, source, posts, sources, clips, setNow: (d: Date) => (now = d) };
 }
 
 const YT = "fake-youtube";
@@ -179,6 +179,49 @@ describe("POST /api/clips/:id/posts (gate before any service call)", () => {
   });
 });
 
+describe("posting under a public clipping allowance", () => {
+  function allowanceSetup() {
+    const s = setup();
+    const source = s.sources.create(allowanceInput());
+    const clip = s.clips.create({ sourceId: source.id, vodId: null, title: "Open clip", filePath: videoPath, durationSec: 24 });
+    s.clips.setStatus(clip.id, "approved");
+    return { ...s, source, clip };
+  }
+
+  it("posts to the platforms it allows, and the post and the export pack keep the proof", async () => {
+    const { app, clip, source } = allowanceSetup();
+    const res = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT, TT] });
+    expect(res.status).toBe(201);
+    expect(res.body.posts).toHaveLength(2);
+    for (const post of res.body.posts) {
+      expect(post).toMatchObject({ permissionId: source.permissions[0]!.id, campaignUrl: null, proofUrl: "https://openstreamer.example/clips" });
+    }
+    const pack = await request(app).get(`/api/clips/${clip.id}/export?platform=youtube`);
+    expect(pack.body.permission).toEqual({
+      kind: "public-allowance",
+      campaignUrl: null,
+      proofUrl: "https://openstreamer.example/clips",
+      proofQuote: "You can clip my streams and post them anywhere",
+    });
+    const refused = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [IG] });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe("The permission for Open Streamer does not allow posting to Instagram Reels.");
+  });
+
+  it("posts nothing and exports nothing once the allowance needs review", async () => {
+    const { app, service, sources, clip, source } = allowanceSetup();
+    sources.flagForReview(source.permissions[0]!.id, "The page with their words is gone.");
+    const why = "The clipping allowance for Open Streamer needs review: The page with their words is gone. Check it again in Sources.";
+    const res = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe(why);
+    expect(service.calls).toEqual([]);
+    const pack = await request(app).get(`/api/clips/${clip.id}/export?platform=youtube`);
+    expect(pack.status).toBe(403);
+    expect(pack.body.error).toBe(why);
+  });
+});
+
 describe("tracking, Whop and stats", () => {
   it("reads views on refresh, takes views by hand, marks Whop submission and estimates earnings over the minimum", async () => {
     const { app, clip } = setup({ cpmRateUsd: 1.5, minViews: 3000 });
@@ -225,6 +268,7 @@ describe("tracking, Whop and stats", () => {
       fileName: "he-actually-landed-the-jump.mp4",
       videoUrl: `/api/clips/${clip.id}/video?download=1`,
       caption: "He actually landed the jump\n\nCredit: Test Streamer https://www.twitch.tv/teststreamer\n#ad",
+      permission: { kind: "whop-campaign", campaignUrl: "https://whop.com/test/campaign", proofUrl: null, proofQuote: null },
     });
     const refused = await request(app).get(`/api/clips/${clip.id}/export?platform=instagram`);
     expect(refused.status).toBe(403);
