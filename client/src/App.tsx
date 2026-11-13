@@ -143,8 +143,10 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // On phones the sections are a rail that scrolls sideways: keep the open one in sight.
+  // A newly opened section starts at its top. On phones the sections are a rail that scrolls
+  // sideways: keep the open one in sight.
   useEffect(() => {
+    window.scrollTo(0, 0);
     const rail = nav.current;
     const open = rail?.querySelector<HTMLElement>('[aria-current="page"]');
     if (rail && open) rail.scrollTo({ left: open.offsetLeft - (rail.clientWidth - open.offsetWidth) / 2 });
