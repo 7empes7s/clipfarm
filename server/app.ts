@@ -11,6 +11,7 @@ import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
 import { readLiveVersion } from "./ops/liveVersion.js";
+import { publicPages } from "./publicPages.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import type { GoogleAi } from "./google/service.js";
@@ -91,6 +92,8 @@ export interface AppDeps {
   clientDir?: string;
   /** The file the box's auto-deploy writes after each deploy, for the Dashboard's "Live version" card. */
   deployStatusFile?: string;
+  /** The contact address on the public pages (/home, /privacy, /terms); without one they answer 503. */
+  supportEmail?: string | null;
   /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests without a token signed by Cloudflare Access. */
   access?: AccessVerifier;
 }
@@ -146,11 +149,15 @@ export function createApp({
   seedDemoClip,
   clientDir,
   deployStatusFile,
+  supportEmail = null,
   access,
 }: AppDeps): express.Express {
   const app = express();
   if (access) app.use(accessGate(access));
   app.use(express.json({ limit: "1mb" }));
+
+  // Open to anyone, and ahead of the app's catch-all, which would answer them with the app shell.
+  publicPages(app, supportEmail);
 
   // Open to anyone (see access.ts), so about keys it says only yes or no per connection.
   app.get("/api/health", (_req, res) => {

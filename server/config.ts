@@ -39,6 +39,7 @@ import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
 import { openAiSetup, pickChatOptions } from "./settings/openai.js";
+import { parseSupportEmail } from "./publicPages.js";
 import { Settings } from "./settings/store.js";
 import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
 
@@ -118,6 +119,8 @@ export interface Config {
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
   fakes: boolean;
+  /** The contact address shown on the public pages (/home, /privacy, /terms); null when none is set. */
+  supportEmail: string | null;
 }
 
 /** Keys saved from the Settings screen live next to the database: DATA_DIR/secrets.json, mode 600. */
@@ -303,6 +306,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
       : { endpoints: { ...REAL_ENDPOINTS, ipEcho: env.IP_ECHO_URL || REAL_ENDPOINTS.ipEcho }, transport: undiciTransport().fetch },
     settings,
     fakes,
+    // Demo mode shows a stand-in address (example.com takes no mail), so the pages can be looked at.
+    supportEmail: parseSupportEmail(env.SUPPORT_EMAIL) ?? (fakes ? "support@example.com" : null),
     port: Number(env.PORT ?? 3000),
     host: env.HOST || undefined,
     requireAccess,

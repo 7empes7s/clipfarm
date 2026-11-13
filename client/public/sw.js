@@ -20,6 +20,8 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  // The public pages are the server's own, not the app: never kept as the app shell.
+  if (["/home", "/privacy", "/terms"].includes(url.pathname)) return;
 
   if (req.mode === "navigate") {
     // Network first, so a new version shows at once; the cached shell when offline.

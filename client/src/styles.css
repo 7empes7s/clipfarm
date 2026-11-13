@@ -266,6 +266,22 @@ a {
   margin: 0 auto;
   padding: var(--s4) var(--gutter) var(--s6);
 }
+/* Under every screen: the public pages (the server's own, see server/publicPages.ts). */
+.legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin-top: var(--s6);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.legal a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
 /* A screen fades in when its tab is opened. Opacity only: sheets inside stay fixed to the screen. */
 .page > section {
   animation: fade-in var(--slow) var(--ease);

@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   build: { outDir: "../dist/client", emptyOutDir: true },
   server: {
-    proxy: { "/api": `http://localhost:${process.env.PORT ?? 3000}` },
+    // The API, and the public pages the server writes itself (server/publicPages.ts).
+    proxy: Object.fromEntries(["/api", "/home", "/privacy", "/terms"].map((path) => [path, `http://localhost:${process.env.PORT ?? 3000}`])),
   },
 });

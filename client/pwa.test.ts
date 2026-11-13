@@ -89,6 +89,16 @@ describe("the service worker's notifications", () => {
     expect(w.opened).toEqual([]);
   });
 
+  it("leaves the public pages to the server: they are never answered from, or kept as, the app shell", async () => {
+    const w = worker();
+    for (const path of ["/home", "/privacy", "/terms"]) {
+      let answered = false;
+      const request = { method: "GET", mode: "navigate", url: `https://clips.example${path}` };
+      await w.fire("fetch", { request, respondWith: () => (answered = true) });
+      expect(answered, path).toBe(false);
+    }
+  });
+
   it("a tap on the push itself opens the clip to submit, and other pushes carry no snooze", async () => {
     const w = worker();
     await w.fire("push", { data: { json: () => notice } });
