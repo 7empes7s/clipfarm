@@ -23,7 +23,7 @@ for (const [path, heading] of [
 
 test("the app links to the public pages, and they link to each other", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("contentinfo").getByRole("link", { name: "Privacy Policy" }).click();
+  await page.locator("footer.legal").getByRole("link", { name: "Privacy Policy" }).click();
   await expect(page).toHaveURL(/\/privacy$/);
   await expect(page.getByText("including the Limited Use requirements")).toBeVisible();
   await page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Terms" }).click();
