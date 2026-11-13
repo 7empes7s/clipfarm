@@ -99,7 +99,8 @@ test("submit hours in Settings, the countdown on the clip card, missed windows i
     await choices.getByRole("button", { name: "I'm back" }).click();
     await expect(busy.locator(".state")).toHaveText("Ready");
     await expect(choices.getByRole("button", { name: "I'm back" })).toHaveCount(0);
-    expect(errors).toEqual([]);
+    // The one refused save above is the browser's only complaint.
+    expect(errors).toEqual(["Failed to load resource: the server responded with a status of 400 (Bad Request)"]);
   } finally {
     await request.post("/api/posting/snooze", { data: { for: "off" } });
     await request.put("/api/posting/submit-hours", { data: before.hours });
