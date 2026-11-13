@@ -106,17 +106,32 @@ function Out({ href, children }: { href: string; children: ReactNode }) {
 
 const SOURCE_LABEL = { settings: "from Settings", env: "from server env" } as const;
 
-function fieldLine(f: SettingField): string {
-  if (!f.set) return f.required ? "Not set" : "Not set (optional)";
-  const what = f.secret ? (f.ending ? `Set, ends in …${f.ending}` : "Set") : f.value!;
+/** Where the value in use comes from: "from Settings, saved 12 Nov", "from server env" or "the default". */
+function sourceLine(f: SettingField): string {
+  if (!f.set) return "the default";
   const saved = f.source === "settings" && f.savedAt ? `, saved ${shortDate(f.savedAt)}` : "";
-  return `${what} (${SOURCE_LABEL[f.source!]}${saved})`;
+  return `${SOURCE_LABEL[f.source!]}${saved}`;
 }
+
+function fieldLine(f: SettingField): string {
+  if (!f.set) return f.fallback ? `${f.fallback} (the default)` : f.required ? "Not set" : "Not set (optional)";
+  const what = f.secret ? (f.ending ? `Set, ends in …${f.ending}` : "Set") : f.value!;
+  return `${what} (${sourceLine(f)})`;
+}
+
+/** A dropdown's choices: the service's list, plus the value in use when the list does not have it. */
+function choices(f: SettingField): string[] {
+  const inUse = f.value ?? f.fallback;
+  return inUse && !f.options!.includes(inUse) ? [inUse, ...f.options!] : f.options!;
+}
+
+const choiceLabel = (f: SettingField, id: string) => (id === f.fallback ? `${id} (recommended)` : id);
+const shortLabel = (f: SettingField) => f.label.replace(/ \(optional.*\)$/, "");
 
 function stateOf(row: IntegrationStatus): { label: string; className: string } {
   if (!row.configured) return { label: "Not set", className: "state state-idle" };
   if (!row.test) return { label: "Not tested", className: "state state-idle" };
-  return row.test.ok ? { label: "Works", className: "state state-active" } : { label: "Test failed", className: "state state-none" };
+  return row.test.ok ? { label: "Working", className: "state state-active" } : { label: "Failed", className: "state state-none" };
 }
 
 /** Settings: every key and connection, pasted once, tested, and in use at once. */
@@ -153,7 +168,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
         <a href="#dashboard">Back to dashboard</a>
       </div>
       <p className="hint">
-        Paste each key once, then tap Test. A saved key is used right away. Keys are kept on the server and never shown again:
+        Paste each key once, then tap Test (OpenAI is tested as it is saved). A saved key is used right away. Keys are kept on the server and never shown again:
         only their last 4 characters.
       </p>
       {info?.demo && (
@@ -217,7 +232,7 @@ function Row({
   onInfo: (info: SettingsInfo) => void;
   onEdit: () => void;
 }) {
-  const [busy, setBusy] = useState<"test" | "remove" | null>(null);
+  const [busy, setBusy] = useState<"test" | "remove" | "choose" | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const state = stateOf(row);
@@ -237,6 +252,19 @@ function Row({
     }
   }
 
+  // A model picked from the list is saved at once, and the server tests it before it answers.
+  async function choose(name: string, value: string) {
+    setBusy("choose");
+    setError(null);
+    try {
+      onInfo(await api.saveSettings(row.id, { [name]: value }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <li className="card" id={`settings-${row.id}`} data-testid={`settings-${row.id}`}>
       <div className="card-head">
@@ -246,11 +274,29 @@ function Row({
       <p className="hint key-purpose">{row.purpose}</p>
       <dl className="key-fields">
         {row.fields
-          .filter((f) => f.required || f.set)
+          .filter((f) => f.required || f.set || f.fallback)
           .map((f) => (
             <div key={f.name}>
-              <dt>{f.label.replace(/ \(optional.*\)$/, "")}</dt>
-              <dd>{fieldLine(f)}</dd>
+              <dt>{shortLabel(f)}</dt>
+              {f.options && row.configured ? (
+                <dd className="key-choice">
+                  <select
+                    aria-label={shortLabel(f)}
+                    value={f.value ?? f.fallback ?? ""}
+                    disabled={busy !== null}
+                    onChange={(e) => void choose(f.name, e.target.value)}
+                  >
+                    {choices(f).map((id) => (
+                      <option key={id} value={id}>
+                        {choiceLabel(f, id)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hint">{busy === "choose" ? "Saving and testing…" : sourceLine(f)}</span>
+                </dd>
+              ) : (
+                <dd>{fieldLine(f)}</dd>
+              )}
             </div>
           ))}
       </dl>
@@ -327,18 +373,29 @@ function KeysSheet({ row, onClose, onSaved }: { row: IntegrationStatus; onClose:
           <label key={f.name}>
             {f.label}
             {f.secret && f.set && <span className="hint"> leave empty to keep the one that is set</span>}
-            <input
-              name={f.name}
-              // Keys are pasted, not typed: plain text so a bad paste is seen before saving. Nothing is prefilled.
-              type="text"
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              required={f.required && !f.set}
-              placeholder={f.placeholder}
-              defaultValue={f.secret ? "" : (f.source === "settings" ? f.value : null) ?? ""}
-            />
+            {f.options ? (
+              <select name={f.name} defaultValue={(f.source === "settings" ? f.value : null) ?? ""}>
+                <option value="">{f.fallback ? `The default (${f.fallback})` : "Not set"}</option>
+                {choices(f).map((id) => (
+                  <option key={id} value={id}>
+                    {choiceLabel(f, id)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                name={f.name}
+                // Keys are pasted, not typed: plain text so a bad paste is seen before saving. Nothing is prefilled.
+                type="text"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required={f.required && !f.set}
+                placeholder={f.placeholder}
+                defaultValue={f.secret ? "" : (f.source === "settings" ? f.value : null) ?? ""}
+              />
+            )}
           </label>
         ))}
         {error && (
@@ -347,7 +404,7 @@ function KeysSheet({ row, onClose, onSaved }: { row: IntegrationStatus; onClose:
           </p>
         )}
         <button type="submit" className="primary" disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? (row.id === "openai" ? "Saving and testing…" : "Saving…") : "Save"}
         </button>
       </form>
     </Sheet>

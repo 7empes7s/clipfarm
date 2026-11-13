@@ -2448,6 +2448,14 @@ button.danger {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.key-choice {
+  display: grid;
+  gap: var(--s1);
+}
+.key-choice select {
+  width: 100%;
+  min-width: 0;
+}
 .key-result {
   margin: 0 0 var(--s3);
   padding: var(--s2) var(--s3);

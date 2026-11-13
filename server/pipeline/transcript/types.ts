@@ -15,6 +15,8 @@ export interface Transcript {
   /** Words with times in seconds from the start of the audio, in order. */
   words: Word[];
   costUsd: number;
+  /** The cloud model that transcribed, when one did (e.g. "whisper-1"). */
+  model?: string;
   /** Which engine handled what, with the time each step took. */
   report?: EngineReport;
 }

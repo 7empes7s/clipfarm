@@ -26,7 +26,7 @@ import { scoutRoutes } from "./scout/routes.js";
 import type { Scout } from "./scout/service.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import { buildChecklist } from "./settings/checklist.js";
-import { configuredMap, integration, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
+import { configuredMap, integration, isConfigured, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
 import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
@@ -485,9 +485,11 @@ export function createApp({
       res.json(info());
     });
 
-    app.put("/api/settings/:id", (req, res) => {
+    app.put("/api/settings/:id", async (req, res) => {
       const def = integration(req.params.id);
       store.save(parseSettingsInput(def, req.body), [def.id]);
+      // OpenAI is tested on every save: the badge and the model lists are right without a second tap.
+      if (def.id === "openai" && isConfigured(store, def.id)) await testIntegration(def.id, store, demo);
       res.json(info());
     });
 

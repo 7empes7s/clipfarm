@@ -26,11 +26,11 @@ function fakeApi() {
 }
 
 describe("OpenAiTranscriber", () => {
-  it("asks whisper-1 for word timestamps with the key from its options", async () => {
+  it("asks the chosen model for word timestamps with the key from its options, and says which model answered", async () => {
     const file = join(dir, "a.mp3");
     await writeFile(file, "small");
     const api = fakeApi();
-    const t = new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl: api.fetchImpl });
+    const t = new OpenAiTranscriber({ apiKey: "sk-test", model: "whisper-1", fetchImpl: api.fetchImpl });
     const result = await t.transcribe(file, { durationSec: 600, tmpDir: dir });
     expect(api.calls).toHaveLength(1);
     const { url, auth, form } = api.calls[0]!;
@@ -41,6 +41,52 @@ describe("OpenAiTranscriber", () => {
     expect(form.getAll("timestamp_granularities[]")).toEqual(["word"]);
     expect(result.words[0]).toEqual({ word: "w1-0", startSec: 0, endSec: 0.5 });
     expect(result.costUsd).toBe(0.06); // 10 min × $0.006
+    expect(result.model).toBe("whisper-1");
+  });
+
+  it("asks gpt-transcribe unless told otherwise, and keeps it while it sends word timings", async () => {
+    const file = join(dir, "a.mp3");
+    await writeFile(file, "small");
+    const api = fakeApi();
+    const result = await new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl: api.fetchImpl }).transcribe(file, { durationSec: 60, tmpDir: dir });
+    expect(api.calls.map((c) => c.form.get("model"))).toEqual(["gpt-transcribe"]);
+    expect(result.model).toBe("gpt-transcribe");
+    expect(result.words).toHaveLength(4);
+  });
+
+  it.each([
+    ["sends text but no word timings", () => Response.json({ text: "hello chat" })],
+    ["refuses a word-timings request", () => Response.json({ error: { message: "timestamp_granularities is not supported" } }, { status: 400 })],
+  ])("falls back to whisper-1, once, when the chosen model %s", async (_what, noWords) => {
+    const video = join(dir, "sample.mp4");
+    const audio = join(dir, "speech.mp3");
+    await generateSample(video, 10);
+    await extractAudio(video, audio);
+    const { size } = await stat(audio);
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const model = String((init.body as FormData).get("model"));
+      models.push(model);
+      return model === "whisper-1" ? Response.json({ words: [{ word: " hi", start: 1, end: 1.5 }] }) : noWords();
+    }) as unknown as typeof fetch;
+    // Two chunks: the first finds out, the second goes straight to whisper-1.
+    const t = new OpenAiTranscriber({ apiKey: "sk-test", model: "gpt-transcribe", fetchImpl, maxUploadBytes: Math.floor(size / 1.5) });
+    const result = await t.transcribe(audio, { durationSec: 50, tmpDir: dir });
+    expect(models).toEqual(["gpt-transcribe", "whisper-1", "whisper-1"]);
+    expect(result.model).toBe("whisper-1");
+    expect(result.words[0]).toEqual({ word: "hi", startSec: 1, endSec: 1.5 });
+  });
+
+  it("does not hide a real failure behind the fallback", async () => {
+    const file = join(dir, "a.mp3");
+    await writeFile(file, "small");
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      models.push(String((init.body as FormData).get("model")));
+      return new Response("quota exceeded", { status: 429 });
+    }) as unknown as typeof fetch;
+    await expect(new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl }).transcribe(file, { durationSec: 1, tmpDir: dir })).rejects.toThrow("(429): quota exceeded");
+    expect(models).toEqual(["gpt-transcribe"]);
   });
 
   it("explains a failed API call", async () => {
