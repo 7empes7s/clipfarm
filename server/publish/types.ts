@@ -1,4 +1,5 @@
 import type { DailyPoint, Platform, PostFlag, PostingAccount, PostingServiceName, PostStatus } from "../../shared/types.js";
+import type { PostMetrics } from "../../shared/growth.js";
 
 export interface PublishItem {
   account: PostingAccount;
@@ -37,6 +38,8 @@ export interface PostUpdate {
   error?: string | null;
   postedAt?: string | null;
   views?: number | null;
+  /** Everything else the platform said (likes, watch time, follows…); numbers it did not give are left out. */
+  metrics?: Partial<PostMetrics>;
   /** Claims, removals or strikes the service knows of; most services say nothing, so they are also entered by hand. */
   flags?: PostFlag[];
 }

@@ -30,6 +30,7 @@ import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
+import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
 import { Settings } from "./settings/store.js";
 
 export interface Config {
@@ -63,6 +64,10 @@ export interface Config {
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
   watchPollMinutes: number;
+  /** Platform APIs asked about our posts directly, on top of the posting service. */
+  platformStats: PlatformStatsSource[];
+  /** What an hour of this server costs (USD), for a clip's compute cost. */
+  computeUsdPerHour: number;
   /** Live mode: records streams while they are live, in rolling segments. */
   live: {
     capturer: LiveCapturer;
@@ -275,6 +280,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
           new KickClient(),
           liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
+    // In demo mode the fake posting service stands in for the platforms' analytics too.
+    platformStats: fakes ? [] : [new YouTubeStats({ apiKey: () => settings.get("YOUTUBE_API_KEY") })],
+    // A Hetzner CX32 is about $8 a month: roughly a cent an hour.
+    computeUsdPerHour: Number(env.COMPUTE_USD_PER_HOUR) || 0.011,
     live: {
       // Demo mode: a made-up stream of two short segments, so LIVE clips show up within seconds.
       capturer: fakeDownloads ? new FakeLiveCapturer({ maxSegments: 2 }) : new PlatformLiveCapturer(new YtDlpLiveCapturer(env.YT_DLP_BIN ?? "yt-dlp")),

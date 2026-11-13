@@ -158,6 +158,24 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
         <Tile label="Cost this week" value={usd(t.costWeekUsd)} />
         <Tile label="Cost per approved clip" value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)} />
       </dl>
+      {(dash.growth.campaigns.length > 0 || dash.growth.recommendations.length > 0) && (
+        <div className="card dash-campaigns" data-testid="dash-campaigns">
+          <h3 className="mini">Test campaigns</h3>
+          <ul>
+            {dash.growth.campaigns.map((c) => (
+              <li key={c.campaign.id}>
+                <a href={`#campaigns/${c.campaign.id}`}>{c.campaign.name}</a>: {c.campaign.status === "paused" ? "paused, " : ""}day {c.progress.day} of{" "}
+                {c.progress.days}, {c.progress.posts} of {c.progress.planned} posts
+              </li>
+            ))}
+            {dash.growth.recommendations.map((r) => (
+              <li key={`r${r.id}`}>
+                Recommendation: <a href="#campaigns">{r.text}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <EngineCard jobs={jobs} />
 

@@ -14,7 +14,7 @@ import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier, thumbs } = openRuntime();
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier, thumbs } = openRuntime();
 const mediaDir = config.mediaDir;
 
 const watchRepo = new WatchlistRepo(db, sources);
@@ -74,6 +74,7 @@ const app = createApp({
   engine: { engine: config.engine, fake: config.fakeEngine },
   google: { ai: config.google, thumbs, auto: !config.fakes },
   settings: { store: settings, demo: config.fakes },
+  growth,
   seedDemoClip,
   clientDir,
   access: config.access ?? undefined,
@@ -88,9 +89,22 @@ if (!config.fakeEngine && !config.engine.settings().cloud && config.engine.missi
 // Post links and views, read on a timer within the service's API limits.
 // Account stats follow their own, longer interval (the guard skips them until due).
 const refreshTimer = setInterval(() => {
-  void publisher.refresh().then(() => accountStats.refresh());
+  void publisher
+    .refresh()
+    .then(() => growth.collectPlatformStats())
+    .then(() => accountStats.refresh());
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
+// Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.
+const growthRound = () => {
+  void growth
+    .tick()
+    .then(() => growth.sendDigest())
+    .catch((err: unknown) => console.error(`[growth] ${(err as Error).message}`));
+};
+const growthTimer = setInterval(growthRound, 10 * 60_000);
+growthTimer.unref();
+growthRound();
 poller.start(config.watchPollMinutes * 60_000);
 void live.start();
 // Looks every 6 hours for public allowances whose proof was last read a week or more ago.
@@ -107,6 +121,7 @@ function shutdown() {
   // A running job is aborted and put back in the queue for the next start.
   queue.stop();
   clearInterval(refreshTimer);
+  clearInterval(growthTimer);
   poller.stop();
   live.stop();
   allowance.stop();

@@ -1,3 +1,5 @@
+import type { GrowthDefaults } from "../../../shared/growth.js";
+import { applyPreferences } from "../../growth/preferences.js";
 import type { Reranker } from "../../google/rerank.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { PicksRepo } from "../../picks/repo.js";
@@ -18,6 +20,8 @@ export interface PicksDeps {
   maxPicks: number;
   /** Gemini watches the best picks and blends what it sees into their scores; left out, picks rank as the picker left them. */
   rerank?: Reranker;
+  /** The defaults learned from test campaigns (preferred length, favoured words); left out, picks rank as proposed. */
+  preferences?: () => GrowthDefaults;
 }
 
 /**
@@ -67,7 +71,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
 
     progress(0.9, "Checking picks");
     const reviewed = reviewPicks(
-      proposed,
+      deps.preferences ? applyPreferences(proposed, deps.preferences()) : proposed,
       toSentences(vod.words),
       vod.words,
       [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],

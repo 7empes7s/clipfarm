@@ -314,7 +314,10 @@ npm run e2e:live   # the whole flow, link → clips → review → post, against
 
 `npm run e2e:live` runs one flow at 390 px and on desktop and ends with a pass/fail table per
 step, including how long the link took to become clips (goal: under 30 minutes). Without
-`BASE_URL` it builds and starts its own preview with the fakes; `BASE_URL=http://localhost:3000
+`BASE_URL` it builds and starts its own preview with the fakes, on a free port and in its own
+folder (`.e2e-data/live-<run id>`, removed when the run ends), so runs side by side do not clash;
+with `E2E_PORT` it uses that port, or stops at the start naming the process that holds it.
+`BASE_URL=http://localhost:3000
 npm run e2e:live` tests a preview you started (`CLIPFARM_FAKES=1 FAKE_VOD_SEC=40`). It adds a test
 campaign named "E2E test …" and removes it, with its clips and files, at the end. Posting stops
 at the server's dry run (`POST /api/clips/:id/posts/dry-run`: every check, nothing sent or
@@ -407,6 +410,15 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   says which a permission may post to; the routing rule itself is `shared/routing.ts`), account stats from the posting service, cached in SQLite behind a guard
   (how often, how many accounts per read), plus followers typed in by hand.
 - `server/dashboard/`: builds the dashboard from our records and the cached account stats.
+- `server/growth/`: the growth lab (the Campaigns tab). `plan.ts` is the pure scheduler (slots,
+  even variant assignment, which clip fits a variant) and `lab.ts` its runner: every post still
+  goes through the publisher, so no gate is skipped, and at most 30 minutes ahead, so Pause and a
+  strike act fast. `series.ts` files each reading of a post under 1 h, 6 h, 24 h, 72 h or 7 d
+  (`post_stats`); a number the platform did not give stays null and shows as "not available".
+  `report.ts` builds the report, CSV and recommendation; the significance read is
+  `shared/stats.ts` (Mann-Whitney U plus a bootstrap range, no t-test). The 09:00 digest goes out
+  through live mode's notifier (`server/live/notify.ts`); `platformStats.ts` asks platform APIs
+  directly (YouTube Data API with the key from Settings).
 - `shared/`: types used by both, and `metrics.ts` (growth, averages, cost per approved clip, time
   left, review speed).
 

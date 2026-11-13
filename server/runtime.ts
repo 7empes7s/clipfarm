@@ -8,6 +8,8 @@ import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
 import { proxyMaker, videoReranker } from "./google/rerank.js";
 import { THUMBS_JOB, thumbsHandler, ThumbsRepo } from "./google/thumbs.js";
+import { GrowthLab } from "./growth/lab.js";
+import { GrowthRepo } from "./growth/repo.js";
 import { JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
@@ -35,6 +37,7 @@ export interface Runtime {
   posts: PostsRepo;
   publisher: Publisher;
   accountStats: AccountStatsStore;
+  growth: GrowthLab;
   queue: JobQueue;
   liveRepo: LiveRepo;
   notifier: Notifier;
@@ -65,6 +68,18 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const liveRepo = new LiveRepo(db, config.live.launchAt);
   // Demo mode never reaches a push service.
   const notifier = config.fakes ? new FakeNotifier() : new WebPushNotifier(liveRepo, config.live.pushSubject);
+  const growthRepo = new GrowthRepo(db);
+  const growth = new GrowthLab({
+    repo: growthRepo,
+    posts,
+    clips,
+    sources,
+    publisher,
+    vodTitle: (id) => vods.get(id).title,
+    platformStats: config.platformStats,
+    notifier,
+    computeUsdPerHour: config.computeUsdPerHour,
+  });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
@@ -77,6 +92,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         maxPicks: config.maxPicks,
         // Not in demo mode: the stand-in has nothing to see, and a proxy per pick would only slow the demo.
         rerank: config.fakes ? undefined : videoReranker({ google: config.google, proxy: proxyMaker(config.sectionDownloader) }),
+        preferences: () => growthRepo.defaults(),
       }),
       [RENDER_JOB]: renderHandler({
         sources,
@@ -103,7 +119,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
       [THUMBS_JOB]: thumbsHandler({ clips, thumbs, google: config.google, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
-      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir }),
+      [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir, onSeeded: () => growth.proposeChanges() }),
     },
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
@@ -112,5 +128,5 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier, thumbs };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier, thumbs };
 }
