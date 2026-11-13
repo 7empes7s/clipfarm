@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // The preview `npm run e2e:live` starts for itself: its own port, build and data folder per run,
 // so two runs at once never share a port, a build or a database (test/e2e-live-runs.test.ts).
@@ -83,7 +84,6 @@ export async function ownPreview(
       // The built app with fake downloader, transcriber, picker and posting, on a throwaway database.
       // The build goes into the run's own folder: a shared dist/ would be emptied under a run that is already up.
       command: [
-        `rm -rf ${quoted(dir)}`,
         `npx tsc -p tsconfig.build.json --outDir ${quoted(dist)}`,
         `npx vite build --outDir ${quoted(`${dist}/client`)} --emptyOutDir`,
         `exec node ${quoted(`${dist}/server/index.js`)}`,
@@ -101,4 +101,37 @@ export async function ownPreview(
       timeout: 120_000,
     },
   };
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // EPERM: it runs, as someone else.
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Starts the run's folder empty, marked with this run's pid, and removes the folders of runs that
+ * are gone (one that was killed, or ran with another reporter, never got to tidy up). A folder
+ * whose run is still going is never touched.
+ */
+export function claimRunFolder(dir: string, pid = process.pid): void {
+  const root = dirname(dir);
+  mkdirSync(root, { recursive: true });
+  for (const name of readdirSync(root)) {
+    if (!name.startsWith("live-") || join(root, name) === dir) continue;
+    let owner = NaN;
+    try {
+      owner = Number(readFileSync(join(root, name, "run.pid"), "utf8"));
+    } catch {
+      /* no mark: left by an older version */
+    }
+    if (!alive(owner)) rmSync(join(root, name), { recursive: true, force: true });
+  }
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir);
+  writeFileSync(join(dir, "run.pid"), String(pid));
 }

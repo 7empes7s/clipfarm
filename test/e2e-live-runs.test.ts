@@ -1,11 +1,11 @@
-import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFile, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { holderIn, ownPreview, runFolder, tryPort } from "../e2e/live/preview.js";
+import { claimRunFolder, holderIn, ownPreview, runFolder, tryPort } from "../e2e/live/preview.js";
 
 // `npm run e2e:live` runs side by side in the lab. These start the real config (with a stand-in
 // step that needs no browser: test/fixtures/live-runs) and check that the runs keep out of each other's way.
@@ -118,5 +118,27 @@ describe("planning the preview", () => {
   it("reads the pid and program from the system's list of listeners", () => {
     expect(holderIn('LISTEN 0 511 *:5426 *:* users:(("node",pid=4242,fd=21))\n')).toBe("pid 4242 (node)");
     expect(holderIn("")).toBeNull();
+  });
+
+  it("starts the run's folder empty and sweeps the folders of runs that are gone, never one still running", () => {
+    const gone = spawnSync(process.execPath, ["-e", ""]).pid;
+    const folder = (name: string, pid?: number) => {
+      mkdirSync(join(meetDir, name), { recursive: true });
+      writeFileSync(join(meetDir, name, "clipfarm.db"), "old");
+      if (pid) writeFileSync(join(meetDir, name, "run.pid"), String(pid));
+    };
+    folder("live-gone", gone);
+    folder("live-unmarked");
+    folder("live-running", process.pid);
+    folder("live-mine", gone);
+    folder("ops");
+
+    claimRunFolder(join(meetDir, "live-mine"), 4242);
+    expect(existsSync(join(meetDir, "live-gone"))).toBe(false);
+    expect(existsSync(join(meetDir, "live-unmarked"))).toBe(false);
+    expect(existsSync(join(meetDir, "live-running", "clipfarm.db"))).toBe(true);
+    expect(existsSync(join(meetDir, "ops", "clipfarm.db"))).toBe(true);
+    expect(existsSync(join(meetDir, "live-mine", "clipfarm.db"))).toBe(false);
+    expect(readFileSync(join(meetDir, "live-mine", "run.pid"), "utf8")).toBe("4242");
   });
 });

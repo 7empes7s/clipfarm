@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { ownPreview, runFolder } from "./e2e/live/preview.js";
+import { claimRunFolder, ownPreview, runFolder } from "./e2e/live/preview.js";
 import { liveSettings } from "./e2e/live/settings.js";
 
 // `npm run e2e:live`: the whole flow (link → clips → review → post) against any address.
@@ -10,6 +10,7 @@ process.env.E2E_RUN_ID ??= `${Date.now().toString(36)}-${process.pid}`;
 // Only the first load plans a preview: the workers load this file again and find BASE_URL set.
 // A taken E2E_PORT throws here, before anything is built or started (see e2e/live/preview.ts).
 const preview = process.env.BASE_URL ? undefined : await ownPreview(process.env, process.env.E2E_RUN_ID);
+if (preview) claimRunFolder(preview.dir);
 // Throws, before any browser starts, when the settings are not live-safe (see e2e/live/settings.ts).
 const settings = liveSettings({ ...process.env, BASE_URL: preview?.baseUrl ?? process.env.BASE_URL });
 // The workers read the same settings.
