@@ -34,9 +34,12 @@ test("Campaigns for you: the scouted campaigns, their estimate, why and rules; a
   const auto = page.getByTestId("settings-auto");
   const toggle = auto.getByRole("switch", { name: "Let clipfarm choose" });
   await expect(toggle).not.toBeChecked();
-  await toggle.check();
+  // The switch moves once the server has answered, so click and wait rather than check().
+  await toggle.click();
+  await expect(toggle).toBeChecked();
   await expect(auto.locator(".state")).toHaveText("On");
-  await toggle.uncheck();
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
   await expect(auto.locator(".state")).toHaveText("Off");
   expect(await sideways()).toBeLessThanOrEqual(width);
   expect(errors).toEqual([]);
