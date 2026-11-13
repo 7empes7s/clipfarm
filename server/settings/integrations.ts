@@ -2,6 +2,9 @@ import type { IntegrationId, IntegrationStatus, SettingsInfo } from "../../share
 import { INTEGRATION_IDS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { DEFAULT_FLASH_MODEL, DEFAULT_IMAGE_MODEL, GOOGLE_LOCATIONS, parseServiceAccount } from "../google/client.js";
+import { DEFAULT_PICK_MODEL } from "../pipeline/picks/llm.js";
+import { DEFAULT_TRANSCRIBE_MODEL, OPENAI_BASE_URL } from "../pipeline/transcript/openai.js";
+import { openAiNotes, openAiSetup, pickModelOptions, transcribeModelOptions } from "./openai.js";
 import type { Settings } from "./store.js";
 
 interface FieldDef {
@@ -16,6 +19,8 @@ interface FieldDef {
   options?: readonly string[];
   /** A Google service account key file, pasted whole: checked, and kept on one line. */
   serviceAccount?: boolean;
+  /** What is used while nothing is set. */
+  fallback?: string;
 }
 
 interface IntegrationDef {
@@ -34,13 +39,14 @@ const key = (name: string, label: string, placeholder = "Paste it here", require
   required,
   placeholder,
 });
-const plain = (name: string, label: string, placeholder: string, required: boolean, url = false): FieldDef => ({
+const plain = (name: string, label: string, placeholder: string, required: boolean, url = false, fallback?: string): FieldDef => ({
   name,
   label,
   secret: false,
   required,
   placeholder,
   url,
+  fallback,
 });
 
 /**
@@ -55,8 +61,9 @@ export const INTEGRATIONS: IntegrationDef[] = [
     purpose: "Optional speed-up. clipfarm transcribes and picks on its own server; with this key you can switch on \"Use cloud AI for speed\" on the Dashboard. It also tags the trend radar's titles and writes hook variants for the hook lab.",
     fields: [
       key("OPENAI_API_KEY", "API key", "sk-…"),
-      plain("LLM_BASE_URL", "Picking model address (optional)", "https://api.openai.com/v1", false, true),
-      plain("LLM_MODEL", "Picking model name (optional)", "gpt-4o-mini", false),
+      plain("LLM_MODEL", "Picking model (optional)", DEFAULT_PICK_MODEL, false, false, DEFAULT_PICK_MODEL),
+      plain("OPENAI_TRANSCRIBE_MODEL", "Transcription model (optional)", DEFAULT_TRANSCRIBE_MODEL, false, false, DEFAULT_TRANSCRIBE_MODEL),
+      plain("LLM_BASE_URL", "Picking model address (optional)", OPENAI_BASE_URL, false, true, OPENAI_BASE_URL),
       key("LLM_API_KEY", "Picking model key (optional, when it is not OpenAI)", "Leave empty to use the OpenAI key", false),
     ],
   },
@@ -136,8 +143,13 @@ const MIN_LENGTH_FOR_ENDING = 12;
 /** What the Settings screen gets. A key's value is never in here, only "set" and its last 4 characters. */
 export function settingsInfo(settings: Settings, opts: { demo: boolean; posting: string }): SettingsInfo {
   const both = isConfigured(settings, "postiz") && isConfigured(settings, "upload-post");
+  const facts = settings.openAiFacts();
+  const options: Record<string, string[]> = facts ? { LLM_MODEL: pickModelOptions(facts), OPENAI_TRANSCRIBE_MODEL: transcribeModelOptions(facts) } : {};
+  // A retired default left in the server env is not the model in use: the card shows the one that is.
+  const ignoredEnv = openAiSetup(settings).oldEnvModel && settings.source("LLM_MODEL") === "env" ? "LLM_MODEL" : null;
   const integrations: IntegrationStatus[] = INTEGRATIONS.map((def) => {
     let note: string | null = null;
+    if (def.id === "openai") note = openAiNotes(settings).join(" ") || null;
     if (both && (def.id === "postiz" || def.id === "upload-post")) {
       note = opts.posting === def.id ? "In use for posting." : "Not in use: posting goes through the other one while both are set.";
     }
@@ -149,7 +161,7 @@ export function settingsInfo(settings: Settings, opts: { demo: boolean; posting:
       test: settings.testResult(def.id),
       note,
       fields: def.fields.map((f) => {
-        const value = settings.get(f.name);
+        const value = f.name === ignoredEnv ? undefined : settings.get(f.name);
         return {
           name: f.name,
           label: f.label,
@@ -157,11 +169,13 @@ export function settingsInfo(settings: Settings, opts: { demo: boolean; posting:
           required: f.required,
           placeholder: f.placeholder,
           set: value !== undefined,
-          source: settings.source(f.name),
+          source: value === undefined ? null : settings.source(f.name),
           // A key file ends in a bracket, which tells nothing apart.
           ending: f.secret && !f.serviceAccount && value && value.length >= MIN_LENGTH_FOR_ENDING ? value.slice(-4) : null,
           value: f.secret ? null : (value ?? null),
           savedAt: settings.savedAt(f.name),
+          fallback: f.fallback ?? null,
+          options: options[f.name]?.length ? options[f.name]! : null,
         };
       }),
     };

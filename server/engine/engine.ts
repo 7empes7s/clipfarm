@@ -169,8 +169,8 @@ export class Engine {
       const started = Date.now();
       try {
         const done = await this.cloud(this.opts.cloudTranscriber()).transcribe(audio, o);
-        const use = { step: "cloud", label: "Cloud (OpenAI)", count: 1, audioSec: o.durationSec, ms: Date.now() - started, peakMb: null, note: "" };
-        const report: EngineReport = { kind: "stt", language: null, uses: [use], fallbacks: [], summary: "Cloud (OpenAI) 100%" };
+        const use = { step: "cloud", label: "Cloud (OpenAI)", count: 1, audioSec: o.durationSec, ms: Date.now() - started, peakMb: null, note: done.model ?? "" };
+        const report: EngineReport = { kind: "stt", language: null, uses: [use], fallbacks: [], summary: `Cloud (OpenAI) 100%${done.model ? ` (${done.model})` : ""}` };
         this.record(o.run, report);
         return { ...done, report };
       } catch (err) {
@@ -254,7 +254,7 @@ export class Engine {
         unavailable: () => (this.opts.cloudTranscriber() ? null : "there is no OpenAI key."),
         run: async (audio, o) => {
           const done = await this.cloud(this.opts.cloudTranscriber()).transcribe(audio, { durationSec: o.durationSec, tmpDir: o.tmpDir, signal: o.signal });
-          return { words: done.words, costUsd: done.costUsd };
+          return { words: done.words, costUsd: done.costUsd, model: done.model };
         },
       };
     }

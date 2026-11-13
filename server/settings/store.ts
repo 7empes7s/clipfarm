@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { IntegrationId, KeyTestResult } from "../../shared/types.js";
+import type { OpenAiFacts } from "./openai.js";
 import { SETTING_NAMES } from "./integrations.js";
 
 interface SavedValue {
@@ -11,6 +12,8 @@ interface SavedValue {
 interface SecretsFile {
   values: Record<string, SavedValue>;
   tests: Partial<Record<IntegrationId, KeyTestResult>>;
+  /** What the last OpenAI test learned: the models on offer, and which one transcribes. */
+  openai?: OpenAiFacts;
 }
 
 /** Values shorter than this are not worth hiding (and hiding them would blank out ordinary words). */
@@ -64,6 +67,7 @@ export class Settings {
         }
       }
       this.data.tests = parsed.tests ?? {};
+      this.data.openai = parsed.openai;
     } catch {
       // Never print the file: it holds keys.
       console.error("The saved keys file could not be read, so it is ignored. Paste the keys again in Settings.");
@@ -78,6 +82,11 @@ export class Settings {
   source(name: string): "settings" | "env" | null {
     if (this.data.values[name]) return "settings";
     return this.baseEnv[name] ? "env" : null;
+  }
+
+  /** The server's env alone, whatever is saved on top of it. */
+  serverEnv(): NodeJS.ProcessEnv {
+    return this.baseEnv;
   }
 
   savedAt(name: string): string | null {
@@ -99,6 +108,7 @@ export class Settings {
       else this.data.values[name] = { value, savedAt };
     }
     for (const id of retest) delete this.data.tests[id];
+    if (retest.includes("openai")) delete this.data.openai;
     this.write();
     for (const fn of this.listeners) fn();
   }
@@ -109,6 +119,15 @@ export class Settings {
 
   setTestResult(id: IntegrationId, result: KeyTestResult): void {
     this.data.tests[id] = result;
+    this.write();
+  }
+
+  openAiFacts(): OpenAiFacts | null {
+    return this.data.openai ?? null;
+  }
+
+  setOpenAiFacts(facts: OpenAiFacts): void {
+    this.data.openai = facts;
     this.write();
   }
 

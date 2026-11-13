@@ -4,10 +4,11 @@ import { VertexGemini } from "../google/client.js";
 import { PostingServiceError } from "../publish/errors.js";
 import { PostizService } from "../publish/postiz.js";
 import { UploadPostService } from "../publish/uploadPost.js";
+import { ChatFailedError, chatFor } from "../pipeline/picks/llm.js";
+import { OPENAI_BASE_URL, OpenAiTranscriber, TranscriptionFailedError } from "../pipeline/transcript/openai.js";
 import { integration, isConfigured } from "./integrations.js";
+import { DEMO_FACTS, openAiSetup, pickChatOptions } from "./openai.js";
 import type { Settings } from "./store.js";
-
-const OPENAI = "https://api.openai.com/v1";
 
 /** A test that failed for a reason worth showing as it is. */
 class TestFailed extends Error {}
@@ -46,23 +47,77 @@ async function ask<T>(label: string, url: string, init: RequestInit = {}): Promi
   }
 }
 
-type Tester = (get: (name: string) => string) => Promise<string>;
+/** Why a call to a model failed, in the service's own words where it gave any. */
+function whyFailed(err: unknown): string {
+  if (err instanceof ChatFailedError || err instanceof TranscriptionFailedError) return saidBy(err.body) ?? `HTTP ${err.status}`;
+  if (err instanceof DOMException && err.name === "TimeoutError") return "no answer in time";
+  if (err instanceof TypeError) return "no connection";
+  return (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+}
 
-/** One cheap, read-only call per connection. Each returns what to show after "Works". */
+/** Two seconds of a quiet tone as a WAV file (16 kHz, mono), made in memory: no ffmpeg job, no temp file. */
+function sampleWav(seconds = 2): Uint8Array<ArrayBuffer> {
+  const rate = 16000;
+  const samples = rate * seconds;
+  const wav = new DataView(new ArrayBuffer(44 + samples * 2));
+  const text = (at: number, s: string) => [...s].forEach((c, i) => wav.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF");
+  wav.setUint32(4, 36 + samples * 2, true);
+  text(8, "WAVEfmt ");
+  wav.setUint32(16, 16, true);
+  wav.setUint16(20, 1, true);
+  wav.setUint16(22, 1, true);
+  wav.setUint32(24, rate, true);
+  wav.setUint32(28, rate * 2, true);
+  wav.setUint16(32, 2, true);
+  wav.setUint16(34, 16, true);
+  text(36, "data");
+  wav.setUint32(40, samples * 2, true);
+  for (let i = 0; i < samples; i++) wav.setInt16(44 + i * 2, Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 3000), true);
+  return new Uint8Array(wav.buffer);
+}
+
+const PING_SCHEMA = { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { type: "boolean" } } };
+
+type Tester = (get: (name: string) => string, settings: Settings) => Promise<string>;
+
+/** One cheap call per connection (OpenAI: three small ones). Each returns what to show under "Working". */
 const TESTERS: Record<IntegrationId, Tester> = {
-  // Lists models (free). When picks use another provider or model, that one is asked too.
-  async openai(get) {
-    const bearer = (k: string) => ({ headers: { Authorization: `Bearer ${k}` } });
-    await ask("OpenAI", `${OPENAI}/models`, bearer(get("OPENAI_API_KEY")));
-    const base = (get("LLM_BASE_URL") || OPENAI).replace(/\/+$/, "");
-    const model = get("LLM_MODEL") || "gpt-4o-mini";
-    const label = base === OPENAI ? "OpenAI" : "The picking model";
-    const list = await ask<{ data?: { id?: unknown }[] }>(label, `${base}/models`, bearer(get("LLM_API_KEY") || get("OPENAI_API_KEY")));
-    const ids = (Array.isArray(list.data) ? list.data : []).map((m) => m?.id).filter((x) => typeof x === "string");
-    if (ids.length > 0 && !ids.includes(model)) {
-      throw new TestFailed(`The key works, but there is no model called "${model}" there. Check the picking model name.`);
+  // The key (a free model list), the picking model (one tiny answer), and a 2-second transcription sample.
+  async openai(get, settings) {
+    const models = async (label: string, base: string, key: string) => {
+      const list = await ask<{ data?: { id?: unknown }[] }>(label, `${base}/models`, { headers: { Authorization: `Bearer ${key}` } });
+      return (Array.isArray(list.data) ? list.data : []).map((m) => m?.id).filter((x): x is string => typeof x === "string");
+    };
+    const key = get("OPENAI_API_KEY");
+    const openAiModels = await models("OpenAI", OPENAI_BASE_URL, key);
+    const setup = openAiSetup(settings);
+    const chat = pickChatOptions(settings)!;
+    const label = setup.official ? "OpenAI" : "The picking model";
+    const sameList = setup.baseUrl === OPENAI_BASE_URL && chat.apiKey === key;
+    const pickModels = sameList ? openAiModels : await models(label, setup.baseUrl, chat.apiKey);
+    // The dropdowns fill from these lists, whatever the rest of the test finds.
+    settings.setOpenAiFacts({ pickModels, openAiModels, probe: null });
+    if (pickModels.length > 0 && !pickModels.includes(setup.model)) {
+      throw new TestFailed(`The key works, but there is no model called "${setup.model}" there. Pick another picking model.`);
     }
-    return "Works.";
+    try {
+      await chatFor(chat).complete(
+        { system: "You answer in JSON.", user: "Set ok to true.", schemaName: "ping", schema: PING_SCHEMA },
+        AbortSignal.timeout(30_000),
+      );
+    } catch (err) {
+      throw new TestFailed(`The key works, but the picking model "${setup.model}" did not answer: ${whyFailed(err)}.`);
+    }
+    let used: string;
+    try {
+      const transcriber = new OpenAiTranscriber({ apiKey: key, model: setup.transcribeChoice });
+      used = (await transcriber.sample(sampleWav(), "sample.wav", AbortSignal.timeout(30_000))).model;
+    } catch (err) {
+      throw new TestFailed(`Picks work, but the 2-second transcription sample failed: ${whyFailed(err)}.`);
+    }
+    settings.setOpenAiFacts({ pickModels, openAiModels, probe: { model: setup.transcribeChoice, wordTimings: used === setup.transcribeChoice } });
+    return `Works: key valid, picks with ${setup.model}, transcription with ${used}.`;
   },
 
   // One tiny generateContent call (a fraction of a cent), signed in exactly as the pipeline will be.
@@ -133,10 +188,11 @@ export async function testIntegration(id: IntegrationId, settings: Settings, dem
     if (def.oneOf && !def.oneOf.some((name) => settings.get(name) !== undefined)) missing.push("an API key or a service account JSON");
     result = { ok: false, message: `Not set yet: ${missing.join(", ")}.` };
   } else if (demo) {
+    if (id === "openai") settings.setOpenAiFacts(DEMO_FACTS);
     result = { ok: true, message: "Saved. Demo mode: nothing outside was called." };
   } else {
     try {
-      result = { ok: true, message: await TESTERS[id]((name) => settings.get(name) ?? "") };
+      result = { ok: true, message: await TESTERS[id]((name) => settings.get(name) ?? "", settings) };
     } catch (err) {
       // Our own plain messages (and the posting services') are shown; anything else is a bug to log.
       const known = err instanceof TestFailed || err instanceof PostingServiceError;
