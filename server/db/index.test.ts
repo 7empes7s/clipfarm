@@ -2,8 +2,8 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { MIGRATIONS, migrate } from "./index.js";
 
-/** How many migrations main had shipped before the trend radar and hook lab tables were added. */
-const SHIPPED_ON_MAIN = 11;
+/** Main's shipped migrations: everything except the last entry, which adds the trend radar and hook lab tables. */
+const SHIPPED_ON_MAIN = MIGRATIONS.length - 1;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -14,8 +14,11 @@ describe("migrate", () => {
     const db = new Database(":memory:");
     for (const sql of MIGRATIONS.slice(0, SHIPPED_ON_MAIN)) db.exec(sql);
     db.pragma(`user_version = ${SHIPPED_ON_MAIN}`);
-    // The shipped migrations keep their places: the job queue's worker row and the permission proof columns.
+    // The shipped migrations keep their places: the job queue's worker row, the permission proof
+    // columns, Live mode and Clip polish all come before the trend radar and hook lab tables.
     expect(tables(db)).toContain("queue_worker");
+    expect(tables(db)).toContain("live_captures");
+    expect((db.prepare("PRAGMA table_info(clips)").all() as { name: string }[]).map((c) => c.name)).toContain("quality");
     expect((db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name)).toContain("proof_url");
     expect(tables(db)).not.toContain("trend_videos");
 
