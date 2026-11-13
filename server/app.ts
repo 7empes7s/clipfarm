@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, PostFlag, RejectReason } from "../shared/types.js";
+import type { Platform, PostFlag, RejectReason, WatchChannel } from "../shared/types.js";
 import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
 import { accessGate, type AccessVerifier } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
@@ -14,6 +14,9 @@ import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
+import type { LiveManager } from "./live/manager.js";
+import { parsePushSubscription } from "./live/notify.js";
+import type { LiveRepo } from "./live/repo.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
@@ -23,7 +26,9 @@ import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
+import type { AllowanceChecker } from "./sources/proof.js";
 import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
+import { addSuggested, listSuggested, type SeedCreator } from "./sources/suggested.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
 import type { VodsRepo } from "./vods/repo.js";
@@ -38,8 +43,14 @@ export interface AppDeps {
   publisher: Publisher;
   /** Account stats from the posting service, for the dashboard. */
   accountStats?: AccountStatsStore;
+  /** Re-reads the proof of public clipping allowances ("Check again" and the weekly check). */
+  allowance?: AllowanceChecker;
+  /** The starter list of creators who publicly allow clipping. */
+  suggested?: SeedCreator[];
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
+  /** Live mode: the Launch day card's switches, and who gets notifications. */
+  live?: { manager: LiveManager; repo: LiveRepo };
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
   engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
@@ -86,7 +97,10 @@ export function createApp({
   posts,
   publisher,
   accountStats,
+  allowance,
+  suggested = [],
   watchlist,
+  live,
   engine,
   settings,
   seedDemoClip,
@@ -109,6 +123,33 @@ export function createApp({
   app.post("/api/sources", (req, res) => {
     res.status(201).json(sources.create(parseNewSource(req.body)));
   });
+
+  app.get("/api/sources/suggested", (_req, res) => {
+    res.json(listSuggested(suggested, sources.list()));
+  });
+
+  // The manager picks from the starter list, each shown with its proof; nothing is added unasked.
+  app.post("/api/sources/suggested", (req, res) => {
+    const names = ((req.body ?? {}) as { names?: unknown }).names;
+    const picked = Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
+    const added = addSuggested(picked, suggested, { sources, watchlist: watchlist?.repo, now: new Date() });
+    res.status(201).json({ added, suggested: listSuggested(suggested, sources.list()) });
+  });
+
+  if (allowance) {
+    // "Check again": re-reads the proof page of a public allowance and stores the outcome.
+    app.post("/api/permissions/:id/check", async (req, res) => {
+      const id = idParam(req.params.id);
+      const result = await allowance.check(id);
+      res.json({ ...result, source: sources.get(sources.permission(id).sourceId) });
+    });
+
+    // "Look for a clipping allowance" in Add a creator: reads the creator's own channel pages.
+    app.post("/api/allowance/find", async (req, res) => {
+      const { channels } = parseWatchedCreator({ name: "-", channels: ((req.body ?? {}) as { channels?: WatchChannel[] }).channels });
+      res.json(await allowance.find(channels));
+    });
+  }
 
   // Another record for a creator we already have (an experiment, or a campaign that replaces an old one).
   app.post("/api/sources/:id/permissions", (req, res) => {
@@ -333,7 +374,11 @@ export function createApp({
     app.put("/api/watchlist/:id/auto-ingest", async (req, res) => {
       const id = idParam(req.params.id);
       const on = (req.body ?? {}).on === true;
-      if (on && repo.get(id).permissionState !== "active") {
+      const state = repo.get(id).permissionState;
+      if (on && state === "needs-review") {
+        throw new ValidationError("Their clipping allowance needs review: check it again in Sources first.");
+      }
+      if (on && state !== "active") {
         throw new ValidationError("Needs permission: join their program and add it as a campaign first.");
       }
       repo.setAutoIngest(id, on);
@@ -344,6 +389,45 @@ export function createApp({
     app.post("/api/watchlist/poll", async (_req, res) => {
       await poller.pollAll();
       res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+  }
+
+  if (live) {
+    const { manager, repo } = live;
+
+    app.get("/api/live", (_req, res) => {
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/launch", async (req, res) => {
+      await manager.setLaunchAt((req.body ?? {}).launchAt);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/arm", async (_req, res) => {
+      await manager.arm(true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/disarm", async (_req, res) => {
+      await manager.arm(false);
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/creators/:id", async (req, res) => {
+      await manager.setCreator(idParam(req.params.id), (req.body ?? {}).on === true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/push", (req, res) => {
+      repo.addPushSubscription(parsePushSubscription(req.body), new Date());
+      res.status(201).json(manager.info());
+    });
+
+    app.delete("/api/live/push", (req, res) => {
+      const endpoint = (req.body ?? {}).endpoint as unknown;
+      if (typeof endpoint === "string") repo.removePushSubscription(endpoint);
+      res.json(manager.info());
     });
   }
 

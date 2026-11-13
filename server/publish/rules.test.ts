@@ -20,6 +20,10 @@ function perm(overrides: Partial<Permission> = {}): Permission {
     minViews: 3000,
     allowedPlatforms: ["tiktok", "youtube"],
     expiresAt: null,
+    proofUrl: null,
+    proofQuote: null,
+    proofCheckedAt: null,
+    reviewReason: null,
     createdAt: NOW.toISOString(),
     ...overrides,
   };

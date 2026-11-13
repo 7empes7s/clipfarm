@@ -118,6 +118,13 @@ env-only.
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
 | `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist |
 | `WATCHLIST_POLL_MINUTES` | `15` | How often the watchlist checks for live streams and new VODs (5 or more) |
+| `LIVE_SEGMENT_SEC` | `600` | Live mode: a new segment of the stream starts this often |
+| `LIVE_OVERLAP_SEC` | `60` | Each segment runs this much longer, so a moment across a boundary is whole in one (keep it at the longest clip) |
+| `LIVE_KEEP_HOURS` | `3` | Hours a segment's video is kept (about 3 GB per creator per hour at 1080p) |
+| `LIVE_MAX_PICKS` | `3` | Clips cut from each live segment |
+| `LIVE_MAX_STREAMS` | `4` | Most streams recorded at once; the creators highest on the watchlist go first |
+| `LAUNCH_AT` | `2026-11-19T05:00:00Z` | The launch time until it is changed on the Launch day card |
+| `PUBLIC_URL` | `https://clip.techinsiderbytes.com` | The app's web address, named to the phones' push services as the sender of notifications |
 
 ## Live box (clip.techinsiderbytes.com)
 
@@ -180,6 +187,31 @@ Views come from the service on a timer, or by hand. "Mark sent to Whop" records 
 counted once a post reaches the campaign's minimum views) per campaign and platform, plus cost per
 approved clip.
 
+## Creators who publicly allow clipping
+
+A fourth permission kind, **Creator publicly allows clipping** (`public-allowance`), covers streamers
+who say so in public (channel panel, about page, post, Discord rule, a clipping-program listing).
+It is only as good as its proof, so the record keeps the **link** to where they say it, **their
+words** and the **day it was read**; without all three it cannot be saved. Their conditions
+("credit me", "no TikTok") go in the brief rules and the allowed platforms, as for other kinds.
+
+- **It runs out.** With no end date of its own it ends 90 days after the proof was last seen; an
+  end date set by hand (a campaign that closes on a day) is kept.
+- **It is read again.** Every week the server fetches the proof link (and **Check again** on the
+  source does it on a tap). Page still carries the words: the allowance is good for another 90
+  days. Page gone (404/410) or words missing: the record **needs review**, which stops new links,
+  running jobs and posts for that source and says why on it. A page that could not be read this
+  time (server error, blocked, network) changes nothing.
+- **The proof travels.** The clip in the gallery, every post and the export pack link to it.
+- **Starter list.** `server/sources/seed/public-allowance.json` is an editable list of GTA / GTA RP
+  streamers with the proof link and quote for each. **Add suggested creators** in Sources shows
+  every entry with its proof; the ones ticked become sources and go on the watchlist with
+  auto-ingest on. The vendor posts that say clipping is "generally fine" are not proof; only an
+  entry whose link was read counts, and the weekly check keeps it honest.
+- **Add a creator** (Watchlist) has **Look for a clipping allowance**: it reads the creator's own
+  channel pages and, when one clearly says clipping is allowed, offers the permission pre-filled
+  with that proof. Nothing is saved until Save.
+
 ## Watchlist
 
 The **Watchlist** tab follows the streamers worth clipping: their Twitch, Kick and YouTube channels,
@@ -200,6 +232,35 @@ the sources and date) on the first start; after that the list is edited in the a
 - **Live now** shows who on the list is streaming and what.
 - A platform that errors is backed off (5 min, doubling up to 6 h, longer if it sends Retry-After);
   a platform without keys is skipped and the tab says what to set.
+
+## Live mode (launch day)
+
+The **Launch day** card on the Dashboard counts down to GTA VI (the time is editable) and holds
+the switch of live mode: clipping a stream while it is still on, instead of waiting for the VOD.
+
+- **Who is recorded.** A watched creator with an active permission record who is live with one of
+  their games, while live mode is armed and their own switch on the card is on. The watchlist
+  check says who is live.
+- **The leak rule.** Before launch time a GTA VI stream is never recorded, armed or not: an early
+  copy counts as a leak. At launch time live mode arms itself. **Arm** before it only lets other
+  games be recorded (a rehearsal); **Disarm** after it stops everything until Arm is tapped.
+- **Rolling segments.** The stream is copied as it comes (no encoding) in segments: a new one
+  every 10 minutes, each a minute longer, so a moment across a boundary is whole in one of them.
+  Twitch and YouTube go through yt-dlp, Kick through ffmpeg on the HLS address its channel
+  endpoint gives. Segments live in `MEDIA_DIR/live` and are deleted after 3 hours, unless a clip
+  is still to be cut from one.
+- **Clips at once.** Each finished segment is transcribed and added to the stream's running
+  transcript, picked with the last two segments for context, and its top 3 moments are cut
+  straight into the Inbox, tagged LIVE with the stream time and how long after the moment the
+  clip arrived (the target is 15 minutes).
+- **One heavy job.** Live segments and their clips run before stream/VOD jobs, the biggest
+  creator (highest on the watchlist) first. When more than two segments wait, the oldest is
+  skipped, and Jobs says so.
+- **Guard.** No recording starts with under 10 GB of free disk or 1 GB of free memory, and at
+  most 4 streams are recorded at once; the card says which.
+- **Notifications.** "Turn on notifications" on the card (in the installed app) subscribes the
+  phone: it is told when live mode starts on a creator and when the first LIVE clip lands. The
+  server makes its own push keys on first start; there is nothing to set up.
 
 ## Checks
 
@@ -228,7 +289,7 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
 ## How it works
 
 - `server/sources/`: a source is a creator plus permission records (`whop-campaign`,
-  `direct-permission` or `own-content`, with campaign link, brief rules, pay per 1,000 views,
+  `direct-permission`, `own-content` or `public-allowance` with its proof; with campaign link, brief rules, pay per 1,000 views,
   minimum views, allowed platforms and end date). The server refuses to ingest from a source
   without an active record, both when the link is added and again when the job runs.
   A fifth kind, `experiment`, tests what the platforms do to clips posted without the creator's
@@ -239,6 +300,12 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   leaks, isolated cutscenes or ending spoilers.
 - `server/jobs/`: a SQLite-backed queue. One job at a time (the box is shared), automatic retries,
   cancel, progress, and a temp folder per job that is always removed.
+- `server/live/`: live mode. `plan.ts` holds the rules as plain functions (armed or not, the leak
+  rule, who is recorded, which segment holds a moment, the guard, the backlog); `manager.ts`
+  starts and stops recordings and rolls the segments; `capturer.ts` is the recorder behind an
+  interface (yt-dlp, ffmpeg on Kick's HLS address, and a fake); `job.ts` is the queued work per
+  segment and cuts LIVE clips from the recorded segment; `notify.ts` is web push behind an
+  interface with a fake.
 - `server/engine/`: clipfarm's own engine. `catalog.ts` pins every program and model to a
   SHA-256, `download.ts` fetches with resume and checks it, `memory.ts` is the guard, `llama.ts`
   runs the hook writer for one picking session, and `engine.ts` reports status, keeps the

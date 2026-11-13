@@ -1,6 +1,7 @@
 import type {
   AccountChoice,
   AccountsInfo,
+  AllowanceFind,
   ChannelSettings,
   Clip,
   Dashboard,
@@ -10,6 +11,7 @@ import type {
   FaceCam,
   ExportPack,
   Job,
+  LiveInfo,
   NewPermissionInput,
   NewSourceInput,
   Pick,
@@ -25,8 +27,10 @@ import type {
   PostOutcome,
   Source,
   Stats,
+  SuggestedCreator,
   Vod,
   VodDetail,
+  WatchChannel,
   WatchedCreator,
   WatchedCreatorInput,
   Watchlist,
@@ -45,6 +49,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   sources: () => call<Source[]>("/api/sources"),
   addSource: (input: NewSourceInput) => call<Source>("/api/sources", { method: "POST", body: JSON.stringify(input) }),
+  suggested: () => call<SuggestedCreator[]>("/api/sources/suggested"),
+  addSuggested: (names: string[]) =>
+    call<{ added: Source[]; suggested: SuggestedCreator[] }>("/api/sources/suggested", { method: "POST", body: JSON.stringify({ names }) }),
+  checkPermission: (id: number) => call<{ ok: boolean; message: string; source: Source }>(`/api/permissions/${id}/check`, { method: "POST" }),
+  findAllowance: (channels: WatchChannel[]) =>
+    call<AllowanceFind>("/api/allowance/find", { method: "POST", body: JSON.stringify({ channels }) }),
   addPermission: (sourceId: number, input: NewPermissionInput) =>
     call<Source>(`/api/sources/${sourceId}/permissions`, { method: "POST", body: JSON.stringify(input) }),
   vods: () => call<Vod[]>("/api/vods"),
@@ -104,6 +114,13 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  live: () => call<LiveInfo>("/api/live"),
+  arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
+  disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),
+  setLaunchAt: (launchAt: string) => call<LiveInfo>("/api/live/launch", { method: "PUT", body: JSON.stringify({ launchAt }) }),
+  setLiveCreator: (id: number, on: boolean) => call<LiveInfo>(`/api/live/creators/${id}`, { method: "PUT", body: JSON.stringify({ on }) }),
+  subscribePush: (subscription: PushSubscriptionJSON) => call<LiveInfo>("/api/live/push", { method: "POST", body: JSON.stringify(subscription) }),
+  unsubscribePush: (endpoint: string) => call<LiveInfo>("/api/live/push", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
 };

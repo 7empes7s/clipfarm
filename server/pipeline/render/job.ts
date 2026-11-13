@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ClipQuality, Job } from "../../../shared/types.js";
+import type { ClipQuality, Job, Pick } from "../../../shared/types.js";
 import { DEFAULT_EFFECTS } from "../../../shared/types.js";
 import { HttpError } from "../../errors.js";
 import type { ClipsRepo } from "../../clips/repo.js";
@@ -15,7 +15,7 @@ import { preparePolish } from "../polish/run.js";
 import { buildAss, clipWords } from "./captions.js";
 import { planLayout } from "./layout.js";
 import { grabFrame, renderClip } from "./render.js";
-import { type SectionDownloader, sectionFor } from "./section.js";
+import { type Section, type SectionDownloader, sectionFor } from "./section.js";
 
 export const RENDER_JOB = "render";
 
@@ -26,6 +26,15 @@ export interface RenderDeps {
   /** Each rendered pick becomes a clip waiting for review (and then posting). */
   clips: ClipsRepo;
   downloader: SectionDownloader;
+  /**
+   * Live mode: cuts a pick's section from the stream's recorded segment instead of downloading
+   * it. Answers null for a pick of a VOD.
+   */
+  liveCut?: (
+    pick: Pick,
+    tmpDir: string,
+    signal?: AbortSignal,
+  ) => Promise<{ input: string; section: Section; live: { streamSec: number; momentAt: string } } | null>;
   /** Final clips go to <mediaDir>/clips, creator frames to <mediaDir>/frames. Nothing else stays. */
   mediaDir: string;
   preset?: string;
@@ -58,8 +67,12 @@ export function renderHandler(deps: RenderDeps): JobHandler {
     };
 
     progress(0.05, "Downloading the clip's video");
-    const section = sectionFor(pick.startSec, pick.endSec, vod.durationSec);
-    const input = await timed("download", () => deps.downloader.downloadSection(vod.url, section, tmpDir, signal));
+    const { input, section, live } = await timed("download", async () => {
+      const cut = await deps.liveCut?.(pick, tmpDir, signal);
+      if (cut) return cut;
+      const section = sectionFor(pick.startSec, pick.endSec, vod.durationSec);
+      return { input: await deps.downloader.downloadSection(vod.url, section, tmpDir, signal), section, live: null };
+    });
 
     progress(0.3, "Cutting and adding captions");
     const durationSec = pick.endSec - pick.startSec;
@@ -133,6 +146,7 @@ export function renderHandler(deps: RenderDeps): JobHandler {
         endSec: offsetSec + durationSec,
         peakSec: peakSec === null ? null : offsetSec + peakSec,
         quality,
+        live,
       }).id;
     // A pick rendered again keeps its clip; the check applies only while the clip still shows this file.
     if (pick.clipId && quality && deps.clips.filePath(clipId) === filePath) deps.clips.setQuality(clipId, quality);

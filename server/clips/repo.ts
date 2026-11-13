@@ -28,6 +28,9 @@ interface ClipRow {
   peak_sec: number | null;
   quality: string | null;
   post_count?: number;
+  live_stream_sec: number | null;
+  live_moment_at: string | null;
+  live_latency_sec: number | null;
   experiment?: number;
   created_at: string;
 }
@@ -52,6 +55,8 @@ export interface NewClip {
   /** Where the reaction peaks, in master seconds (the punch-in zoom lands there). */
   peakSec?: number | null;
   quality?: ClipQuality | null;
+  /** Cut from a stream that was still live: where in the stream, and when the moment happened. */
+  live?: { streamSec: number; momentAt: string } | null;
 }
 
 /** What the renderer needs to make a new version of a clip. */
@@ -94,12 +99,16 @@ function toClip(r: ClipRow): Clip {
     experiment: r.experiment === 1,
     videoUrl: `/api/clips/${r.id}/video?v=${r.version}`,
     masterUrl: `/api/clips/${r.id}/master`,
+    live:
+      r.live_moment_at === null
+        ? null
+        : { streamSec: r.live_stream_sec ?? 0, momentAt: r.live_moment_at, latencySec: r.live_latency_sec ?? 0 },
     createdAt: r.created_at,
   };
 }
 
-// "In force" for a permission: no end date, or one after @now (ISO timestamps compare as text).
-const IN_FORCE = "p.source_id = clips.source_id AND (p.expires_at IS NULL OR p.expires_at > @now)";
+// "In force" for a permission: not on hold, and no end date or one after @now (ISO timestamps compare as text).
+const IN_FORCE = "p.source_id = clips.source_id AND p.review_reason IS NULL AND (p.expires_at IS NULL OR p.expires_at > @now)";
 // experiment: the source's records in force are all experiments (see isExperimentOnly).
 const SELECT = `SELECT clips.*, (SELECT COUNT(*) FROM posts WHERE posts.clip_id = clips.id) AS post_count,
   (EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind = 'experiment')
@@ -113,11 +122,13 @@ export class ClipsRepo {
   ) {}
 
   create(c: NewClip): Clip {
+    const now = this.now();
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO clips (source_id, vod_id, title, file_path, duration_sec, hook, reason, score, layout, caption_words,
-           master_path, master_duration_sec, start_sec, end_sec, peak_sec, quality, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           master_path, master_duration_sec, start_sec, end_sec, peak_sec, quality,
+           live_stream_sec, live_moment_at, live_latency_sec, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.sourceId,
@@ -136,7 +147,11 @@ export class ClipsRepo {
         c.endSec ?? null,
         c.peakSec ?? null,
         c.quality ? JSON.stringify(c.quality) : null,
-        this.now().toISOString(),
+        c.live?.streamSec ?? null,
+        c.live?.momentAt ?? null,
+        // Moment to Inbox: the clip exists (and shows in the Inbox) from this insert on.
+        c.live ? Math.max(0, Math.round((now.getTime() - new Date(c.live.momentAt).getTime()) / 1000)) : null,
+        now.toISOString(),
       );
     return this.get(Number(lastInsertRowid));
   }

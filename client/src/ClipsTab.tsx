@@ -5,6 +5,7 @@ import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
+import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
 import { QualityChips } from "./QualityChips";
 import { shortDate } from "./format";
@@ -129,6 +130,7 @@ export function ClipsTab({
                     {source?.creatorName ?? "Unknown creator"} · {Math.round(clip.durationSec)} s
                     {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
+                  <LiveTag clip={clip} short />
                   {clip.experiment && (
                     <p className="hint exp-line">
                       <ExperimentBadge /> Burner accounts only, no export.
@@ -262,6 +264,13 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
           />
           <button type="submit">Save</button>
         </form>
+      )}
+      {post.proofUrl && (
+        <div className="meta">
+          <a href={post.proofUrl} target="_blank" rel="noreferrer">
+            Proof that clipping is allowed
+          </a>
+        </div>
       )}
       {post.status === "posted" && post.campaignUrl && (
         <div className="meta">

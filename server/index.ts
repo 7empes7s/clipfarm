@@ -4,16 +4,43 @@ import { clientBuildProblem, createApp } from "./app.js";
 import { demoClipSeeder } from "./dev/seed.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { openRuntime } from "./runtime.js";
+import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
+import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
+import { parseSuggested } from "./sources/suggested.js";
+import { LiveManager } from "./live/manager.js";
+import { realSystem } from "./live/system.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue } = openRuntime();
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue, liveRepo, notifier } = openRuntime();
 const mediaDir = config.mediaDir;
 
 const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
-const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients });
+const suggested = parseSuggested(allowanceSeed.creators);
+// With fakes on, the starter list's proof pages say what the list quotes (no network).
+if (config.proofFetcher instanceof FakeProofFetcher) {
+  for (const c of suggested) config.proofFetcher.set(c.proofUrl, { status: 200, text: `<p>${c.proofQuote}</p>` });
+}
+const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
+const live = new LiveManager({
+  repo: liveRepo,
+  watchlist: watchRepo,
+  sources,
+  vods,
+  queue,
+  capturer: config.live.capturer,
+  system: realSystem,
+  notifier,
+  mediaDir,
+  segmentSec: config.live.segmentSec,
+  overlapSec: config.live.overlapSec,
+  keepHours: config.live.keepHours,
+  maxStreams: config.live.maxStreams,
+});
+const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
+const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });
 // A key saved in Settings is tried at once, not after the next wait.
 settings.onChange(() => {
   poller.retryNow();
@@ -37,7 +64,10 @@ const app = createApp({
   posts,
   publisher,
   accountStats,
+  allowance,
+  suggested,
   watchlist: { repo: watchRepo, poller },
+  live: { manager: live, repo: liveRepo },
   engine: { engine: config.engine, fake: config.fakeEngine },
   settings: { store: settings, demo: config.fakes },
   seedDemoClip,
@@ -58,6 +88,9 @@ const refreshTimer = setInterval(() => {
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 poller.start(config.watchPollMinutes * 60_000);
+void live.start();
+// Looks every 6 hours for public allowances whose proof was last read a week or more ago.
+allowance.start(6 * 3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -69,8 +102,10 @@ function shutdown() {
   queue.stop();
   clearInterval(refreshTimer);
   poller.stop();
+  live.stop();
+  allowance.stop();
   server.close(() => {
-    void queue.idle().then(() => {
+    void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();
       process.exit(0);
     });

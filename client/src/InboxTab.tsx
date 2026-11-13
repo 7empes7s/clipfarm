@@ -4,6 +4,7 @@ import { PERMISSION_KIND_LABELS, REJECT_REASON_LABELS, REJECT_REASONS } from "..
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { EditSheet } from "./EditSheet";
+import { LiveTag } from "./LiveTag";
 import { QualityChips } from "./QualityChips";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
 
@@ -368,6 +369,7 @@ function ClipHead({ clip, position }: { clip: Clip; position: string }) {
         <h3>{clip.title}</h3>
         {clip.experiment && <ExperimentBadge />}
         <p className="hint">score · {position}</p>
+        <LiveTag clip={clip} />
       </div>
     </div>
   );
@@ -391,8 +393,8 @@ function ClipDetails({ clip, source, onFixed }: { clip: Clip; source?: Source; o
           <div className="wide">
             <dt>Campaign</dt>
             <dd>
-              {perm.campaignUrl ? (
-                <a href={perm.campaignUrl} target="_blank" rel="noreferrer">
+              {(perm.campaignUrl ?? perm.proofUrl) ? (
+                <a href={(perm.campaignUrl ?? perm.proofUrl)!} target="_blank" rel="noreferrer">
                   {PERMISSION_KIND_LABELS[perm.kind]}
                 </a>
               ) : (
@@ -417,7 +419,10 @@ function UpNext({ queue, currentId, onPick }: { queue: Clip[]; currentId: number
             <button type="button" aria-current={c.id === currentId ? "true" : undefined} onClick={() => onPick(c.id)}>
               <video src={c.videoUrl} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} />
               <span className="tile-score">{c.score === null ? "–" : Math.round(c.score)}</span>
-              <span className="tile-title">{c.title}</span>
+              <span className="tile-title">
+                {c.live && <span className="live-dot" role="img" aria-label="LIVE" />}
+                {c.title}
+              </span>
             </button>
           </li>
         ))}

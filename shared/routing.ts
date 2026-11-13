@@ -33,7 +33,7 @@ export function accountsAllowedFor(permission: Permission, accounts: ChannelAcco
 }
 
 function isActive(p: Permission, now: Date): boolean {
-  return p.expiresAt === null || new Date(p.expiresAt).getTime() > now.getTime();
+  return p.reviewReason === null && (p.expiresAt === null || new Date(p.expiresAt).getTime() > now.getTime());
 }
 
 /**
