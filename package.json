@@ -18,6 +18,7 @@
     "e2e:live": "playwright test -c playwright.live.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit && tsc -p ops/tsconfig.json --noEmit",
     "lint": "eslint .",
+    "ops": "node dist/server/ops/cli.js",
     "postiz:check": "node ops/postiz/check-cli.ts",
     "clipfarm:check": "node ops/clipfarm/check-cli.ts"
   },

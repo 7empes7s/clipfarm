@@ -25,7 +25,7 @@ export interface PicksDeps {
  */
 export function picksHandler(deps: PicksDeps): JobHandler {
   return async ({ payload, signal, progress }) => {
-    const { vodId } = payload as { vodId: number };
+    const { vodId, maxPicks = deps.maxPicks } = payload as { vodId: number; maxPicks?: number };
     const vod = deps.vods.detail(vodId);
     const permission = deps.sources.assertCanUse(vod.sourceId);
     const source = deps.sources.get(vod.sourceId);
@@ -43,7 +43,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         creatorName: source.creatorName,
         briefRules: permission.briefRules,
         bannedContent: source.bannedContent,
-        maxPicks: deps.maxPicks,
+        maxPicks,
         trendHints: trendHints(trends),
       },
       signal,
@@ -56,7 +56,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
       toSentences(vod.words),
       vod.words,
       bannedTerms(permission.briefRules, source.bannedContent),
-      deps.maxPicks,
+      maxPicks,
     );
     const kept = reviewed.filter((p) => !p.dropReason).length;
     // Cost per clip (O5): the VOD's transcript and picking spend shared over the clips kept.

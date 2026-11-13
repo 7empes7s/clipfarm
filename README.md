@@ -105,7 +105,8 @@ env-only.
 |---|---|---|
 | `PORT` | `3000` | Port for the API and, in preview, the client |
 | `HOST` | every interface | Address to listen on; the live box uses `127.0.0.1` |
-| `CLIPFARM_REQUIRE_ACCESS` | off | `1` on the live box: requests without Cloudflare Access's `Cf-Access-Jwt-Assertion` header are refused (clipfarm has no login of its own) |
+| `CLIPFARM_REQUIRE_ACCESS` | off | `1` on the live box: a request is refused unless its `Cf-Access-Jwt-Assertion` header is a token signed by Cloudflare Access for this app (clipfarm has no login of its own) |
+| `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | the live site; found from it | Which Cloudflare team and Access application sign those tokens. Left empty, both are read from the login link the public address sends visitors to |
 | `DATA_DIR` | `./data` | Folder for the SQLite database and the local engine's programs and models (`models/`) |
 | `OPENAI_API_KEY` | – | Optional. For "Use cloud AI for speed" on the Dashboard, tagging the trend radar's titles and writing hook variants; without it everything runs locally |
 | `TRANSCRIBER` | local engine | `fake` skips real transcription |
@@ -139,6 +140,21 @@ env-only.
 Cloudflare Access sign-in: systemd unit, `deploy.sh` (build a commit, switch, health-check, roll
 back), daily database backup and media cleanup. `npm run clipfarm:check`, on the box, says
 whether the service, its port, Caddy and the sign-in are in place; it only reads.
+
+`clipfarm-ops` (`npm run ops -- <command>` on a built checkout) runs clipfarm without a browser,
+for IT: `test-keys`, `source add <channel link> --campaign <link>`, `run latest <channel link>`
+or `run <video link>` (download → transcribe → pick → render; nothing is posted), `clips
+[--since 2h]` and `status`. It reads the same `DATA_DIR`, saved keys and database as the server,
+in-process: no HTTP, no token. While the server is up it does the heavy work and the command
+follows the job; otherwise the command does the work itself. Try it with fakes:
+
+```bash
+npm run build
+export CLIPFARM_FAKES=1 FAKE_VOD_SEC=40 DATA_DIR=.e2e-data/ops MEDIA_DIR=.e2e-data/ops/media
+npm run ops -- source add kick.com/tjr --campaign tjr-clipping --name TJR --rules "Caption must include #TJR."
+npm run ops -- run latest kick.com/tjr
+npm run ops -- clips
+```
 
 ## Posting (Postiz or Upload-Post)
 
