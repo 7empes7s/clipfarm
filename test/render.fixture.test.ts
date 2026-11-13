@@ -68,7 +68,7 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect(stdout.trim().split("\n").sort()).toEqual(["aac,0/0", "h264,30/1"]);
 
     // The caption box (above the bottom 20%) differs from the caption-less render; the hook box at the
-    // top shows only in the first 2 s.
+    // top shows only in the first 1.5 s.
     const captionBottom = OUT_H - SAFE.bottom - 340;
     const box = { x: SAFE.left, y: captionBottom - CAPTION_FONT_SIZE - 20, w: 1080 - SAFE.left - SAFE.right, h: CAPTION_FONT_SIZE + 20 };
     const diff = async (at: number, b: typeof box) => {
@@ -148,6 +148,9 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect(review.endSec).toBeCloseTo(23.9, 6);
     expect(review.masterDurationSec).toBeCloseTo(26.9, 6);
     expect(review.captionWords[0]).toEqual({ word: "at", startSec: 0, endSec: 0.4 });
+    // The finishing touches are all on, and the check after the render found nothing wrong.
+    expect(review.effects).toEqual({ hookCard: true, zoom: true, loudness: true, loopEnding: true, progressBar: true });
+    expect(review.quality).toEqual({ issues: [], fix: null });
     expect(clips.renderInput(review.id).masterPath).toBe(join(mediaDir, "clips", `pick-${good!.id}-master.mp4`));
     // Section downloads, audio and captions lived only in the jobs' temp folders.
     expect(await readdir(jobsDir)).toEqual([]);

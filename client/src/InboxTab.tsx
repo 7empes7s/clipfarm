@@ -5,6 +5,7 @@ import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { EditSheet } from "./EditSheet";
 import { LiveTag } from "./LiveTag";
+import { QualityChips } from "./QualityChips";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
 import { buzz, swipeIntent, type SwipeIntent } from "./swipe";
 import { Avatar, EmptyState, Icon } from "./ui";
@@ -182,7 +183,16 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
             onToggleSound={() => setMuted((m) => !m)}
             onSwipe={onSwipe}
           />
-          <ClipDetails clip={current} source={sources.find((s) => s.id === current.sourceId)} />
+          <ClipDetails
+            clip={current}
+            source={sources.find((s) => s.id === current.sourceId)}
+            onFixed={(saved) => {
+              setLast(null);
+              setCurrentId(nextAfter(queue, saved.id));
+              updateClips((cs) => merge(cs, [saved]));
+              setNote(`Fixing “${saved.title}”. It comes back to the inbox when done.`);
+            }}
+          />
           <div className="decide" data-testid="decide">
             {rejecting ? (
               <div className="reasons" role="group" aria-label="Why reject it?">
@@ -425,10 +435,11 @@ function swipeOf(drag: { x: number; y: number } | null): Exclude<SwipeIntent, "t
   return intent === "tap" ? null : intent;
 }
 
-function ClipDetails({ clip, source }: { clip: Clip; source?: Source }) {
+function ClipDetails({ clip, source, onFixed }: { clip: Clip; source?: Source; onFixed: (clip: Clip) => void }) {
   const perm = source?.permissions.at(-1);
   return (
     <div className="clip-details">
+      <QualityChips clip={clip} onFixed={onFixed} />
       {perm && (
         <dl className="stub">
           <div className="wide">

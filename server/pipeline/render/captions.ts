@@ -1,4 +1,5 @@
 import type { Word } from "../../../shared/types.js";
+import { HOOK_CARD_SEC } from "../polish/plan.js";
 import { OUT_H, OUT_W } from "./layout.js";
 
 /** Platform buttons and captions cover the bottom 20% and the right 15% of a vertical video. */
@@ -11,10 +12,10 @@ export const SAFE = {
 export const SAFE_WIDTH = OUT_W - SAFE.left - SAFE.right;
 
 export const CAPTION_FONT_SIZE = 76;
-const HOOK_FONT_SIZE = 64;
+const HOOK_FONT_SIZE = 84;
 /** Captions sit above the bottom safe area, at about two thirds of the height. */
 const CAPTION_MARGIN_V = SAFE.bottom + 340;
-export const HOOK_SECONDS = 2;
+export const HOOK_SECONDS = HOOK_CARD_SEC;
 /** Rough width of a bold capital at size 1 (generous, so real text is never wider). */
 const CHAR_WIDTH = 0.68;
 
@@ -102,7 +103,7 @@ const HIGHLIGHT = "&H0000E5FF&"; // ASS colours are &HBBGGRR: a warm yellow
 const WHITE = "&H00FFFFFF&";
 
 /**
- * Builds the ASS file: karaoke captions in the safe area and the hook title for the first 2 s.
+ * Builds the ASS file: karaoke captions in the safe area and the hook card for the first 1.5 s.
  * `words` have times in seconds from the clip start.
  */
 export function buildAss(words: Word[], hook: string): string {

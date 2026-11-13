@@ -332,11 +332,21 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   ≤1080p30). Layouts: *stacked* (the creator's face cam box on top, gameplay below; the box is
   drawn once per creator in Sources), *center* (9:16 gameplay crop), *full* (whole frame over a
   blurred copy). Karaoke captions (ASS, 2-4 words a line, the spoken word highlighted, clear of the
-  bottom 20% and right 15%) and the hook for the first 2 s are burned in. Output: H.264 + AAC MP4,
+  bottom 20% and right 15%) and the hook card for the first 1.5 s are burned in. Output: H.264 + AAC MP4,
   1080×1920, 30 fps, -14 LUFS, plus a thumbnail, in `media/clips/`. The padded section is kept
   next to it as the clip's master (for edits and re-renders in the gallery); other temp files go
   with the job's temp folder. Each render becomes a clip in the Inbox. The server log prints time
   per step and cost per clip, and the gallery shows them on each clip.
+- `server/pipeline/polish/`: the finishing touches both renders share (a pick's first render and
+  an edit's re-render), each on by default with a toggle per clip in Edit: the hook card, a 1.0 →
+  1.15 punch-in at the reaction peak plus quick zooms on shouted caption words (ffmpeg `zoompan`,
+  eased), two-pass `loudnorm` to -14 LUFS (true peak aimed at -2 dB, limit -1), a 0.3 s fade back
+  into the opening frame when the last frame differs strongly from the first, and a thin progress
+  bar along the top. After each render `quality.ts` checks the file with ffmpeg only (no AI):
+  black or frozen picture over 0.5 s, silence over 1.5 s, captions inside the safe area,
+  1080×1920, 3-60 s, loudness within ±1 LUFS. Problems show as warning chips on the clip; when a
+  change would clear them (trim to the clean part, shorten to 60 s, turn loudness back on) the
+  chip row has a Fix button that applies it and remakes the clip.
 - `server/publish/`: a `PostingService` interface with Postiz, Upload-Post and fake adapters,
   plus pure planners for the permission/brief gate, spacing, captions and earnings.
 - `server/clips/`: clips (each rendered pick becomes one, with its padded section kept as the

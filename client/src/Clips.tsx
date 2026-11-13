@@ -95,7 +95,7 @@ function ClipPlayer({ pick, onClose }: { pick: Pick; onClose: () => void }) {
             <dd>{pick.reason}</dd>
           </div>
           <div className="wide">
-            <dt>Hook (first 2 s)</dt>
+            <dt>Hook (first 1.5 s)</dt>
             <dd>{pick.hook || "None"}</dd>
           </div>
           <div>
