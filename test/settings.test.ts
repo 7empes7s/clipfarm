@@ -13,6 +13,7 @@ import { openDb } from "../server/db/index.js";
 import { JobQueue } from "../server/jobs/queue.js";
 import { PicksRepo } from "../server/picks/repo.js";
 import { INGEST_JOB, ingestHandler, onIngestFinished } from "../server/pipeline/ingest/ingest.js";
+import type { PickInput } from "../server/pipeline/picks/types.js";
 import { Publisher } from "../server/publish/publisher.js";
 import { PostsRepo } from "../server/publish/repo.js";
 import { SourcesRepo } from "../server/sources/repo.js";
@@ -33,9 +34,28 @@ const KEYS = {
   postiz: "postizpublicapikey000000000000m3n4",
 };
 
-/** Stands in for OpenAI, Twitch, YouTube and Postiz. Refusals repeat the key, as some real APIs do. */
+/** What the stand-in OpenAI lists: text models in no order, and things that are not text models. */
+const OPENAI_MODELS = ["text-embedding-9", "gpt-6-astra", "whisper-1", "gpt-6-luna", "gpt-transcribe", "gpt-6.1-sol", "gpt-4o-mini", "tts-2"];
+
+const aPick = {
+  candidate: 0,
+  start: 115,
+  end: 140,
+  hook: "He did NOT expect that",
+  title: "Test Streamer gets launched across the map",
+  score: 88,
+  reason: "Huge reaction in the first second",
+  layout: "center",
+  flags: { spoiler: false, cutscene: false, ending: false, leak: false, breaks_brief: false },
+};
+
+/** Stands in for OpenAI, OpenRouter, Twitch, YouTube and Postiz. Refusals repeat the key, as some real APIs do. */
 function fakeOutside() {
   const calls: { url: string; auth: string | null }[] = [];
+  /** Each model call, e.g. "responses gpt-6-luna" or "transcriptions whisper-1". */
+  const asked: string[] = [];
+  /** How the stand-in OpenAI behaves; a test changes these. */
+  const openai = { wordTimingsFrom: ["whisper-1"], responsesDown: false, transcriptionDown: false };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
   const doFetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = String(input);
@@ -43,8 +63,28 @@ function fakeOutside() {
     calls.push({ url, auth });
     if (url.startsWith("https://api.openai.com/v1/")) {
       if (auth !== `Bearer ${KEYS.openai}`) return json({ error: { message: `Incorrect API key provided: ${auth?.slice(7)}.` } }, 401);
-      if (url.endsWith("/models")) return json({ data: [{ id: "whisper-1" }, { id: "gpt-4o-mini" }] });
-      if (url.endsWith("/audio/transcriptions")) return json({ words: [{ word: " hello", start: 0, end: 0.4 }, { word: " chat", start: 0.5, end: 0.9 }] });
+      if (url.endsWith("/models")) return json({ data: OPENAI_MODELS.map((id) => ({ id })) });
+      if (url.endsWith("/responses")) {
+        const body = JSON.parse(String(init.body)) as { model: string; text: { format: { name: string } } };
+        asked.push(`responses ${body.model}`);
+        if (openai.responsesDown) return json({ error: { message: "You do not have access to this model." } }, 403);
+        const text = JSON.stringify(body.text.format.name === "clip_picks" ? { picks: [aPick] } : { ok: true });
+        return json({ output: [{ type: "message", content: [{ type: "output_text", text }] }], usage: { input_tokens: 100, output_tokens: 10 } });
+      }
+      if (url.endsWith("/audio/transcriptions")) {
+        const model = String((init.body as FormData).get("model"));
+        asked.push(`transcriptions ${model}`);
+        if (openai.transcriptionDown) return json({ error: { message: "The server had an error." } }, 500);
+        if (!openai.wordTimingsFrom.includes(model)) return json({ text: "hello chat" });
+        return json({ words: [{ word: " hello", start: 0, end: 0.4 }, { word: " chat", start: 0.5, end: 0.9 }] });
+      }
+    }
+    if (url.startsWith("https://openrouter.ai/api/v1/")) {
+      if (url.endsWith("/models")) return json({ data: [{ id: "meta/llama" }] });
+      if (url.endsWith("/chat/completions")) {
+        asked.push(`chat/completions ${(JSON.parse(String(init.body)) as { model: string }).model}`);
+        return json({ choices: [{ message: { content: '{"ok":true}' } }] });
+      }
     }
     if (url.startsWith("https://id.twitch.tv/oauth2/token")) {
       const q = new URL(url).searchParams;
@@ -66,7 +106,7 @@ function fakeOutside() {
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
-  return { calls, doFetch };
+  return { calls, asked, openai, doFetch };
 }
 
 let dir: string;
@@ -132,6 +172,15 @@ function setup(extraEnv: NodeJS.ProcessEnv = {}, access?: AccessVerifier) {
 
 const save = (id: string, values: Record<string, string>) => [`/api/settings/${id}`, { values }] as const;
 const row = (info: SettingsInfo, id: string) => info.integrations.find((i) => i.id === id)!;
+const field = (info: SettingsInfo, name: string) => row(info, "openai").fields.find((f) => f.name === name)!;
+
+/** Four minutes of speech with one loud second, so the picker has a moment to offer. */
+function pickInput(): PickInput {
+  const words = Array.from({ length: 480 }, (_, i) => ({ word: (i + 1) % 10 === 0 ? "okay." : "so", startSec: i * 0.5, endSec: i * 0.5 + 0.4 }));
+  const loudness = new Array<number>(240).fill(-30);
+  loudness[120] = -5;
+  return { title: "GTA VI day one", durationSec: 240, chapters: [], words, signals: { loudness, chat: null }, creatorName: "Test Streamer", briefRules: "", bannedContent: "", maxPicks: 5 };
+}
 
 describe("Settings: keys pasted in the app", () => {
   it("keeps the keys in DATA_DIR/secrets.json, mode 600, and never sends a value back", async () => {
@@ -197,13 +246,84 @@ describe("Settings: keys pasted in the app", () => {
 });
 
 describe("Settings: Test", () => {
-  it("OpenAI: lists models with the saved key and says Works", async () => {
+  it("OpenAI: checks the key, the picking model and a 2-second sample, and fills the two dropdowns", async () => {
     const { call } = setup();
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    outside.calls.length = 0;
+    outside.asked.length = 0;
     const res = await call("post", "/api/settings/openai/test");
-    expect(res.body).toMatchObject({ ok: true, message: "Works." });
-    expect(row(res.body.settings as SettingsInfo, "openai").test).toMatchObject({ ok: true, message: "Works." });
-    expect(outside.calls.map((c) => c.url)).toEqual(["https://api.openai.com/v1/models", "https://api.openai.com/v1/models"]);
+    const message = "Works: key valid, picks with gpt-6-luna, transcription with whisper-1.";
+    expect(res.body).toMatchObject({ ok: true, message });
+    const info = res.body.settings as SettingsInfo;
+    expect(row(info, "openai").test).toMatchObject({ ok: true, message });
+    // One model list (free), one tiny answer from the Responses API, and the sample: gpt-transcribe first.
+    expect(outside.calls.map((c) => c.url.replace("https://api.openai.com/v1/", ""))).toEqual(["models", "responses", "audio/transcriptions", "audio/transcriptions"]);
+    expect(outside.asked).toEqual(["responses gpt-6-luna", "transcriptions gpt-transcribe", "transcriptions whisper-1"]);
+
+    // Text models only, the recommended one first; then speech-to-text models.
+    expect(field(info, "LLM_MODEL")).toMatchObject({ set: false, source: null, fallback: "gpt-6-luna", options: ["gpt-6-luna", "gpt-4o-mini", "gpt-6-astra", "gpt-6.1-sol"] });
+    expect(field(info, "OPENAI_TRANSCRIBE_MODEL")).toMatchObject({ set: false, fallback: "gpt-transcribe", options: ["gpt-transcribe", "whisper-1"] });
+    expect(field(info, "LLM_BASE_URL")).toMatchObject({ set: false, fallback: "https://api.openai.com/v1", options: null });
+    expect(row(info, "openai").note).toBe(
+      "Transcription uses whisper-1 for word timings because gpt-transcribe does not send word timings yet. whisper-1 retires on 26 Feb 2027.",
+    );
+  });
+
+  it("OpenAI: once gpt-transcribe sends word timings it is the one used, and the whisper-1 note goes away", async () => {
+    const { call, config, sources, vods, queue } = setup();
+    outside.openai.wordTimingsFrom = ["whisper-1", "gpt-transcribe"];
+    const saved = await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    expect(row(saved.body as SettingsInfo, "openai")).toMatchObject({
+      note: null,
+      test: { ok: true, message: "Works: key valid, picks with gpt-6-luna, transcription with gpt-transcribe." },
+    });
+    config.engine.saveSettings({ cloud: true });
+    outside.asked.length = 0;
+    const vod = vods.create(sources.create(campaignInput()).id, "https://www.twitch.tv/videos/1");
+    queue.enqueue(INGEST_JOB, { vodId: vod.id }, { vodId: vod.id, maxAttempts: 1 });
+    await queue.idle();
+    expect(outside.asked).toEqual(["transcriptions gpt-transcribe"]);
+  });
+
+  it("OpenAI: a save is tested at once, with no tap on Test", async () => {
+    const { call } = setup();
+    const saved = await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    expect(row(saved.body as SettingsInfo, "openai").test).toMatchObject({ ok: true });
+    const wrong = await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openaiBad }));
+    expect(row(wrong.body as SettingsInfo, "openai").test).toMatchObject({ ok: false, message: "OpenAI says: Incorrect API key provided: ***." });
+    // Nothing to test without a key.
+    await call("delete", "/api/settings/openai");
+    outside.calls.length = 0;
+    const noKey = await call("put", ...save("openai", { LLM_MODEL: "gpt-6-astra" }));
+    expect(row(noKey.body as SettingsInfo, "openai")).toMatchObject({ configured: false, test: null });
+    expect(outside.calls).toEqual([]);
+  });
+
+  it("OpenAI: Failed says which part failed, in plain words", async () => {
+    const { call } = setup();
+    outside.openai.responsesDown = true;
+    const noPicks = await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    expect(row(noPicks.body as SettingsInfo, "openai").test).toMatchObject({
+      ok: false,
+      message: 'The key works, but the picking model "gpt-6-luna" did not answer: You do not have access to this model.',
+    });
+    // The lists were read before it failed, so another model can be picked from the dropdown.
+    expect(field(noPicks.body as SettingsInfo, "LLM_MODEL").options).toContain("gpt-6-astra");
+
+    outside.openai.responsesDown = false;
+    outside.openai.transcriptionDown = true;
+    expect((await call("post", "/api/settings/openai/test")).body).toMatchObject({
+      ok: false,
+      message: "Picks work, but the 2-second transcription sample failed: The server had an error.",
+    });
+  });
+
+  it("OpenAI: another address is asked the Chat Completions way, with its own model list", async () => {
+    const { call } = setup();
+    const res = await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai, LLM_BASE_URL: "https://openrouter.ai/api/v1", LLM_MODEL: "meta/llama" }));
+    expect(row(res.body as SettingsInfo, "openai").test).toMatchObject({ ok: true, message: "Works: key valid, picks with meta/llama, transcription with whisper-1." });
+    expect(outside.asked[0]).toBe("chat/completions meta/llama");
+    expect(field(res.body as SettingsInfo, "LLM_MODEL")).toMatchObject({ value: "meta/llama", source: "settings", options: ["meta/llama"] });
   });
 
   it("OpenAI: a refused key is said in OpenAI's words, with the key taken out", async () => {
@@ -218,7 +338,7 @@ describe("Settings: Test", () => {
     const { call } = setup();
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai, LLM_MODEL: "gpt-nope" }));
     expect((await call("post", "/api/settings/openai/test")).body.message).toBe(
-      'The key works, but there is no model called "gpt-nope" there. Check the picking model name.',
+      'The key works, but there is no model called "gpt-nope" there. Pick another picking model.',
     );
   });
 
@@ -269,6 +389,7 @@ describe("Settings: a saved key is in use at once, with no restart", () => {
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
     config.engine.saveSettings({ cloud: true });
     await call("delete", "/api/settings/openai");
+    outside.calls.length = 0;
 
     const before = vods.create(source.id, "https://www.twitch.tv/videos/1");
     const failed = queue.enqueue(INGEST_JOB, { vodId: before.id }, { vodId: before.id, maxAttempts: 1 });
@@ -280,12 +401,56 @@ describe("Settings: a saved key is in use at once, with no restart", () => {
     expect(outside.calls).toEqual([]);
 
     await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    // The save's own test found that whisper-1 is the one with word timings: the job asks it straight away.
+    outside.calls.length = 0;
     const after = vods.create(source.id, "https://www.twitch.tv/videos/2");
     const job = queue.enqueue(INGEST_JOB, { vodId: after.id }, { vodId: after.id, maxAttempts: 1 });
     await queue.idle();
     expect(queue.get(job.id)).toMatchObject({ status: "done", error: null });
     expect(outside.calls).toEqual([{ url: "https://api.openai.com/v1/audio/transcriptions", auth: `Bearer ${KEYS.openai}` }]);
     expect(vods.detail(after.id)).toMatchObject({ status: "ready", wordCount: 2 });
+    // Which model transcribed is on the job's engine report.
+    expect(config.engine.reportsFor(after.id)[0]).toMatchObject({ summary: "Cloud (OpenAI) 100% (whisper-1)", uses: [{ step: "cloud", note: "whisper-1" }] });
+  });
+
+  it("the next picks job uses the model chosen from the dropdown, through the Responses API", async () => {
+    const { call, config } = setup();
+    await call("put", ...save("openai", { OPENAI_API_KEY: KEYS.openai }));
+    config.engine.saveSettings({ cloud: true });
+    outside.asked.length = 0;
+    await config.picker.pick(pickInput());
+    expect(outside.asked).toEqual(["responses gpt-6-luna"]);
+
+    const chosen = await call("put", ...save("openai", { LLM_MODEL: "gpt-6.1-sol" }));
+    expect(field(chosen.body as SettingsInfo, "LLM_MODEL")).toMatchObject({ value: "gpt-6.1-sol", set: true, source: "settings" });
+    outside.asked.length = 0;
+    const result = await config.picker.pick(pickInput());
+    expect(outside.asked).toEqual(["responses gpt-6.1-sol"]);
+    expect(result.picks.map((p) => p.hook)).toEqual(["He did NOT expect that"]);
+  });
+
+  it("an old model left in the server env is not used: the default is, until a model is chosen", async () => {
+    const { call, config } = setup({ OPENAI_API_KEY: KEYS.openai, LLM_MODEL: "gpt-4o-mini" });
+    config.engine.saveSettings({ cloud: true });
+    const before = (await call("get", "/api/settings")).body as SettingsInfo;
+    expect(field(before, "LLM_MODEL")).toMatchObject({ set: false, source: null, value: null, fallback: "gpt-6-luna" });
+    expect(row(before, "openai").note).toBe("Old model in server env (gpt-4o-mini), replaced by gpt-6-luna.");
+    await config.picker.pick(pickInput());
+    expect(outside.asked).toEqual(["responses gpt-6-luna"]);
+
+    const chosen = (await call("put", ...save("openai", { LLM_MODEL: "gpt-6-astra" }))).body as SettingsInfo;
+    expect(row(chosen, "openai").note).toContain("Old model in server env (gpt-4o-mini), replaced by your choice.");
+    expect(field(chosen, "LLM_MODEL")).toMatchObject({ value: "gpt-6-astra", source: "settings" });
+  });
+
+  it("a model named in the server env that is not a retired default is used, and the card says where it is from", async () => {
+    const { call, config } = setup({ OPENAI_API_KEY: KEYS.openai, LLM_MODEL: "gpt-6-astra" });
+    config.engine.saveSettings({ cloud: true });
+    const info = (await call("get", "/api/settings")).body as SettingsInfo;
+    expect(field(info, "LLM_MODEL")).toMatchObject({ value: "gpt-6-astra", source: "env" });
+    expect(row(info, "openai").note).toBeNull();
+    await config.picker.pick(pickInput());
+    expect(outside.asked).toEqual(["responses gpt-6-astra"]);
   });
 
   it("the watchlist lists Twitch live streams once the key is saved; a bad key is a plain line, not a crash", async () => {

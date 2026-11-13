@@ -9,7 +9,7 @@ import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
 import type { Transcriber } from "./pipeline/transcript/types.js";
 import { FakePicker } from "./pipeline/picks/fake.js";
-import { type ChatClient, LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
+import { type ChatClient, chatFor, LlmPicker } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
 import type { Platform, PostingAccount } from "../shared/types.js";
@@ -31,6 +31,7 @@ import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
 import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
+import { openAiSetup, pickChatOptions } from "./settings/openai.js";
 import { Settings } from "./settings/store.js";
 import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
 
@@ -114,12 +115,20 @@ export function openSettings(env: NodeJS.ProcessEnv = process.env): Settings {
  * a key saved in Settings is in use on the next call, with no restart.
  */
 function live<T>(settings: Settings, names: string[], build: (env: NodeJS.ProcessEnv) => T): () => T {
+  return liveBy(
+    () => names.map((n) => settings.get(n) ?? "").join("\0"),
+    () => build(settings.env()),
+  );
+}
+
+/** The same, for a service whose setup is more than a list of settings: built again when `key` changes. */
+function liveBy<T>(key: () => string, build: () => T): () => T {
   let builtFor: string | null = null;
   let current: T;
   return () => {
-    const now = names.map((n) => settings.get(n) ?? "").join("\0");
+    const now = key();
     if (now !== builtFor) {
-      current = build(settings.env());
+      current = build();
       builtFor = now;
     }
     return current;
@@ -140,20 +149,35 @@ async function guarded<T>(settings: Settings, call: () => Promise<T>): Promise<T
   }
 }
 
-const LLM_SETTINGS = ["LLM_API_KEY", "OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL"];
 const POSTING_SETTINGS = ["POSTIZ_URL", "POSTIZ_API_KEY", "UPLOAD_POST_API_KEY", "UPLOAD_POST_USER", "UPLOAD_POST_PLATFORMS"];
 
 /** The optional cloud transcriber ("Use cloud AI for speed"); null until an OpenAI key is set. */
 function liveCloudTranscriber(settings: Settings): () => Transcriber | null {
-  const cur = live(settings, ["OPENAI_API_KEY"], (env) => (env.OPENAI_API_KEY ? new OpenAiTranscriber({ apiKey: env.OPENAI_API_KEY }) : null));
+  // The model comes from Settings and the last test: gpt-transcribe once it sends word timings, whisper-1 until then.
+  const now = () => ({ apiKey: settings.env().OPENAI_API_KEY, model: openAiSetup(settings).transcribeModel });
+  const cur = liveBy(
+    () => JSON.stringify(now()),
+    () => {
+      const { apiKey, model } = now();
+      return apiKey ? new OpenAiTranscriber({ apiKey, model }) : null;
+    },
+  );
   return () => {
     const t = cur();
     return t && { name: t.name, transcribe: (audio, opts) => guarded(settings, () => t.transcribe(audio, opts)) };
   };
 }
 
+/** A cloud picks service, built again when the key, address or chosen model changes. */
+function liveCloud<T>(settings: Settings, build: (settings: Settings) => T): () => T {
+  return liveBy(
+    () => JSON.stringify(pickChatOptions(settings)),
+    () => build(settings),
+  );
+}
+
 function liveCampaignChat(settings: Settings, engine: Engine): () => ChatClient | null {
-  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  const cur = liveCloud(settings, cloudChat);
   return () => {
     const chat = cur();
     if (!chat || !engine.settings().cloud) return null;
@@ -163,7 +187,7 @@ function liveCampaignChat(settings: Settings, engine: Engine): () => ChatClient 
 
 /** The optional cloud picker; null until a key is set. */
 function liveCloudPicker(settings: Settings): () => Picker | null {
-  const cur = live(settings, LLM_SETTINGS, cloudPicker);
+  const cur = liveCloud(settings, cloudPicker);
   return () => {
     const p = cur();
     return p && { name: p.name, pick: (input, signal) => guarded(settings, () => p.pick(input, signal)) };
@@ -172,7 +196,7 @@ function liveCloudPicker(settings: Settings): () => Picker | null {
 
 /** The cloud chat model: small writing jobs (trend tags, hook variants) and the hook writer at the end of the picks chain; null until a key is set. */
 function liveCloudChat(settings: Settings): () => ChatClient | null {
-  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  const cur = liveCloud(settings, cloudChat);
   return () => {
     const c = cur();
     return c && { name: c.name, complete: (req, signal) => guarded(settings, () => c.complete(req, signal)) };
@@ -315,22 +339,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   };
 }
 
-/** The cloud chat model for these settings; null without a key. */
-function cloudChat(env: NodeJS.ProcessEnv): ChatClient | null {
-  const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAiCompatibleChat({
-    apiKey,
-    baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
-    model: env.LLM_MODEL || "gpt-4o-mini",
-    usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
-    usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
-  });
+/** The cloud chat model for these settings (Responses API at OpenAI, Chat Completions elsewhere); null without a key. */
+function cloudChat(settings: Settings): ChatClient | null {
+  const opts = pickChatOptions(settings);
+  return opts && chatFor(opts);
 }
 
 /** The cloud picker for these settings; null without a key. */
-function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
-  const chat = cloudChat(env);
+function cloudPicker(settings: Settings): Picker | null {
+  const chat = cloudChat(settings);
   return chat && new LlmPicker(chat);
 }
 

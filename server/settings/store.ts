@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { IntegrationId, KeyTestResult } from "../../shared/types.js";
+import type { OpenAiFacts } from "./openai.js";
 import { SETTING_NAMES } from "./integrations.js";
 
 interface SavedValue {
@@ -13,6 +14,8 @@ interface SecretsFile {
   tests: Partial<Record<IntegrationId, KeyTestResult>>;
   /** Isolation groups' app keys and proxies, and the tokens of channels connected here, by name. */
   vault?: Record<string, string>;
+  /** What the last OpenAI test learned: the models on offer, and which one transcribes. */
+  openai?: OpenAiFacts;
 }
 
 /** The password inside a saved proxy address, as typed and as it is written in an address. */
@@ -63,6 +66,7 @@ export class Settings {
       }
       this.data.tests = parsed.tests ?? {};
       for (const [name, v] of Object.entries(parsed.vault ?? {})) if (typeof v === "string" && v) this.data.vault[name] = v;
+      this.data.openai = parsed.openai;
     } catch {
       // Never print the file: it holds keys.
       console.error("The saved keys file could not be read, so it is ignored. Paste the keys again in Settings.");
@@ -77,6 +81,11 @@ export class Settings {
   source(name: string): "settings" | "env" | null {
     if (this.data.values[name]) return "settings";
     return this.baseEnv[name] ? "env" : null;
+  }
+
+  /** The server's env alone, whatever is saved on top of it. */
+  serverEnv(): NodeJS.ProcessEnv {
+    return this.baseEnv;
   }
 
   savedAt(name: string): string | null {
@@ -98,6 +107,7 @@ export class Settings {
       else this.data.values[name] = { value, savedAt };
     }
     for (const id of retest) delete this.data.tests[id];
+    if (retest.includes("openai")) delete this.data.openai;
     this.write();
     for (const fn of this.listeners) fn();
   }
@@ -126,6 +136,15 @@ export class Settings {
   /** Removes every secret whose name starts with `prefix` (a removed group or channel). */
   dropSecrets(prefix: string): void {
     for (const name of Object.keys(this.data.vault)) if (name.startsWith(prefix)) delete this.data.vault[name];
+    this.write();
+  }
+
+  openAiFacts(): OpenAiFacts | null {
+    return this.data.openai ?? null;
+  }
+
+  setOpenAiFacts(facts: OpenAiFacts): void {
+    this.data.openai = facts;
     this.write();
   }
 

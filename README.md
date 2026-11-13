@@ -120,8 +120,9 @@ env-only.
 | `PICKER` | local engine | `fake` takes the loudest moments (demos only, it cannot flag spoilers) |
 | `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the cloud picking model (only used with "Use cloud AI for speed") |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API, e.g. `https://openrouter.ai/api/v1`, `https://api.cerebras.ai/v1` |
-| `LLM_MODEL` | `gpt-4o-mini` | Model name at that API (must support JSON-schema answers) |
-| `LLM_USD_PER_MTOK_IN` / `_OUT` | `0` | Model list prices per million tokens, for the cost per clip |
+| `LLM_MODEL` | `gpt-6-luna` | Picking model. Best left empty: pick it in Settings → OpenAI (a dropdown filled from the API's model list), which wins over this line. OpenAI's address is called through the Responses API (`/v1/responses`); any other address through Chat Completions |
+| `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | Cloud transcription model, also picked in Settings. A model that sends no word timings is swapped for `whisper-1` (which OpenAI retires on 2027-02-26) |
+| `LLM_USD_PER_MTOK_IN` / `_OUT` | the default model's list prices, else `0` | Model list prices per million tokens, for the cost per clip |
 | `MAX_PICKS` | `15` | Most clips kept per VOD |
 | `MEDIA_DIR` | `./media` | Where clips, thumbnails and their masters are kept (never committed) |
 | `RENDER_PRESET` | `veryfast` | x264 preset for clips |
@@ -403,14 +404,15 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   only the picked sections.
 - `server/pipeline/transcript/`: a `Transcriber` interface with word timestamps. The `local`
   one (default) runs whisper.cpp with VAD and parses its one-word segments. The optional `openai`
-  adapter calls `whisper-1` (`verbose_json`, word granularity), splits audio over 25 MB into
+  adapter asks the model chosen in Settings (`gpt-transcribe` by default) for word timings and falls
+  back to `whisper-1` when it sends none (`verbose_json`, word granularity), splits audio over 25 MB into
   overlapping chunks and merges the timings. The cost of each VOD is stored.
   Ingest also measures loudness per second (ffmpeg `ebur128`) while the audio is still there.
 - `server/pipeline/picks/`: plain signals (loudness spikes, speech rate, laughing/shouting words,
   a slot for chat replay) find up to 30 candidate moments, snapped to sentence boundaries. The
   `local` picker (default) ranks them by those signals, screens them with keywords and writes
-  hooks from the transcript or with the local writer. With cloud AI on, an
-  OpenAI-compatible model ranks them with a strict JSON schema: start, end, hook, title, score,
+  hooks from the transcript or with the local writer. With cloud AI on, the model chosen in
+  Settings (OpenAI's Responses API, or any OpenAI-compatible address) ranks them with a strict JSON schema: start, end, hook, title, score,
   reason, layout and flags (spoiler, story cutscene, ending, leak, breaks the brief). The campaign
   brief and the creator's off-limits note go into the prompt. Then a plain-code gate drops anything
   flagged, anything mentioning a "No …" phrase from the brief, overlaps, and windows that cannot be

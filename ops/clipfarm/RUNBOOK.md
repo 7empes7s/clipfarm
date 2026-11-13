@@ -140,7 +140,8 @@ The file explains every line. The ones that matter:
 | `HOST`, `PORT`, `CLIPFARM_REQUIRE_ACCESS`, `DATA_DIR`, `MEDIA_DIR` | leave as they are (`127.0.0.1`, `5310`, `1`, `/var/lib/clipfarm`...) |
 | `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | leave as they are: the server finds the Cloudflare team and application by itself from the public address (an env file without these lines works the same) |
 | `OPENAI_API_KEY` | optional: only for "Use cloud AI for speed" on the Dashboard. Empty = everything runs on this box |
-| `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` | optional: only if cloud picks should use another provider |
+| `LLM_API_KEY`, `LLM_BASE_URL` | optional: only if cloud picks should use another provider |
+| `LLM_MODEL`, `OPENAI_TRANSCRIBE_MODEL` | leave empty: the models are picked in the app under Settings > OpenAI. An env file that still says `LLM_MODEL=gpt-4o-mini` needs no edit: that line is ignored and the card says so |
 | `POSTIZ_API_KEY` | step 11 |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | watchlist; empty skips that platform |
 
@@ -378,20 +379,16 @@ the job ends, and the whole folder is emptied when the service stops.
 Postiz runs on the same box (`ops/postiz/RUNBOOK.md`). clipfarm talks to it on the local port,
 which skips Cloudflare and its 100 MB upload limit.
 
-1. Manager: open <https://postiz.techinsiderbytes.com> → **Settings** → **Public API** → copy
-   the API key and give it to IT.
-2. IT:
+1. Manager: sign up on <https://postiz.techinsiderbytes.com> (the first account is the admin).
+2. IT: run the Postiz installer (`ops/postiz/RUNBOOK.md`, step 1). It reads the API key from
+   Postiz, checks it, writes `POSTIZ_URL` and `POSTIZ_API_KEY` into `/etc/clipfarm/clipfarm.env`
+   and restarts clipfarm. Nobody copies or sees the key. The summary ends with:
 
-```bash
-nano /etc/clipfarm/clipfarm.env      # POSTIZ_URL=http://127.0.0.1:5300 (already there), POSTIZ_API_KEY=<the key>
-systemctl restart clipfarm
-journalctl -u clipfarm -n 3 --no-pager      # the start line ends with "posting: postiz)"
-cd /opt/clipfarm-live/current
-env $(grep -E '^POSTIZ_(URL|API_KEY)=' /etc/clipfarm/clipfarm.env) npm run postiz:check
+```
+  API key for clipfarm: works, saved in /etc/clipfarm/clipfarm.env (clipfarm restarted)
 ```
 
-You should see `OK: Postiz at http://127.0.0.1:5300 answered with N connected accounts.` and one
-line per channel. `NOT OK: ...` says what is wrong (key refused, Postiz not running).
+   A line `NOT OK: ...` says what is wrong (key refused, Postiz not running).
 
 3. Manager: open clipfarm → **Clips**: it says "Posting through Postiz" and lists the accounts.
 
