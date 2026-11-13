@@ -4,11 +4,12 @@ import { Engine } from "./engine/engine.js";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
 import { YtDlpDownloader } from "./pipeline/ingest/ytdlp.js";
+import { thresholdsFromEnv } from "./pipeline/transcript/chain.js";
 import { FakeTranscriber } from "./pipeline/transcript/fake.js";
 import { OpenAiTranscriber } from "./pipeline/transcript/openai.js";
 import type { Transcriber } from "./pipeline/transcript/types.js";
 import { FakePicker } from "./pipeline/picks/fake.js";
-import { LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
+import { type ChatClient, LlmPicker, OpenAiCompatibleChat } from "./pipeline/picks/llm.js";
 import type { Picker } from "./pipeline/picks/types.js";
 import { FakeSectionDownloader, type SectionDownloader, YtDlpSectionDownloader } from "./pipeline/render/section.js";
 import type { Platform, PostingAccount } from "../shared/types.js";
@@ -138,6 +139,15 @@ function liveCloudPicker(settings: Settings): () => Picker | null {
   };
 }
 
+/** The cloud model as a hook writer (the last step of the picks chain); null until a key is set. */
+function liveCloudChat(settings: Settings): () => ChatClient | null {
+  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  return () => {
+    const c = cur();
+    return c && { name: c.name, complete: (req, signal) => guarded(settings, () => c.complete(req, signal)) };
+  };
+}
+
 function livePostingService(settings: Settings): PostingService {
   const cur = live(settings, POSTING_SETTINGS, postingService);
   return {
@@ -189,6 +199,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     llamaServerBin: env.LLAMA_SERVER_BIN || undefined,
     cloudTranscriber: liveCloudTranscriber(settings),
     cloudPicker: liveCloudPicker(settings),
+    cloudChat: liveCloudChat(settings),
+    pythonBin: env.PYTHON_BIN || undefined,
+    thresholds: thresholdsFromEnv(env),
   });
   const fakeTranscriber = fakes || env.TRANSCRIBER === "fake";
   const fakePicker = fakes || env.PICKER === "fake";
@@ -249,19 +262,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   };
 }
 
-/** The cloud picker for these settings; null without a key. */
-function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
+/** The cloud chat model for these settings; null without a key. */
+function cloudChat(env: NodeJS.ProcessEnv): ChatClient | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  return new LlmPicker(
-    new OpenAiCompatibleChat({
-      apiKey,
-      baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
-      model: env.LLM_MODEL || "gpt-4o-mini",
-      usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
-      usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
-    }),
-  );
+  return new OpenAiCompatibleChat({
+    apiKey,
+    baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
+    model: env.LLM_MODEL || "gpt-4o-mini",
+    usdPerMTokIn: Number(env.LLM_USD_PER_MTOK_IN ?? 0),
+    usdPerMTokOut: Number(env.LLM_USD_PER_MTOK_OUT ?? 0),
+  });
+}
+
+/** The cloud picker for these settings; null without a key. */
+function cloudPicker(env: NodeJS.ProcessEnv): Picker | null {
+  const chat = cloudChat(env);
+  return chat && new LlmPicker(chat);
 }
 
 /** Postiz or Upload-Post from the settings (POSTING_SERVICE picks when both are set); export only without keys. */

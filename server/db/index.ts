@@ -299,6 +299,17 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  // 13: which engine handled what in each transcript and round of picks (the fallback chain).
+  `
+  CREATE TABLE engine_runs (
+    id INTEGER PRIMARY KEY,
+    vod_id INTEGER,
+    kind TEXT NOT NULL,
+    report TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX engine_runs_vod ON engine_runs(vod_id);
+  `,
 ];
 
 export function migrate(db: Db): void {

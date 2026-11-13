@@ -76,6 +76,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
       tmpDir,
       signal,
       onProgress: (f) => progress(0.15 + f * 0.55, "Transcribing"),
+      run: { vodId: capture.vodId, add: true },
     });
     const endSec = seg.startSec + seg.durationSec;
     deps.vods.mergeLive(
@@ -105,6 +106,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
         bannedContent: source.bannedContent,
         // It may also name moments in the context, which were picked before: ask for more than are kept.
         maxPicks: maxPicks * 3,
+        run: { vodId: capture.vodId, add: true },
       },
       signal,
     );

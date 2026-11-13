@@ -553,6 +553,8 @@ export interface VodProgress {
   /** Approved share of the clips made (0..1); null with no clips. */
   approvedShare: number | null;
   createdAt: string;
+  /** Which engine handled the transcript and the picks, with the time per step; empty before they ran. */
+  engines: string[];
 }
 
 export interface RunningJob {
@@ -848,6 +850,52 @@ export interface EngineSettings {
   sttModel: string;
   /** Let the local writer (a small model on this server) write hooks and titles. */
   writer: boolean;
+  /** The speech-to-text steps in the order they are tried, each on or off. Cloud on means "fall back to cloud". */
+  stt: { id: string; on: boolean }[];
+}
+
+/** One step of the speech-to-text chain, as the Dashboard shows it. */
+export interface EngineStepStatus {
+  id: string;
+  /** e.g. "Moonshine". */
+  label: string;
+  /** What the step is for, in a few words. */
+  note: string;
+  on: boolean;
+  /** "missing": not downloaded; "blocked": cannot run right now (no key, no memory, no program). */
+  state: "ready" | "missing" | "blocked";
+  /** Why it is blocked, in plain words. */
+  problem: string | null;
+  /** What its Download button would fetch, in bytes; 0 when nothing. */
+  downloadBytes: number;
+  /** Seconds of audio it gets through per second on this server, measured on real jobs; null before the first one. */
+  speed: number | null;
+}
+
+/** How much of one job a step handled. */
+export interface EngineUse {
+  step: string;
+  label: string;
+  /** Speech-to-text: segments and seconds of audio. Picks: clips. */
+  count: number;
+  audioSec: number;
+  ms: number;
+  /** The most memory the step held, in MB; null when it could not be read. */
+  peakMb: number | null;
+  /** e.g. "Spanish segment". */
+  note: string;
+}
+
+/** Which engine handled what in one job, and how long each step took. */
+export interface EngineReport {
+  kind: "stt" | "picks";
+  /** The language heard in the first 30 s of speech, e.g. "es"; null when it could not be told. */
+  language: string | null;
+  uses: EngineUse[];
+  /** Each time a step was passed over or its answer thrown away: which step, and why. */
+  fallbacks: { step: string; reason: string; count: number }[];
+  /** e.g. "Moonshine 92%, Whisper small 8% (Spanish segment)". */
+  summary: string;
 }
 
 export interface EngineDownload {
@@ -881,6 +929,10 @@ export interface EngineStatus {
   /** Why the hook writer would be refused right now (memory), so hooks would come from the transcript; null when it can run or is off. */
   writerNote: string | null;
   settings: EngineSettings;
+  /** The speech-to-text chain in the order it is tried. */
+  steps: EngineStepStatus[];
+  /** The last 7 days: how many jobs ran and how often each step and each fallback was used. */
+  week: { jobs: number; lines: string[] };
   sttModels: EngineModelChoice[];
   /** Whether an OpenAI key is on the server, so "Use cloud AI for speed" can be switched on. */
   cloudAvailable: boolean;

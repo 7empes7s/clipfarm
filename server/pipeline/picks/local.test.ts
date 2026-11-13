@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Word } from "../../../shared/types.js";
 import { FakeChatClient } from "./fake.js";
 import type { ChatClient } from "./llm.js";
-import { CLIP_COPY_SCHEMA, type HookWriter, keywordFlags, LocalPicker, parseClipCopy, templateHook, templateTitle, WriterUnavailableError } from "./local.js";
+import { chatWriter, CLIP_COPY_SCHEMA, type HookWriter, keywordFlags, LocalPicker, parseClipCopy, templateHook, templateTitle, WriterUnavailableError } from "./local.js";
 import { reviewPicks } from "./review.js";
 import { toSentences } from "./sentences.js";
 import { NO_FLAGS, type PickInput } from "./types.js";
@@ -176,8 +176,76 @@ describe("LocalPicker with the writer on", () => {
     expect(picks.find((p) => p.startSec < 100)!.hook).toMatch(/roof|insane/);
   });
 
-  it("fails the picking when the writer breaks for any other reason", async () => {
+  it("still gives picks, with transcript hooks and the reason, when the writer breaks for any other reason", async () => {
     const broken: HookWriter = { session: () => Promise.reject(new Error("The hook writer did not start: boom")) };
-    await expect(new LocalPicker(() => broken).pick(vod())).rejects.toThrow("did not start");
+    const { picks, report } = await new LocalPicker(() => broken).pick(vod());
+    expect(picks.length).toBeGreaterThanOrEqual(2);
+    expect(picks.find((p) => p.startSec < 100)!.hook).toMatch(/roof|insane/);
+    expect(picks.every((p) => p.reason.endsWith("Hook taken from the transcript: The hook writer did not start: boom"))).toBe(true);
+    expect(report!.fallbacks).toEqual([{ step: "writer", reason: "The hook writer did not start: boom", count: 1 }]);
+    expect(report!.summary).toBe(`Signal scoring ranked ${picks.length}; Hooks from the transcript ${picks.length}`);
+  });
+
+  it("stops, without picks, when the job is cancelled while the writer runs", async () => {
+    const controller = new AbortController();
+    const cancelled: HookWriter = {
+      session: () => {
+        controller.abort();
+        return Promise.reject(new Error("killed"));
+      },
+    };
+    await expect(new LocalPicker(() => cancelled).pick(vod(), controller.signal)).rejects.toThrow(/abort/i);
+  });
+});
+
+describe("LocalPicker: the picks chain (signals, local writer, cloud writer, template hooks)", () => {
+  const steps = (...writers: [string, string, HookWriter][]) => () => writers.map(([id, label, writer]) => ({ id, label, writer }));
+
+  it("hands the hooks the local writer could not write to the cloud writer, and only those", async () => {
+    // The local model dies after its second answer; the cloud model writes the rest.
+    let answered = 0;
+    const local = new FakeChatClient(() => {
+      if (++answered > 2) throw new Error("llama-server stopped answering");
+      return { hook: "Local hook", title: "Local title", flags: noFlags };
+    });
+    const cloud = new FakeChatClient(() => ({ hook: "Cloud hook", title: "Cloud title", flags: noFlags }));
+    const { picks, report, costUsd } = await new LocalPicker(steps(["writer", "Local writer", fakeWriter(local).writer], ["cloud-writer", "Cloud writer", chatWriter(cloud)])).pick(vod());
+
+    expect(picks.length).toBeGreaterThan(3);
+    expect(picks.map((p) => p.hook)).toEqual(["Local hook", "Local hook", ...picks.slice(2).map(() => "Cloud hook")]);
+    expect(cloud.requests.length).toBe(picks.length - 2);
+    expect(picks.every((p) => !p.reason.includes("transcript"))).toBe(true);
+    expect(costUsd).toBe(0);
+    expect(report!.uses.map((u) => [u.step, u.count])).toEqual([["signals", picks.length], ["writer", 2], ["cloud-writer", picks.length - 2]]);
+    expect(report!.fallbacks).toEqual([{ step: "writer", reason: "llama-server stopped answering", count: 1 }]);
+    expect(report!.summary).toBe(`Signal scoring ranked ${picks.length}; Local writer 2, Cloud writer ${picks.length - 2}`);
+  });
+
+  it("retries an unusable local answer on the cloud writer", async () => {
+    const local = new FakeChatClient((req) => (req.user.includes("roof") ? { hook: "", title: "" } : { hook: "Local hook", title: "t", flags: noFlags }));
+    const cloud = new FakeChatClient(() => ({ hook: "Cloud hook", title: "t", flags: noFlags }));
+    const { picks, report } = await new LocalPicker(steps(["writer", "Local writer", fakeWriter(local).writer], ["cloud-writer", "Cloud writer", chatWriter(cloud)])).pick(vod());
+    expect(picks.find((p) => p.startSec < 100)!.hook).toBe("Cloud hook");
+    expect(picks.filter((p) => p.hook === "Cloud hook").length).toBe(cloud.requests.length);
+    expect(report!.fallbacks[0]).toMatchObject({ step: "writer", reason: "the writer's answer was not usable" });
+  });
+
+  it("comes out with template hooks when every LLM step fails", async () => {
+    const local: HookWriter = { session: () => Promise.reject(new WriterUnavailableError("Hook writer model is not downloaded yet.")) };
+    const cloud: HookWriter = { session: () => Promise.reject(new Error("The picking model failed (401): bad key")) };
+    const input = vod();
+    const { picks, report, costUsd } = await new LocalPicker(steps(["writer", "Local writer", local], ["cloud-writer", "Cloud writer", cloud])).pick(input);
+
+    expect(picks.length).toBeGreaterThanOrEqual(2);
+    const roof = picks.find((p) => p.startSec < 100)!;
+    expect(roof.hook).toMatch(/roof|insane/);
+    expect(roof.title).toMatch(/^Kai: "/);
+    expect(picks.every((p) => p.hook.length > 0 && p.hook.split(" ").length <= 8)).toBe(true);
+    expect(picks.every((p) => p.reason.endsWith("Hook taken from the transcript: The picking model failed (401): bad key"))).toBe(true);
+    expect(costUsd).toBe(0);
+    expect(report!.uses.map((u) => [u.step, u.count])).toEqual([["signals", picks.length], ["writer", 0], ["cloud-writer", 0], ["template", picks.length]]);
+    expect(report!.fallbacks.map((f) => f.step)).toEqual(["writer", "cloud-writer"]);
+    // The gate still has something to keep.
+    expect(reviewPicks(picks, toSentences(input.words), input.words, [], 10).some((p) => !p.dropReason)).toBe(true);
   });
 });
