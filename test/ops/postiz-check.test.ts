@@ -45,6 +45,7 @@ describe('checkPostiz', () => {
     expect(result.ok).toBe(true);
     expect(api.calls).toEqual(['https://postiz.example.com/api/public/v1/integrations']);
     expect(result.lines[0]).toBe('OK: Postiz at https://postiz.example.com answered with 3 connected accounts.');
+    expect(result.lines[1]).toBe('  backend: up');
     expect(result.lines).toContain('  youtube: GTA VI Moments');
     expect(result.lines).toContain('  instagram-standalone: gtavi.moments (disabled: reconnect it in Postiz)');
   });
@@ -87,12 +88,23 @@ describe('checkPostiz', () => {
     expect(result.lines[0]).toBe('NOT OK: cannot reach Postiz at https://postiz.example.com (no answer within 0.02 s).');
   });
 
-  it('fails when Postiz answers with a server error', async () => {
+  it('says the backend is down when the API answers 502 (the web page may still load)', async () => {
     const broken = (async () => new Response('Bad Gateway', { status: 502 })) as typeof fetch;
     const result = await checkPostiz({ url: 'https://postiz.example.com', apiKey: 'k', fetch: broken });
 
     expect(result.ok).toBe(false);
-    expect(result.lines[0]).toBe('NOT OK: Postiz answered HTTP 502 at https://postiz.example.com/api/public/v1/integrations.');
+    expect(result.lines[0]).toBe(
+      'NOT OK: the Postiz backend is down (HTTP 502 at https://postiz.example.com/api/public/v1/integrations).',
+    );
+    expect(result.lines.join('\n')).toMatch(/docker compose logs --tail 100 postiz/);
+  });
+
+  it('keeps the plain HTTP status for other errors', async () => {
+    const missing = (async () => new Response('Not Found', { status: 404 })) as typeof fetch;
+    const result = await checkPostiz({ url: 'https://postiz.example.com', apiKey: 'k', fetch: missing });
+
+    expect(result.ok).toBe(false);
+    expect(result.lines[0]).toBe('NOT OK: Postiz answered HTTP 404 at https://postiz.example.com/api/public/v1/integrations.');
   });
 
   it('fails when the answer is not the integrations list (wrong URL)', async () => {

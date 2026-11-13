@@ -1,6 +1,8 @@
 /**
  * Checks that clipfarm can talk to Postiz: calls the public API's list of connected
  * accounts (GET /api/public/v1/integrations) with POSTIZ_API_KEY and explains what is wrong.
+ * That call goes through Postiz's backend, so the answer also says whether the backend is up:
+ * the web page keeps loading while the backend is down, and only /api/ shows it (502).
  * API: https://docs.postiz.com/public-api/introduction (the key goes in the Authorization header as is).
  */
 
@@ -82,6 +84,12 @@ export async function checkPostiz(options: PostizCheckOptions): Promise<PostizCh
       'Copy the key again from Postiz > Settings > Public API into POSTIZ_API_KEY.',
     );
   }
+  if (response.status >= 500) {
+    return notOk(
+      `the Postiz backend is down (HTTP ${response.status} at ${endpoint}).`,
+      'The web page can still load while it is. See why: cd /opt/postiz && docker compose ps && docker compose logs --tail 100 postiz',
+    );
+  }
   if (!response.ok) {
     return notOk(`Postiz answered HTTP ${response.status} at ${endpoint}.`);
   }
@@ -97,7 +105,7 @@ export async function checkPostiz(options: PostizCheckOptions): Promise<PostizCh
     );
   }
 
-  const lines = [`OK: Postiz at ${site} answered with ${integrations.length} connected accounts.`];
+  const lines = [`OK: Postiz at ${site} answered with ${integrations.length} connected accounts.`, '  backend: up'];
   if (integrations.length === 0) {
     lines.push('  but no accounts are connected yet: add YouTube, TikTok, Instagram or X in Postiz.');
   }

@@ -19,10 +19,13 @@ SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 CLIPFARM_ENV_FILE="${CLIPFARM_ENV_FILE:-/etc/clipfarm/clipfarm.env}"
 MEMINFO="${MEMINFO:-/proc/meminfo}"
-MIN_RAM_MB="${MIN_RAM_MB:-2500}"
+MIN_RAM_MB="${MIN_RAM_MB:-3150}"
 MIN_DISK_MB="${MIN_DISK_MB:-10240}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-600}"
 HEALTH_POLL="${HEALTH_POLL:-10}"
+SYSCTL_DIR="${SYSCTL_DIR:-/etc/sysctl.d}"
+ES_UID=1000              # the user Elasticsearch runs as inside its container
+ES_MAX_MAP_COUNT=262144  # what Elasticsearch needs from vm.max_map_count
 
 SITE_URL=https://postiz.techinsiderbytes.com
 SITE_HOST="${SITE_URL#https://}"
@@ -126,7 +129,7 @@ fi
 # --- 1. Check the box.
 
 [ -w "$SYSTEMD_DIR" ] || die "cannot write to $SYSTEMD_DIR: run it as root"
-for tool in docker openssl systemctl curl ss caddy; do
+for tool in docker openssl systemctl curl ss caddy sysctl; do
   command -v "$tool" > /dev/null || die "$tool is not installed"
 done
 docker info > /dev/null 2>&1 || die "docker is not running (systemctl start docker)"
@@ -163,6 +166,17 @@ for dir in config uploads postgres redis temporal-postgres; do
 done
 if [ -f "$POSTIZ_DIR/docker-compose.yml" ] && ! cmp -s "$here/docker-compose.yml" "$POSTIZ_DIR/docker-compose.yml"; then
   changed=1
+fi
+# Temporal's Elasticsearch: its data folder belongs to the container's user, and the kernel must
+# allow it enough memory maps (kept across reboots by the file in sysctl.d).
+install -d -m 700 "$POSTIZ_DIR/temporal-es"
+chown "$ES_UID" "$POSTIZ_DIR/temporal-es"
+map_count="$(sysctl -n vm.max_map_count)"
+if [ "$map_count" -lt "$ES_MAX_MAP_COUNT" ]; then
+  printf '# Elasticsearch (Temporal, for Postiz) needs this. Written by ops/postiz/install.sh.\nvm.max_map_count=%s\n' \
+    "$ES_MAX_MAP_COUNT" > "$SYSCTL_DIR/99-postiz-elasticsearch.conf"
+  sysctl -q -w "vm.max_map_count=$ES_MAX_MAP_COUNT"
+  say "raised vm.max_map_count from $map_count to $ES_MAX_MAP_COUNT for Elasticsearch (kept in $SYSCTL_DIR/99-postiz-elasticsearch.conf)"
 fi
 install -m 644 "$here/docker-compose.yml" "$POSTIZ_DIR/docker-compose.yml"
 install -m 755 "$here/backup.sh" "$POSTIZ_DIR/backup.sh"
@@ -252,11 +266,18 @@ fi
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" 2> /dev/null || true; }
 answers() { [[ "$(http_code "$@")" =~ ^[23] ]]; }
 
+# The backend sits behind /api/: while it is down the web page still loads but /api/ gives 502.
+backend_answers() { [[ "$(http_code "http://127.0.0.1:$port/api/")" =~ ^[234] ]]; }
+
 wait_for_postiz() {
-  local waited=0
-  until answers "http://127.0.0.1:$port/"; do
-    [ "$waited" -lt "$HEALTH_TIMEOUT" ] \
-      || die "Postiz did not answer on port $port within $HEALTH_TIMEOUT s. See: cd $POSTIZ_DIR && docker compose ps && docker compose logs --tail 100 postiz"
+  local waited=0 what
+  until answers "http://127.0.0.1:$port/" && backend_answers; do
+    if [ "$waited" -ge "$HEALTH_TIMEOUT" ]; then
+      what="Postiz did not answer on port $port"
+      ! answers "http://127.0.0.1:$port/" \
+        || what="The Postiz web page answers on port $port but its backend (/api/) does not ($(http_code "http://127.0.0.1:$port/api/"))"
+      die "$what within $HEALTH_TIMEOUT s. See: cd $POSTIZ_DIR && docker compose ps && docker compose logs --tail 100 postiz"
+    fi
     sleep "$HEALTH_POLL"
     waited=$((waited + HEALTH_POLL))
   done
@@ -342,6 +363,7 @@ for unit in postiz.service postiz-backup.timer; do
   echo "  $unit: $(systemctl is-active "$unit" 2> /dev/null || true)"
 done
 echo "  http://127.0.0.1:$port/: answers ($(http_code "http://127.0.0.1:$port/"))"
+echo "  Backend (http://127.0.0.1:$port/api/): answers ($(http_code "http://127.0.0.1:$port/api/"))"
 public_code="$(http_code "$SITE_URL/")"
 if [[ "$public_code" =~ ^[23] ]]; then
   echo "  $SITE_URL/: answers ($public_code)"
