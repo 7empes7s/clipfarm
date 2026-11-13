@@ -15,7 +15,7 @@ export default defineConfig({
     {
       name: "desktop",
       testMatch:
-        /(review|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation)\.spec\.ts/,
+        /(review|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation|zzzz-proof)\.spec\.ts/,
       dependencies: ["phone"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
@@ -30,6 +30,8 @@ export default defineConfig({
       CLIPFARM_FAKES: "1",
       FAKE_VOD_SEC: "40",
       RENDER_PRESET: "ultrafast",
+      // The proof spec needs one clip, not a clip for every ten minutes of the made-up hour.
+      PROOF_MAX_PICKS: "2",
       DATA_DIR: ".e2e-data/run",
       MEDIA_DIR: ".e2e-data/run/media",
     },

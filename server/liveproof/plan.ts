@@ -117,17 +117,18 @@ export function judgeDrill(m: ProofMetrics, why = ""): ProofProblem[] {
   return [];
 }
 
-export function drillChecks(m: ProofMetrics): ProofCheck[] {
+/** `done`: the drill is over, so a missing clip is a miss and not just "not yet". */
+export function drillChecks(m: ProofMetrics, done: boolean): ProofCheck[] {
   const late = (sec: number | null) => (sec === null ? null : sec <= LIVE_TARGET_LATENCY_SEC);
   return [
     {
       label: "Moment to LIVE clip",
       value: m.firstLatencySec === null ? "No clip" : span(m.firstLatencySec),
       target: `under ${span(LIVE_TARGET_LATENCY_SEC)}`,
-      ok: late(m.worstLatencySec),
+      ok: late(m.worstLatencySec) ?? (done ? false : null),
     },
     { label: "Slowest LIVE clip", value: m.worstLatencySec === null ? "No clip" : span(m.worstLatencySec), target: "", ok: null },
-    { label: "LIVE clips", value: String(m.clips), target: "at least 1", ok: m.clips >= 1 },
+    { label: "LIVE clips", value: String(m.clips), target: "at least 1", ok: m.clips >= 1 ? true : done ? false : null },
     { label: "Segments dropped", value: `${m.dropped} of ${m.segments}`, target: "none", ok: m.dropped === 0 },
     { label: "Memory peak", value: m.ramPeakMb === null ? "Not read" : gb(m.ramPeakMb), target: "", ok: null },
   ];

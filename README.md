@@ -433,6 +433,11 @@ by ffmpeg (`testsrc` + `sine`) during the test and deleted after; no media is co
   interface (yt-dlp, ffmpeg on Kick's HLS address, and a fake); `job.ts` is the queued work per
   segment and cuts LIVE clips from the recorded segment; `notify.ts` is web push behind an
   interface with a fake.
+- `server/liveproof/`: the daily live proof and the launch drill. `plan.ts` holds the targets
+  (10 clips per hour of video in under 30 minutes), the checks and "Launch ready" as plain
+  functions; `service.ts` picks the videos, runs them on the real pipeline one at a time, measures,
+  and pushes an alert when a run fails; `repo.ts` stores the runs (table `proof_runs`). Asked for
+  by the daily timer, the Dashboard's Proof card, or `clipfarm-ops proof` / `drill live`.
 - `server/engine/`: clipfarm's own engine. `catalog.ts` pins every program and model to a
   SHA-256, `download.ts` fetches with resume and checks it, `memory.ts` is the guard, `llama.ts`
   runs the hook writer for one picking session, `moonshine.ts` runs Moonshine through its sidecar,

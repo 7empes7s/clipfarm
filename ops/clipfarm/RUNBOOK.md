@@ -546,6 +546,9 @@ command, ever: posting stays a tap in the app.
 | `run latest <channel link or source id> [--count N]` | The channel's newest finished video → clips. Says `Nothing new` when that video was already done |
 | `run <video link> [--source <id or channel link>] [--count N]` | One video → clips. `--source` when the link does not start with the channel (Twitch and YouTube video links) |
 | `clips [--since 2h]` | Clips ready for review or approved, with file and score (`--since` takes `45m`, `2h`, `3d` or a date) |
+| `proof` | The daily live proof, now (see "Daily proof and launch drill" below) |
+| `proof status` | The last proof, the last drill, and `Launch ready: yes/no` with the reasons |
+| `drill live [creator name, channel link or source id] [--minutes 15]` | The launch drill: 15 minutes of live mode on an allowed creator who is live now |
 | `status` | Whether the service is working the queue, the jobs, and the disk |
 | `help` | Every command |
 
@@ -565,6 +568,73 @@ Good to know:
   `systemd-run … -p EnvironmentFile=…` part. Use the full line above.
 - `run latest` on a Kick channel asks kick.com, which sometimes refuses servers (`Kick refused
   the request`). Then copy the video's link from the channel page and use `run <video link>`.
+
+## Daily proof and launch drill (IT)
+
+Every day at 06:00 (the server's clock) the service proves itself on real videos, with nothing to
+install: the timer is part of the `clipfarm` service and starts with it. A proof takes
+
+1. the latest video of the campaign channel (`PROOF_CHANNEL`, `https://kick.com/tjr`) that clipfarm
+   has not clipped yet, and
+2. one new GTA V / GTA RP video of a creator in Sources with a "publicly allows clipping" record,
+
+through the real pipeline, one job at a time, and measures each against the target: **10 clips per
+hour of video, in under 30 minutes per hour of video**. The clips are kept private and never
+posted: they wait in the Inbox tagged **Proof**, for the manager to approve and post. The numbers
+(video length, minutes to the first clip and to all clips, clips, quality check, engine, cost,
+memory peak) are stored and shown on the Dashboard's **Daily proof** card with the last 7 days.
+When a proof fails, is too slow or gives too few clips, the manager's phone gets a notification
+naming the step.
+
+Run one now, or see the last one (the usual line, last words changed):
+
+```bash
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops proof
+
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops proof status
+```
+
+`proof` ends like this (exit code 0 when every video that ran met the target, 1 otherwise):
+
+```
+Campaign video: PASSED  TJR: <the video's title>
+       Video length: 1h 2m
+  ok   Clips: 11 (target: at least 10)
+  ok   Time to all clips: 24 min (target: under 31 min)
+       Time to first clip: 19 min
+  ok   Quality check: 11 of 11 passed
+       Approved by you: No swipes yet (target: half)
+       Engine: Local (Moonshine, Qwen)
+       Cost: under $0.01
+       Memory peak: 5.1 GB
+GTA video: SKIPPED  (No creator with a public clipping allowance has a new GTA V or GTA RP video.)
+Kept private: nothing was posted. The clips wait in the Inbox, tagged Proof.
+Launch ready: no
+  - No live drill has run yet. Run one while an allowed creator is live.
+```
+
+**The launch drill** runs live mode for 15 minutes on an allowed creator who is live right now
+(Kick first), whatever the Launch day switches say. The permission gate and the leak rules still
+decide: a creator without a record in force, a leak, or a GTA VI stream before launch time is
+never recorded, and a creator with only an experiment record gives clips that post to burner
+accounts only. It first loads the launch-day watchlist (the seed list, and the starter list of
+creators who allow clipping in public, each with its proof on record).
+
+```bash
+systemd-run --uid=clipfarm --gid=clipfarm --pipe --wait --collect --quiet -p EnvironmentFile=/etc/clipfarm/clipfarm.env -p MemoryMax=3072M -p UMask=0027 -p PrivateTmp=true /usr/local/sbin/clipfarm-ops drill live
+```
+
+It reports the time from a moment to its LIVE clip in the Inbox (target: under 15 minutes),
+segments dropped and the memory peak, then `Launch ready: yes` or `no` with every reason: an empty
+watchlist, a saved key that fails, a failed proof or drill, too little disk or memory for live
+mode, no phone with notifications on. `No allowed creator is live right now` is not a failure: run
+it again when one is, or name one (`drill live kick.com/<channel>`). The manager can also start
+both from the Dashboard: **Run proof now** and **Run live drill**.
+
+Settings in `/etc/clipfarm/clipfarm.env` (restart the service after a change): `PROOF_HOUR`
+(`6`; `off` for on demand only), `PROOF_CHANNEL`, `PROOF_MAX_VOD_HOURS` (`4`: a longer video is
+passed over while a shorter new one is there), `PROOF_MAX_PICKS` (empty: as many clips as the
+target needs).
 
 ## Update (IT)
 

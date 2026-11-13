@@ -491,7 +491,7 @@ export class ProofRunner {
     const { options: _options, ...rest } = run;
     return {
       ...rest,
-      checks: run.kind === "drill" ? drillChecks(run.metrics) : vodChecks(run.metrics, { approved, rejected }),
+      checks: run.kind === "drill" ? drillChecks(run.metrics, run.finishedAt !== null) : vodChecks(run.metrics, { approved, rejected }),
       clipIds: mine.map((c) => c.id),
       approved,
       rejected,

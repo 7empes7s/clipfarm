@@ -165,7 +165,6 @@ function setup() {
   const vods = new VodsRepo(db, clock);
   const picks = new PicksRepo(db, clock);
   const clips = new ClipsRepo(db, clock);
-  const posts = new PostsRepo(db);
   const watchlist = new WatchlistRepo(db, sources, clock);
   const liveRepo = new LiveRepo(db, LAUNCH);
   const notifier = new FakeNotifier();
