@@ -1,3 +1,4 @@
+import { BusyCard } from "./SubmitWindow";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountCard,
@@ -185,6 +186,7 @@ function Today({ dash, jobs, onLoaded, children }: { dash: Dashboard; jobs: Job[
         <Tile label="Cost this week" value={usd(t.costWeekUsd)} />
         <Tile label="Cost per approved clip" value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)} />
       </dl>
+      <BusyCard />
       {children}
       {(dash.growth.campaigns.length > 0 || dash.growth.recommendations.length > 0) && (
         <div className="card dash-campaigns" data-testid="dash-campaigns">

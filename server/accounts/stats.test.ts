@@ -68,6 +68,8 @@ const post = (o: Partial<Post>): Post => ({
   exitIp: null,
   note: null,
   estimatedEarningsUsd: 0,
+  submit: null,
+  lostEarningsUsd: 0,
   ...o,
 });
 

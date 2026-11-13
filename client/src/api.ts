@@ -1,3 +1,4 @@
+import type { Snooze, SubmitHours, SubmitWindowInfo } from "../../shared/submitWindow";
 import type {
   AccountChoice,
   AccountsInfo,
@@ -97,6 +98,9 @@ export const api = {
   clipAccounts: (id: number) => call<AccountChoice[]>(`/api/clips/${id}/accounts`),
   posting: () => call<PostingInfo>("/api/posting"),
   saveRules: (rules: PostingRules) => call<PostingRules>("/api/posting/rules", { method: "PUT", body: JSON.stringify(rules) }),
+  submitWindow: () => call<SubmitWindowInfo>("/api/posting/submit"),
+  saveSubmitHours: (hours: SubmitHours) => call<SubmitWindowInfo>("/api/posting/submit-hours", { method: "PUT", body: JSON.stringify(hours) }),
+  snooze: (choice: Snooze | "off") => call<SubmitWindowInfo>("/api/posting/snooze", { method: "POST", body: JSON.stringify({ for: choice }) }),
   posts: () => call<Post[]>("/api/posts"),
   refreshPosts: () => call<{ updated: number; error: string | null }>("/api/posts/refresh", { method: "POST" }),
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),

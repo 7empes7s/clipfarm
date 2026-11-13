@@ -142,6 +142,7 @@ env-only.
 | `IP_ECHO_URL` | `https://ipinfo.io/json` | Where a proxy's exit address is read from when it is tested (answers `{"ip", "country"}`) |
 | `POSTING_SERVICE` | auto | `postiz`, `upload-post` or `none`; only needed when both are set |
 | `POSTING_REFRESH_MINUTES` | `60` | How often post links and views are read (5 or more) |
+| `SUBMIT_HOURS` | on | `off` starts with the submit hours switched off; they are set in Settings, Posting |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
 | `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist and the trend radar |
 | `WATCHLIST_POLL_MINUTES` | `15` | How often the watchlist checks for live streams and new VODs (5 or more) |
@@ -216,6 +217,34 @@ sent, approved, paid. Stats shows posts, views and estimated earnings (views × 
 less Whop's 10% fee on Whop campaigns, counted once a post reaches the campaign's minimum views)
 per campaign and platform, plus cost per approved clip. Whop settles a payout about 10 days after
 it approves a clip; the post shows that date.
+
+### Submit window (campaign clips)
+
+Reach / Content Rewards campaigns pay only for a clip that is submitted **within 30 minutes of
+posting**, and Whop has no clipper API, so the manager taps Submit. clipfarm plans around that:
+
+- **Submit hours** (Settings, Posting; default 08:00 to 22:00, Europe/Luxembourg, weekdays and
+  weekends set apart). A campaign clip that needs the manual submit goes out only inside them, with
+  the whole 30 minutes still ahead: one due at 03:00 moves to 08:00, and the last of a day goes out
+  at 21:30. Days and hours are the time zone's own, so a clock change moves the slot with your
+  clock. Spacing still holds. Own content, public allowances and experiments post as before.
+- A campaign post for later **waits in clipfarm** and is handed to the posting service when it is
+  due (a timer, once a minute), so it can still be moved.
+- **When it is live**: a push "TJR clip is live: submit within 30 min" that opens the clip in
+  Posted with **Submit to Whop** ready (the link is copied where the browser allows it without a
+  tap; the button copies it otherwise). The post shows a countdown. A second push at 20 minutes
+  when it is still not marked sent.
+- **Missed windows**: after 30 minutes without "sent to Whop" the post is marked "window missed"
+  and counts no earnings. Stats shows how many windows were missed and what they would have earned.
+  Marking it sent afterwards (it was submitted, the tap came late) takes the mark back.
+- **I'm busy** (1 hour, 3 hours, today) on the push and on the Dashboard: campaign posts due in
+  that time move to after it, in order and still spaced. "I'm back" ends it.
+- Whether a campaign needs the manual submit is one of its rules: yes for Whop / Content Rewards,
+  unless its page says clips are tracked automatically (campaign import reads that) or the switch
+  on the campaign form is turned off.
+
+The pure parts are in `shared/submitWindow.ts` (hours, time zones, snooze, what is due) and
+`server/publish/spacing.ts` (`nextSubmitSlot`); `server/publish/submitWatch.ts` runs the round.
 
 ## Account isolation (Settings, Accounts)
 

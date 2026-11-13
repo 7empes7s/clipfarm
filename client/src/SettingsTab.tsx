@@ -1,3 +1,4 @@
+import { SubmitHoursCard } from "./SubmitWindow";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import type { IntegrationId, IntegrationStatus, SettingField, SettingsInfo } from "../../shared/types";
 import { AccountsSettings } from "./AccountsSettings";
@@ -213,6 +214,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
       )}
       <AccountsSettings focus={focus === "accounts"} />
       <AutoModeCard />
+      <SubmitHoursCard />
       <div className="card look" data-testid="settings-look">
         <h3 id="look-title">Look</h3>
         <div className="chips" role="radiogroup" aria-labelledby="look-title">

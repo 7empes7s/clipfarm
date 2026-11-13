@@ -33,10 +33,16 @@ describe("extractCampaign", () => {
         minSec: 15,
         maxSec: 45,
         budgetLeftUsd: 3750,
+        manualSubmit: true,
       },
       ended: null,
     });
     expect(fieldsToCheck(facts)).toEqual([]);
+  });
+
+  it("needs a manual submit unless the page says clips are tracked by themselves", () => {
+    expect(extractCampaign(WHOP).rules.manualSubmit).toBe(true);
+    expect(extractCampaign(`${WHOP}\nViews are tracked automatically, no submission needed.`).rules.manualSubmit).toBe(false);
   });
 
   it("leaves what a page does not say empty and marked to check, with no guessing", () => {
@@ -151,7 +157,7 @@ describe("a chat model's reading of the page", () => {
       minViews: 5000,
       allowedPlatforms: [],
       expiresAt: "2026-12-12T23:59:59.000Z",
-      rules: { requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: ["betting"], minSec: null, maxSec: null, budgetLeftUsd: 2000 },
+      rules: { requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: ["betting"], minSec: null, maxSec: null, budgetLeftUsd: 2000, manualSubmit: true },
     });
   });
 

@@ -203,6 +203,8 @@ function banTerms(rest: string): string[] {
     .filter((t) => t.length >= 2 && t.length <= 40 && t.split(" ").length <= 4 && /^[\p{L}\p{N} '&-]+$/u.test(t));
 }
 
+const NO_SUBMIT = /\bno (?:manual )?(?:submission|submit)s? (?:is |are )?(?:needed|required|necessary)\b|\b(?:submitted|tracked|counted) automatically\b|\bautomatic(?:ally)? (?:submission|tracking|tracked|submitted)\b|\bno need to submit\b/i;
+
 function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } {
   const rules: CampaignRules = { ...NO_CAMPAIGN_RULES, requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: [] };
   const brief: string[] = [];
@@ -236,6 +238,8 @@ function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } 
       else if (min) rules.minSec = Number(min[1]);
       ruled ||= Boolean(range || max || min);
     }
+    // Clips the program tracks by itself need no submit by hand (the default for Whop / Content Rewards is that they do).
+    if (NO_SUBMIT.test(line)) rules.manualSubmit = false;
     if (ruled) brief.push(line);
   }
   rules.requiredTags = unique(rules.requiredTags);
@@ -392,6 +396,8 @@ export function parseChatCampaign(content: string, pageWords: string): Partial<C
       minSec: num(body.min_seconds, 600),
       maxSec: num(body.max_seconds, 600),
       budgetLeftUsd: num(body.budget_left_usd, 1e9),
+      // Read from the page's own words only (rulesOf), never guessed by the model.
+      manualSubmit: true,
     },
   };
 }
@@ -412,6 +418,7 @@ export async function fillWithChat(facts: CampaignFacts, raw: string, chat: Chat
     minSec: facts.rules.minSec ?? said.rules.minSec ?? null,
     maxSec: facts.rules.maxSec ?? said.rules.maxSec ?? null,
     budgetLeftUsd: facts.rules.budgetLeftUsd ?? said.rules.budgetLeftUsd ?? null,
+    manualSubmit: facts.rules.manualSubmit,
   };
   return {
     ...facts,

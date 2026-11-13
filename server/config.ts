@@ -1,3 +1,4 @@
+import { DEFAULT_SUBMIT_HOURS, type SubmitHours } from "../shared/submitWindow.js";
 import { join, resolve } from "node:path";
 import { type AccessVerifier, cloudflareAccessVerifier } from "./access.js";
 import { Engine } from "./engine/engine.js";
@@ -68,6 +69,8 @@ export interface Config {
   postingService: PostingService;
   /** How often post links and views are read from the posting service. */
   postingRefreshMinutes: number;
+  /** The submit hours until the manager saves their own in Settings (SUBMIT_HOURS=off starts with them off). */
+  submitHours: SubmitHours;
   /** Twitch, Kick and YouTube, for the watchlist's live and new-VOD checks. */
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
@@ -328,6 +331,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     trendSource: fakes ? () => new FakeTrendSource() : liveTrendSource(settings),
     aiChat: fakes ? () => null : liveCloudChat(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
+    submitHours: { ...DEFAULT_SUBMIT_HOURS, enabled: env.SUBMIT_HOURS !== "off" },
     watchClients: fakes
       ? [new FakePlatformClient("twitch"), new FakePlatformClient("kick"), new FakePlatformClient("youtube")]
       : [

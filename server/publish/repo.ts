@@ -10,6 +10,7 @@ import type {
 } from "../../shared/types.js";
 import { WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types.js";
 import type { PostMetrics, StatPoint } from "../../shared/growth.js";
+import { DEFAULT_SUBMIT_HOURS, SUBMIT_WINDOW_MIN, type SubmitHours } from "../../shared/submitWindow.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { maskIp } from "../isolation/rules.js";
 import { mergeMetrics, offsetFor, parseMetrics } from "../growth/series.js";
@@ -53,6 +54,8 @@ interface PostRow {
   group_name: string | null;
   exit_ip: string | null;
   note: string | null;
+  needs_submit: number;
+  submit_missed_at: string | null;
 }
 
 const FLAG_COLUMNS: Record<PostFlag, string> = { claim: "claim_at", removal: "removal_at", strike: "strike_at" };
@@ -67,6 +70,11 @@ const SELECT = `
   LEFT JOIN isolation_groups g ON g.id = p.group_id`;
 
 function toPost(r: PostRow): Post {
+  // A campaign post that was not submitted in time earns nothing: what it would have made is shown as lost.
+  const earned = estimateEarnings(r.views, r.cpm_rate_usd, r.min_views, r.kind === "whop-campaign" ? WHOP_FEE : 0);
+  const missed = r.needs_submit === 1 && r.submit_missed_at !== null;
+  // The window opens when the post is really out, not when it was handed to the posting service.
+  const liveAt = r.status === "posted" ? (r.posted_at ?? r.scheduled_at) : null;
   return {
     id: r.id,
     clipId: r.clip_id,
@@ -99,7 +107,12 @@ function toPost(r: PostRow): Post {
     // The full address stays on the server: the screen gets its network.
     exitIp: maskIp(r.exit_ip),
     note: r.note,
-    estimatedEarningsUsd: estimateEarnings(r.views, r.cpm_rate_usd, r.min_views, r.kind === "whop-campaign" ? WHOP_FEE : 0),
+    estimatedEarningsUsd: missed ? 0 : earned,
+    submit:
+      r.needs_submit === 1
+        ? { liveAt, dueBy: liveAt && new Date(new Date(liveAt).getTime() + SUBMIT_WINDOW_MIN * 60_000).toISOString(), missedAt: r.submit_missed_at }
+        : null,
+    lostEarningsUsd: missed ? earned : 0,
   };
 }
 
@@ -125,9 +138,31 @@ export interface NewPost {
   variant?: { title: string; hook: string };
   /** The variant's own video, kept with an upload that clipfarm sends itself (now or later). */
   variantFile?: string | null;
+  /** A campaign post that has to be submitted by hand within 30 minutes of going live. */
+  needsSubmit?: boolean;
+  /** Kept in clipfarm and handed to the posting service when it is due (so it can still be moved). */
+  held?: boolean;
+}
+
+/** A campaign post that waits in clipfarm for its time. */
+export interface WaitingSubmit {
+  id: number;
+  clipId: number;
+  accountId: string;
+  at: Date;
+}
+
+/** A live post that is still to be submitted, and which pushes it already got. */
+export interface AwaitingSubmit {
+  post: Post;
+  notified: boolean;
+  reminded: boolean;
 }
 
 export class PostsRepo {
+  /** The submit hours until the manager saves their own. */
+  submitDefaults: SubmitHours = DEFAULT_SUBMIT_HOURS;
+
   constructor(
     readonly db: Db,
     private now: () => Date = () => new Date(),
@@ -137,8 +172,9 @@ export class PostsRepo {
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO posts (clip_id, permission_id, platform, account_id, account_name, service, external_id, status,
-           url, error, caption, scheduled_at, posted_at, created_at, group_id, exit_ip, note, variant_title, variant_hook, variant_file)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           url, error, caption, scheduled_at, posted_at, created_at, group_id, exit_ip, note, variant_title, variant_hook, variant_file,
+           needs_submit, held)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         p.clipId,
@@ -161,6 +197,8 @@ export class PostsRepo {
         p.variant?.title ?? null,
         p.variant?.hook ?? null,
         p.variantFile ?? null,
+        p.needsSubmit ? 1 : 0,
+        p.held ? 1 : 0,
       );
     return this.get(Number(lastInsertRowid));
   }
@@ -174,6 +212,68 @@ export class PostsRepo {
     ).map((r) => r.id);
   }
 
+  /** Posts held back for the posting service that are due: waiting, and their time has come. */
+  dueHeld(): number[] {
+    return (
+      this.db
+        .prepare("SELECT id FROM posts WHERE held = 1 AND status = 'scheduled' AND external_id IS NULL AND scheduled_at <= ? ORDER BY scheduled_at, id")
+        .all(this.now().toISOString()) as { id: number }[]
+    ).map((r) => r.id);
+  }
+
+  /** Campaign posts that wait in clipfarm for their time (held for the service, or our own uploads), soonest first. */
+  waitingSubmit(): WaitingSubmit[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT id, clip_id, account_id, scheduled_at FROM posts WHERE needs_submit = 1 AND status = 'scheduled' AND external_id IS NULL ORDER BY scheduled_at, id",
+        )
+        .all() as { id: number; clip_id: number; account_id: string; scheduled_at: string }[]
+    ).map((r) => ({ id: r.id, clipId: r.clip_id, accountId: r.account_id, at: new Date(r.scheduled_at) }));
+  }
+
+  /** Live campaign posts that are neither submitted nor marked missed yet. */
+  awaitingSubmit(): AwaitingSubmit[] {
+    return (
+      this.db
+        .prepare(
+          `${SELECT} WHERE p.needs_submit = 1 AND p.status = 'posted' AND p.whop_submitted_at IS NULL AND p.submit_missed_at IS NULL ORDER BY p.id`,
+        )
+        .all() as (PostRow & { submit_notified_at: string | null; submit_reminded_at: string | null })[]
+    ).map((r) => ({ post: toPost(r), notified: r.submit_notified_at !== null, reminded: r.submit_reminded_at !== null }));
+  }
+
+  /**
+   * Campaign posts handed to the service in the last half hour that it has not confirmed yet
+   * (Postiz posts in the background): worth asking about now, since their submit window is running.
+   */
+  unconfirmedSubmit(service: PostingServiceName): TrackedPost[] {
+    const now = this.now().getTime();
+    return this.db
+      .prepare(
+        `SELECT external_id AS externalId, account_id AS accountId, platform, scheduled_at AS scheduledAt FROM posts
+         WHERE needs_submit = 1 AND service = ? AND status = 'scheduled' AND external_id IS NOT NULL AND scheduled_at <= ? AND scheduled_at > ?
+         ORDER BY id`,
+      )
+      .all(service, new Date(now).toISOString(), new Date(now - SUBMIT_WINDOW_MIN * 60_000).toISOString()) as TrackedPost[];
+  }
+
+  /** Records that a push went out for a post's submit window, or that the window passed. */
+  markSubmit(id: number, what: "notified" | "reminded" | "missed"): void {
+    const at = this.now().toISOString();
+    // A reminder counts as the first push too: a post first seen late gets one, not both.
+    const sets = what === "reminded" ? "submit_reminded_at = ?, submit_notified_at = COALESCE(submit_notified_at, ?)" : `submit_${what}_at = ?`;
+    this.db.prepare(`UPDATE posts SET ${sets} WHERE id = ?`).run(...(what === "reminded" ? [at, at] : [at]), id);
+  }
+
+  /** How handing a held post to the posting service ended: from here on it is the service's post. */
+  handOver(id: number, r: { externalId: string | null; status: PostStatus; url: string | null; error: string | null; postedAt: string | null }): Post {
+    this.db
+      .prepare("UPDATE posts SET held = 0, note = NULL, external_id = ?, status = ?, url = ?, error = ?, posted_at = ? WHERE id = ?")
+      .run(r.externalId, r.status, r.url, r.error, r.postedAt, id);
+    return this.get(id);
+  }
+
   /** How a direct upload ended. */
   settle(id: number, r: { status: PostStatus; externalId?: string | null; url?: string | null; error: string | null; exitIp?: string | null }): Post {
     this.db
@@ -182,8 +282,8 @@ export class PostsRepo {
     return this.get(id);
   }
 
-  /** Moves a waiting direct upload to a later time, with the reason. */
-  postpone(id: number, at: Date, note: string): Post {
+  /** Moves a post that waits in clipfarm to a later time, with the reason. */
+  postpone(id: number, at: Date, note: string | null): Post {
     this.db.prepare("UPDATE posts SET scheduled_at = ?, note = ? WHERE id = ?").run(at.toISOString(), note, id);
     return this.get(id);
   }
@@ -325,21 +425,26 @@ export class PostsRepo {
     return this.get(id);
   }
 
-  /** Times of the account's posts that went out or are still due. */
-  takenTimes(accountId: string): Date[] {
+  /** Times of the account's posts that went out or are still due (`except`: post ids left out). */
+  takenTimes(accountId: string, except: number[] = []): Date[] {
     return (
-      this.db.prepare("SELECT scheduled_at FROM posts WHERE account_id = ? AND status != 'failed'").all(accountId) as { scheduled_at: string }[]
-    ).map((r) => new Date(r.scheduled_at));
+      this.db.prepare("SELECT id, scheduled_at FROM posts WHERE account_id = ? AND status != 'failed'").all(accountId) as { id: number; scheduled_at: string }[]
+    )
+      .filter((r) => !except.includes(r.id))
+      .map((r) => new Date(r.scheduled_at));
   }
 
   /** When this clip went out or is due, per account: two accounts never carry it at the same time. */
-  clipTimes(clipId: number): { accountId: string; at: Date }[] {
+  clipTimes(clipId: number, except: number[] = []): { accountId: string; at: Date }[] {
     return (
-      this.db.prepare("SELECT account_id, scheduled_at FROM posts WHERE clip_id = ? AND status != 'failed'").all(clipId) as {
+      this.db.prepare("SELECT id, account_id, scheduled_at FROM posts WHERE clip_id = ? AND status != 'failed'").all(clipId) as {
+        id: number;
         account_id: string;
         scheduled_at: string;
       }[]
-    ).map((r) => ({ accountId: r.account_id, at: new Date(r.scheduled_at) }));
+    )
+      .filter((r) => !except.includes(r.id))
+      .map((r) => ({ accountId: r.account_id, at: new Date(r.scheduled_at) }));
   }
 
   /** Posts sent through the service today (UTC) on a platform. */
@@ -386,7 +491,8 @@ export class PostsRepo {
     const now = this.now().toISOString();
     const value = (s: WhopStep) => (s === step ? (on ? (at[s] ?? now) : null) : on || WHOP_STEPS.indexOf(s) < i ? at[s] : null);
     this.db
-      .prepare("UPDATE posts SET whop_submitted_at = ?, whop_approved_at = ?, whop_paid_at = ? WHERE id = ?")
+      // Marked sent, even late: the manager says it was submitted, so it no longer counts as a missed window.
+      .prepare(`UPDATE posts SET whop_submitted_at = ?, whop_approved_at = ?, whop_paid_at = ?${value("submitted") ? ", submit_missed_at = NULL" : ""} WHERE id = ?`)
       .run(value("submitted"), value("approved"), value("paid"), id);
     return this.get(id);
   }
@@ -401,6 +507,33 @@ export class PostsRepo {
       .prepare("INSERT INTO settings (key, value) VALUES ('posting_rules', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(JSON.stringify(rules));
     return this.rules();
+  }
+
+  submitHours(): SubmitHours {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'submit_hours'").get() as { value: string } | undefined;
+    return row ? { ...this.submitDefaults, ...(JSON.parse(row.value) as Partial<SubmitHours>) } : this.submitDefaults;
+  }
+
+  saveSubmitHours(hours: SubmitHours): SubmitHours {
+    this.db
+      .prepare("INSERT INTO settings (key, value) VALUES ('submit_hours', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(hours));
+    return this.submitHours();
+  }
+
+  /** "I'm busy" until then; null when not snoozed, or the snooze is over. */
+  snoozeUntil(): Date | null {
+    const value = this.db.prepare("SELECT value FROM settings WHERE key = 'submit_snooze_until'").pluck().get() as string | undefined;
+    return value && new Date(value).getTime() > this.now().getTime() ? new Date(value) : null;
+  }
+
+  setSnooze(until: Date | null): void {
+    if (!until) this.db.prepare("DELETE FROM settings WHERE key = 'submit_snooze_until'").run();
+    else {
+      this.db
+        .prepare("INSERT INTO settings (key, value) VALUES ('submit_snooze_until', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(until.toISOString());
+    }
   }
 
   /** Transcription spend so far, for cost per approved clip. */

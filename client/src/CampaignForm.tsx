@@ -57,6 +57,7 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
       minSec: numberOrNull(text("minSec")),
       maxSec: numberOrNull(text("maxSec")),
       budgetLeftUsd: numberOrNull(text("budgetLeftUsd")),
+      manualSubmit: f.get("manualSubmit") === "on",
     };
     const input: NewSourceInput = {
       creatorName: text("creatorName"),
@@ -273,6 +274,10 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
               <label>
                 Budget left ($) <span className="hint">if the page shows it</span> {check("budgetLeftUsd")}
                 <input name="budgetLeftUsd" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={r?.budgetLeftUsd ?? ""} />
+              </label>
+              <label className="switch">
+                <input type="checkbox" role="switch" name="manualSubmit" defaultChecked={r?.manualSubmit ?? true} />
+                Submit each clip by hand within 30 minutes
               </label>
             </fieldset>
           )}

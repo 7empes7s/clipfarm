@@ -96,6 +96,8 @@ export async function ownPreview(
         RENDER_PRESET: "ultrafast",
         DATA_DIR: dir,
         MEDIA_DIR: `${dir}/media`,
+        // The run must not depend on the hour it starts at.
+        SUBMIT_HOURS: "off",
       },
       reuseExistingServer: false,
       timeout: 120_000,

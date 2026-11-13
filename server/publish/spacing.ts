@@ -38,3 +38,18 @@ export function nextFreeSlot(taken: Date[], wanted: Date, rules: PostingRules, s
     t = other + stagger;
   }
 }
+
+/**
+ * The same, for a clip that has to be submitted by hand right after it goes live: the slot also has
+ * to be a time the manager can submit (`allowed` gives the earliest such time at or after a moment).
+ * Spacing and the submit hours are tried in turn until one time satisfies both.
+ */
+export function nextSubmitSlot(taken: Date[], wanted: Date, rules: PostingRules, sameClip: Date[], allowed: (t: Date) => Date): Date {
+  let t = allowed(wanted);
+  for (;;) {
+    const free = nextFreeSlot(taken, t, rules, sameClip);
+    const ok = allowed(free);
+    if (ok.getTime() === free.getTime()) return free;
+    t = ok;
+  }
+}

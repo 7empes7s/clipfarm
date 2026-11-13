@@ -197,7 +197,7 @@ export function App() {
       {tab === "dashboard" && <DashboardTab view={dashView} clips={clips} sources={sources} jobs={jobs} onCampaignDraft={setDraft} />}
       {tab === "inbox" && (waiting ? <Skeleton shape="frame" /> : <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />)}
       {(tab === "approved" || tab === "posted" || tab === "rejected") &&
-        (waiting ? <Skeleton shape="card" count={2} /> : <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />)}
+        (waiting ? <Skeleton shape="card" count={2} /> : <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} focus={sub} />)}
       {tab === "stats" && <StatsTab />}
       {tab === "campaigns" && <CampaignsTab sources={sources} sub={sub} />}
       {tab === "settings" && <SettingsTab focus={sub} />}
@@ -514,6 +514,10 @@ function CampaignRulesRows({ rules }: { rules: CampaignRules }) {
           <dd>{must.join(", ")}</dd>
         </div>
       )}
+      <div className="wide">
+        <dt>Submit</dt>
+        <dd>{rules.manualSubmit ? "By hand, within 30 minutes of posting" : "Not needed"}</dd>
+      </div>
       {rules.bannedWords.length > 0 && (
         <div className="wide">
           <dt>Banned</dt>

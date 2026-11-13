@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Platform, PostFlag, RejectReason, WatchChannel, WhopStep } from "../shared/types.js";
 import { PLATFORMS, POST_FLAGS, REJECT_REASONS, WHOP_STEPS } from "../shared/types.js";
+import { parseSubmitHours, type Snooze, SNOOZES } from "../shared/submitWindow.js";
 import { accessGate, type AccessVerifier } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
@@ -379,6 +380,23 @@ export function createApp({
 
   app.put("/api/posting/rules", (req, res) => {
     res.json(posts.saveRules(parseRules(req.body)));
+  });
+
+  // The submit window: when the manager can submit campaign clips, and "I'm busy".
+  app.get("/api/posting/submit", (_req, res) => {
+    res.json(publisher.submitInfo());
+  });
+
+  app.put("/api/posting/submit-hours", (req, res) => {
+    const hours = parseSubmitHours(req.body);
+    if (typeof hours === "string") throw new ValidationError(hours);
+    res.json(publisher.saveSubmitHours(hours));
+  });
+
+  app.post("/api/posting/snooze", (req, res) => {
+    const choice = ((req.body ?? {}) as { for?: unknown }).for;
+    if (choice !== "off" && !SNOOZES.includes(choice as Snooze)) throw new ValidationError("Pick how long: 1 hour, 3 hours or today.");
+    res.json(publisher.snooze(choice === "off" ? null : (choice as Snooze)));
   });
 
   app.get("/api/posts", (_req, res) => {

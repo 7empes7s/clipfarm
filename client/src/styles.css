@@ -3564,6 +3564,71 @@ button.danger {
   background: var(--sunk);
 }
 
+/* The submit window: a campaign post's 30 minutes counting down, and "I'm busy" on the dashboard. */
+.submit-countdown {
+  display: inline-block;
+  margin: 0 0 var(--s2);
+  padding: var(--s1) var(--s3);
+  border-radius: var(--pill);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+  color: var(--accent-strong);
+}
+.submit-late,
+.submit-missed {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+.submit-missed {
+  display: block;
+  border-radius: var(--radius-small);
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.post-opened {
+  margin: 0 calc(-1 * var(--s2));
+  padding: var(--s3) var(--s2);
+  border-radius: var(--radius-small);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.submit-now {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s4);
+  border-radius: var(--pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+.busy,
+.submit-hours {
+  margin: var(--s4) 0;
+}
+.busy .actions {
+  align-items: center;
+  margin: var(--s3) 0;
+}
+.busy-label {
+  font-weight: 600;
+}
+.busy-open {
+  margin: var(--s2) 0;
+  font-weight: 700;
+}
+.submit-hours select {
+  width: 100%;
+  min-width: 0;
+}
+/* A switch inside a form sits beside its words, like every other switch. */
+.form label.switch {
+  display: flex;
+  gap: var(--s3);
+}
+
 /* Daily proof: each run is a ledger of numbers against their targets; green met, red missed. */
 .proof {
   margin-top: var(--s4);
@@ -3739,6 +3804,7 @@ button.danger {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 700;
+}
 
 /* Live version card on the dashboard */
 .live-version {

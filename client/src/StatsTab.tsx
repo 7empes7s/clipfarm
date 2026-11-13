@@ -73,6 +73,10 @@ export function StatsTab() {
               <dt>Cost per approved clip</dt>
               <dd>{stats.costPerApprovedClipUsd === null ? "No approved clips yet" : usd(stats.costPerApprovedClipUsd)}</dd>
             </div>
+            <div data-testid="missed-windows">
+              <dt>Missed submit windows</dt>
+              <dd>{stats.missedWindows === 0 ? "None" : `${stats.missedWindows}, about ${usd(stats.lostEarningsUsd)} lost`}</dd>
+            </div>
           </dl>
           <Breakdown title="By campaign" rows={stats.byCampaign} />
           <Breakdown title="By platform" rows={stats.byPlatform} />
