@@ -252,49 +252,6 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE permissions ADD COLUMN review_reason TEXT;
   `,
   `
-  -- Trend radar: today's fastest short videos (titles and numbers only, never media).
-  CREATE TABLE trend_videos (
-    video_id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    duration_sec REAL,
-    views INTEGER NOT NULL,
-    published_at TEXT NOT NULL,
-    views_per_hour INTEGER NOT NULL,
-    streamer TEXT,
-    moment_type TEXT NOT NULL,
-    hook_pattern TEXT NOT NULL
-  );
-  -- Hook lab: one A/B test per clip, and its variants (each on its own burner account).
-  CREATE TABLE hook_tests (
-    id INTEGER PRIMARY KEY,
-    clip_id INTEGER NOT NULL REFERENCES clips(id),
-    status TEXT NOT NULL,
-    note TEXT,
-    ends_at TEXT,
-    winner_variant_id INTEGER,
-    main_posts INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
-  );
-  CREATE INDEX hook_tests_clip ON hook_tests(clip_id);
-  CREATE TABLE hook_variants (
-    id INTEGER PRIMARY KEY,
-    test_id INTEGER NOT NULL REFERENCES hook_tests(id) ON DELETE CASCADE,
-    label TEXT NOT NULL,
-    hook TEXT NOT NULL,
-    title TEXT NOT NULL,
-    pattern TEXT NOT NULL,
-    account_id TEXT NOT NULL,
-    account_name TEXT NOT NULL,
-    -- NULL: variant A, which is the clip's own video.
-    file_path TEXT,
-    rendered INTEGER NOT NULL DEFAULT 0,
-    post_id INTEGER REFERENCES posts(id) ON DELETE SET NULL,
-    views_per_hour INTEGER
-  );
-  CREATE INDEX hook_variants_test ON hook_variants(test_id);
-  `,
-  `
   -- Live mode: jobs with a higher priority run first; streams recorded in rolling segments.
   ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX jobs_next ON jobs(status, priority DESC, id);
@@ -341,6 +298,56 @@ export const MIGRATIONS: string[] = [
     keys TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  `,
+  `
+  -- Clip polish: the effects turned off per clip, where the reaction peaks in the master, and the
+  -- result of the automatic check on the latest render.
+  ALTER TABLE clips ADD COLUMN effects TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE clips ADD COLUMN peak_sec REAL;
+  ALTER TABLE clips ADD COLUMN quality TEXT;
+  `,
+  `
+  -- Trend radar: today's fastest short videos (titles and numbers only, never media).
+  CREATE TABLE trend_videos (
+    video_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    duration_sec REAL,
+    views INTEGER NOT NULL,
+    published_at TEXT NOT NULL,
+    views_per_hour INTEGER NOT NULL,
+    streamer TEXT,
+    moment_type TEXT NOT NULL,
+    hook_pattern TEXT NOT NULL
+  );
+  -- Hook lab: one A/B test per clip, and its variants (each on its own burner account).
+  CREATE TABLE hook_tests (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id),
+    status TEXT NOT NULL,
+    note TEXT,
+    ends_at TEXT,
+    winner_variant_id INTEGER,
+    main_posts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX hook_tests_clip ON hook_tests(clip_id);
+  CREATE TABLE hook_variants (
+    id INTEGER PRIMARY KEY,
+    test_id INTEGER NOT NULL REFERENCES hook_tests(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    hook TEXT NOT NULL,
+    title TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    -- NULL: variant A, which is the clip's own video.
+    file_path TEXT,
+    rendered INTEGER NOT NULL DEFAULT 0,
+    post_id INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+    views_per_hour INTEGER
+  );
+  CREATE INDEX hook_variants_test ON hook_variants(test_id);
   `,
 ];
 

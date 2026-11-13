@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountCard, Clip, Job, Post, Source, Vod } from "../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { buildDashboard, earningsRows, goals, vodProgress } from "./build.js";
 
 const now = new Date("2026-11-19T15:00:00.000Z"); // a Thursday; the week began Monday 16th
@@ -69,6 +70,8 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   vodId: 1,
   title: `Clip ${clipId}`,
   hook: "",
+  effects: DEFAULT_EFFECTS,
+  quality: null,
   reason: "",
   score: null,
   durationSec: 25,

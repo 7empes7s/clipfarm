@@ -119,7 +119,7 @@ export const CLIP_COPY_SCHEMA = {
 } as const;
 
 const WRITER_SYSTEM = `You write the on-screen hook and the title for ONE short vertical clip (TikTok, Shorts, Reels) cut from a streamer's VOD, and you check it for content that must not be posted.
-- hook: at most 8 words, shown on screen for the first 2 seconds. It gives the context and makes people stay. Do not just repeat the first line.
+- hook: at most 8 words, shown on screen for the first 1.5 seconds. It gives the context and makes people stay. Do not just repeat the first line.
 - title: specific, with the streamer's name and a promise, at most 70 characters.
 - flags: each one is true ONLY when the transcript clearly shows it, otherwise false. Most clips have every flag false.
   spoiler: a story twist, plot reveal or a story character's death is given away.
