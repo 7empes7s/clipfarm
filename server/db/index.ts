@@ -417,19 +417,6 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN variant_hook TEXT;
   `,
   `
-  -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
-  CREATE TABLE scouted_campaigns (
-    id INTEGER PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    url TEXT NOT NULL,
-    facts TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'new',
-    notified INTEGER NOT NULL DEFAULT 0,
-    first_seen_at TEXT NOT NULL,
-    read_at TEXT NOT NULL
-  );
-  `,
-  `
   -- Gemini on the Google credit: every call with its estimated cost, and the thumbnail options of a clip.
   CREATE TABLE google_calls (
     id INTEGER PRIMARY KEY,
@@ -452,6 +439,19 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   CREATE INDEX clip_thumbs_clip ON clip_thumbs(clip_id);
+  `,
+  `
+  -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
+  CREATE TABLE scouted_campaigns (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL,
+    facts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    notified INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL,
+    read_at TEXT NOT NULL
+  );
   `,
 ];
 

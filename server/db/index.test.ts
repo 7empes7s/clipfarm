@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships: all but the scout's and the Google tables' entries, which this PR adds on top. */
-const ALL_OF_MAIN = MIGRATIONS.length - 2;
+/** Everything main ships: all but the last entry, which adds the campaign scout's table. */
+const ALL_OF_MAIN = MIGRATIONS.length - 1;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -52,7 +52,8 @@ describe("migrate", () => {
     for (const sql of MIGRATIONS.slice(0, ALL_OF_MAIN)) db.exec(sql);
     db.pragma(`user_version = ${ALL_OF_MAIN}`);
     // The shipped migrations keep their places: the job queue's worker row, the permission proof columns, Live mode,
-    // Clip polish, Campaign import, the engine runs, the growth lab, the trend radar and the hook lab all come before the scout's table.
+    // Clip polish, Campaign import, the engine runs, the growth lab, the trend radar, the hook lab and the Google tables
+    // all come before the scout's table.
     expect(tables(db)).toContain("queue_worker");
     expect(tables(db)).toContain("live_captures");
     expect(tables(db)).toContain("engine_runs");
@@ -61,7 +62,7 @@ describe("migrate", () => {
     const permissionCols = (db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name);
     expect(permissionCols).toContain("proof_url");
     expect(permissionCols).toContain("campaign_rules");
-    expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants"]));
+    expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants", "google_calls", "clip_thumbs"]));
     expect(tables(db)).not.toContain("scouted_campaigns");
 
     expect(() => migrate(db)).not.toThrow();
