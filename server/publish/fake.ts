@@ -19,8 +19,12 @@ export class FakePostingService implements PostingService {
   /** Every call made, in order, so tests can check nothing was called. */
   calls: ("listAccounts" | "publish" | "refresh" | "accountStats")[] = [];
   published: PublishItem[] = [];
+  /** The video of each publish call, in order. */
+  videos: VideoFile[] = [];
   /** Views every posted post reports on refresh; null reports none. */
   views: number | null = 12_000;
+  /** Views for single posts, by post id; the rest report `views`. */
+  viewsFor = new Map<string, number>();
   failWith: string | null = null;
   /** What refresh reports per post id (a claim, a strike…), as a platform would. */
   flags = new Map<string, PostFlag[]>();
@@ -38,9 +42,10 @@ export class FakePostingService implements PostingService {
     return Promise.resolve(this.accounts);
   }
 
-  publish(_video: VideoFile, items: PublishItem[]): Promise<PublishResult[]> {
+  publish(video: VideoFile, items: PublishItem[]): Promise<PublishResult[]> {
     this.calls.push("publish");
     if (this.failWith) return Promise.reject(new PostingServiceError(this.failWith));
+    this.videos.push(video);
     this.published.push(...items);
     return Promise.resolve(
       items.map((item) => {
@@ -53,7 +58,7 @@ export class FakePostingService implements PostingService {
           status: now ? "posted" : "scheduled",
           url: now ? `https://example.com/${item.account.platform}/${id}` : null,
           error: null,
-          postedAt: now ? new Date().toISOString() : null,
+          postedAt: now ? this.today().toISOString() : null,
         };
       }),
     );
@@ -91,7 +96,10 @@ export class FakePostingService implements PostingService {
           if (metrics) {
             update.metrics = metrics;
             if (typeof metrics.views === "number") update.views = metrics.views;
-          } else if (this.views !== null) update.views = this.views;
+          } else {
+            const views = this.viewsFor.get(p.externalId) ?? this.views;
+            if (views !== null) update.views = views;
+          }
         }
         const flags = this.flags.get(p.externalId);
         if (flags) update.flags = flags;

@@ -395,12 +395,14 @@ export class SourcesRepo {
         .prepare(
           `SELECT file_path AS f FROM clips WHERE source_id = @id UNION SELECT master_path FROM clips WHERE source_id = @id
            UNION SELECT file_path FROM picks WHERE source_id = @id UNION SELECT thumb_path FROM picks WHERE source_id = @id
+           UNION SELECT file_path FROM hook_variants WHERE test_id IN (SELECT id FROM hook_tests WHERE clip_id IN ${ofSource})
            UNION SELECT file_path FROM live_segments WHERE capture_id IN (SELECT id FROM live_captures WHERE source_id = @id)`,
         )
         .all({ id }) as { f: string | null }[]
     ).flatMap((r) => (r.f ? [r.f] : []));
     const removed = this.db.transaction(() => {
       const run = (sql: string) => this.db.prepare(sql).run({ id }).changes;
+      run(`DELETE FROM hook_tests WHERE clip_id IN ${ofSource}`);
       run(`DELETE FROM posts WHERE clip_id IN ${ofSource}`);
       run(`DELETE FROM clip_reviews WHERE clip_id IN ${ofSource}`);
       run(`DELETE FROM jobs WHERE ${jobsOfSource}`);

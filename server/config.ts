@@ -29,6 +29,7 @@ import type { PlatformClient } from "./sources/watchlist/platforms/types.js";
 import { YouTubeClient } from "./sources/watchlist/platforms/youtube.js";
 import { type PlatformStatsSource, YouTubeStats } from "./growth/platformStats.js";
 import { Settings } from "./settings/store.js";
+import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
 
 export interface Config {
   port: number;
@@ -59,6 +60,10 @@ export interface Config {
   watchClients: PlatformClient[];
   /** How often the watchlist is checked. */
   watchPollMinutes: number;
+  /** Where the trend radar reads today's short videos (YouTube, with the key in use right now). */
+  trendSource: () => TrendSource;
+  /** The cloud AI model that tags trends and writes hook variants; null without a key (and in demo mode). */
+  aiChat: () => ChatClient | null;
   /** Platform APIs asked about our posts directly, on top of the posting service. */
   platformStats: PlatformStatsSource[];
   /** What an hour of this server costs (USD), for a clip's compute cost. */
@@ -158,12 +163,20 @@ function liveCloudPicker(settings: Settings): () => Picker | null {
   };
 }
 
-/** The cloud model as a hook writer (the last step of the picks chain); null until a key is set. */
+/** The cloud chat model: small writing jobs (trend tags, hook variants) and the hook writer at the end of the picks chain; null until a key is set. */
 function liveCloudChat(settings: Settings): () => ChatClient | null {
   const cur = live(settings, LLM_SETTINGS, cloudChat);
   return () => {
     const c = cur();
     return c && { name: c.name, complete: (req, signal) => guarded(settings, () => c.complete(req, signal)) };
+  };
+}
+
+function liveTrendSource(settings: Settings): () => TrendSource {
+  const cur = live(settings, ["YOUTUBE_API_KEY"], (env) => new YouTubeTrendSource({ apiKey: env.YOUTUBE_API_KEY }));
+  return () => {
+    const s = cur();
+    return { missing: s.missing, maxUnits: (queries) => s.maxUnits(queries), fetch: (opts) => guarded(settings, () => s.fetch(opts)) };
   };
 }
 
@@ -251,6 +264,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     maxPicks: Number(env.MAX_PICKS || 15),
     renderPreset: env.RENDER_PRESET || "veryfast",
     postingService: fakes ? new FakePostingService() : livePostingService(settings),
+    trendSource: fakes ? () => new FakeTrendSource() : liveTrendSource(settings),
+    aiChat: fakes ? () => null : liveCloudChat(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
     watchClients: fakes
       ? [new FakePlatformClient("twitch"), new FakePlatformClient("kick"), new FakePlatformClient("youtube")]
@@ -288,7 +303,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
 }
 
 /** The cloud chat model for these settings; null without a key. */
-function cloudChat(env: NodeJS.ProcessEnv): OpenAiCompatibleChat | null {
+function cloudChat(env: NodeJS.ProcessEnv): ChatClient | null {
   const apiKey = env.LLM_API_KEY || env.OPENAI_API_KEY;
   if (!apiKey) return null;
   return new OpenAiCompatibleChat({

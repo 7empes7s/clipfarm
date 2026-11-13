@@ -13,8 +13,15 @@ export interface PickInput {
   /** What the creator does not want clipped. */
   bannedContent: string;
   maxPicks: number;
+  /** Title patterns winning today (from the trend radar), offered to whoever writes hooks and titles. */
+  trendHints?: string[];
   /** The video these picks are for, so the engine can note which step did what; `add` on a live stream, where each segment adds to the last. */
   run?: { vodId: number; add?: boolean };
+}
+
+/** One line for a writer's prompt; null when the radar has nothing to offer. */
+export function trendHintLine(input: PickInput): string | null {
+  return input.trendHints?.length ? `Title patterns winning today (use one only when it fits this clip): ${input.trendHints.join("; ")}` : null;
 }
 
 /** What a picker proposes. Times are seconds in the VOD; they get snapped and checked afterwards. */
