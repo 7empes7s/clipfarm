@@ -32,7 +32,7 @@ test("paste a campaign link: the form is filled from the page, gaps say “check
   await expect(form.getByRole("checkbox", { name: "TikTok" })).toBeChecked();
   await expect(form.getByRole("checkbox", { name: "Instagram Reels" })).not.toBeChecked();
   // The demo page names no required link or caption words: those two stay empty and are marked.
-  await expect(form.getByText("check this")).toHaveCount(2);
+  await expect(form.locator(".check-this")).toHaveCount(2);
   await expect(form.getByLabel(/^Links the caption must carry/)).toHaveValue("");
   await expect(form.getByTestId("draft-note")).toContainText("2 things were not on it");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -79,7 +79,7 @@ test("a page that says nothing fills nothing, and one that cannot be read takes 
   await expect(form.getByTestId("draft-note")).toHaveText("Nothing could be read from the page, so every field is yours to fill in.");
   await expect(form.getByRole("textbox", { name: /^Creator/ })).toHaveValue("");
   await expect(form.getByLabel(/^Pay per 1,000 views/)).toHaveValue("");
-  expect(await form.getByText("check this").count()).toBeGreaterThanOrEqual(12);
+  expect(await form.locator(".check-this").count()).toBeGreaterThanOrEqual(12);
   await form.getByRole("button", { name: "Close" }).click();
 
   await card.getByLabel("Paste a campaign link").fill("https://whop.com/blocked-page");
