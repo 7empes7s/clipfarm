@@ -14,7 +14,7 @@ export default defineConfig({
     // The gallery and dashboard again on a laptop screen, after the phone run.
     {
       name: "desktop",
-      testMatch: /(review|stats-dashboard|suggested|postingAccounts|y-design|z-experiment|zz-live)\.spec\.ts/,
+      testMatch: /(review|stats-dashboard|suggested|postingAccounts|x-campaign-import|y-design|z-experiment|zz-live)\.spec\.ts/,
       dependencies: ["phone"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },

@@ -32,6 +32,8 @@ function perm(overrides: Partial<Permission> = {}): Permission {
     proofQuote: null,
     proofCheckedAt: null,
     reviewReason: null,
+    rules: null,
+    campaignCheckedAt: null,
     createdAt: NOW.toISOString(),
     ...overrides,
   };

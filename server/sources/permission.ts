@@ -54,7 +54,9 @@ export function requireActivePermission(
     const onHold = perms.find((p) => notExpired(p, now));
     if (onHold) {
       throw new PermissionError(
-        `The clipping allowance for ${creatorName} needs review: ${onHold.reviewReason} Check it again in Sources.`,
+        onHold.kind === "whop-campaign"
+          ? `The campaign for ${creatorName} is paused: ${onHold.reviewReason} Check it again in Sources, or add a current campaign.`
+          : `The clipping allowance for ${creatorName} needs review: ${onHold.reviewReason} Check it again in Sources.`,
       );
     }
     const latest = perms
