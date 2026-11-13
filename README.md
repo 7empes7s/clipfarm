@@ -139,6 +139,7 @@ env-only.
 | `UPLOAD_POST_API_KEY` | – | Upload-Post API key (instead of Postiz) |
 | `UPLOAD_POST_USER` | – | The Upload-Post profile that holds the accounts |
 | `UPLOAD_POST_PLATFORMS` | `tiktok,youtube,instagram` | Platforms connected on that profile |
+| `IP_ECHO_URL` | `https://ipinfo.io/json` | Where a proxy's exit address is read from when it is tested (answers `{"ip", "country"}`) |
 | `POSTING_SERVICE` | auto | `postiz`, `upload-post` or `none`; only needed when both are set |
 | `POSTING_REFRESH_MINUTES` | `60` | How often post links and views are read (5 or more) |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
@@ -176,7 +177,8 @@ npm run ops -- clips
 
 ## Posting (Postiz or Upload-Post)
 
-clipfarm does not post to each platform itself. A posting service holds the connected accounts
+Except for channels connected in Settings, Accounts (see Account isolation below), clipfarm does
+not post to each platform itself. A posting service holds the connected accounts
 (YouTube, TikTok, Instagram, X) and does the posting and scheduling; clipfarm uploads the
 approved MP4 with its caption and keeps what is ours: the permission gate, spacing, Whop
 submissions and earnings.
@@ -214,6 +216,39 @@ sent, approved, paid. Stats shows posts, views and estimated earnings (views × 
 less Whop's 10% fee on Whop campaigns, counted once a post reaches the campaign's minimum views)
 per campaign and platform, plus cost per approved clip. Whop settles a payout about 10 days after
 it approves a clip; the post shows that date.
+
+## Account isolation (Settings, Accounts)
+
+Platforms can link channels that upload through the same developer app (OAuth client / Cloud
+project) or from the same address. A flag on a burner could then reach the main channels. So
+posting accounts live in **isolation groups**:
+
+- A group has one developer app per platform (YouTube OAuth client, TikTok client key, Meta app)
+  and an optional proxy (`http://`, `https://` or `socks5://`, with a sign-in). It starts with
+  **Main** (no proxy) and **Burners** (proxy required); more can be added, e.g. one per Google
+  account, which also gives each its own YouTube quota.
+- The keys and the proxy address are kept in `DATA_DIR/secrets.json` (mode 600) and are never sent
+  back to the screen; a proxy shows only its host and port, an address only its network (`203.0.113.x`).
+- **Rules the server holds:** a burner posts only through a group whose proxy passed its test; a
+  main account never shares a group with a burner; a burner linked in Postiz or Upload-Post is
+  refused (those post from this server with one shared app).
+- **Connect channel** signs the channel in with the group's own app; the code is traded and tokens
+  are renewed through the group's proxy. Channels connected this way are uploaded to by clipfarm
+  itself (YouTube resumable upload, TikTok Direct Post, Instagram Reels), with one connection pool
+  per group. Main accounts linked in Postiz keep posting through Postiz.
+- **Test** on a proxy makes one call through it to an IP-echo address (`IP_ECHO_URL`, default
+  `https://ipinfo.io/json`) and one straight out: the exit address must differ from the server's
+  own, or the group is blocked with the reason. It is run again before a post once it is a day old.
+- **YouTube quota** is counted per group's app: 10,000 units a Pacific day, 1,600 per upload. When
+  another upload does not fit, the post waits for midnight Pacific time instead of failing.
+- Each post records its group and the address it left from.
+
+Redirect URIs to paste in the apps (and to let through Cloudflare Access, see
+`ops/clipfarm/RUNBOOK.md` step 7): `/oauth/youtube/callback`, `/oauth/tiktok/callback`,
+`/oauth/instagram/callback` on the public address (`CLIPFARM_PUBLIC_URL`).
+
+The proxy: one residential or ISP ("static residential") proxy with a fixed address, from any
+provider, is enough for the burner group. The checklist on the dashboard says what is still open.
 
 ## Campaign import (Whop / Content Rewards)
 

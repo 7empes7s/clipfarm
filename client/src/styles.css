@@ -741,8 +741,18 @@ textarea {
 }
 .form {
   display: grid;
+  /* minmax(0, …): a long address in a hint wraps instead of pushing the fields past the screen edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s4);
   padding-top: var(--s4);
+}
+.form code {
+  overflow-wrap: anywhere;
+}
+.form input,
+.form button {
+  min-width: 0;
+  max-width: 100%;
 }
 .form label,
 .form legend {
@@ -2634,6 +2644,9 @@ button.danger {
 }
 .setup-text {
   display: grid;
+  /* A line may hold a web address: it wraps instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   gap: 2px;
 }
 .setup-label {
@@ -3294,6 +3307,72 @@ button.danger {
 }
 .whop-steps .done {
   color: var(--ok);
+}
+
+/* Settings, Accounts: isolation groups. The one loud thing on a group is where its uploads leave from. */
+.groups {
+  margin-top: var(--s6);
+}
+.groups .card {
+  scroll-margin-top: var(--s4);
+}
+.exit {
+  display: grid;
+  gap: var(--s1);
+  margin: 0 0 var(--s3);
+  padding: var(--s3);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}
+.exit-ok {
+  border-left-color: var(--ok);
+}
+.exit strong {
+  font-family: var(--font-head);
+  font-size: 1.375rem;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.exit-label,
+.exit-via {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.group-part {
+  margin: var(--s4) 0 var(--s2);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+  font-size: 0.9375rem;
+}
+.group-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s3);
+}
+.group-rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s3);
+}
+.group-row-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
+}
+.group-rows .actions {
+  margin: 0;
+}
+.group-rows select {
+  min-height: 44px;
+  max-width: 100%;
 }
 
 /* Less motion for those who ask for it: no shimmer, pulse, fades or slides. */

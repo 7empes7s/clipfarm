@@ -132,13 +132,25 @@ export class HookLab {
     return this.deps.db.prepare("SELECT * FROM hook_variants WHERE test_id = ? ORDER BY id").all(testId) as VariantRow[];
   }
 
-  /** Ends a test and deletes the variant videos: they were uploaded when they were posted. */
+  /** Ends a test and deletes its variant videos, except those an upload is still waiting to send. */
   private end(testId: number, status: "done" | "stopped", note: string, winnerId: number | null = null, mainPosts = 0): void {
     this.deps.db
       .prepare("UPDATE hook_tests SET status = ?, note = ?, winner_variant_id = ?, main_posts = ? WHERE id = ?")
       .run(status, note, winnerId, mainPosts, testId);
-    for (const v of this.variants(testId)) if (v.file_path) rmSync(v.file_path, { force: true });
-    this.deps.db.prepare("UPDATE hook_variants SET file_path = NULL WHERE test_id = ?").run(testId);
+    this.tidy();
+  }
+
+  /** Deletes the variant videos of ended tests once no waiting upload needs them. */
+  private tidy(): void {
+    const { db, posts } = this.deps;
+    const left = db
+      .prepare("SELECT v.id, v.file_path FROM hook_variants v JOIN hook_tests t ON t.id = v.test_id WHERE t.status IN ('done', 'stopped') AND v.file_path IS NOT NULL")
+      .all() as { id: number; file_path: string }[];
+    for (const v of left) {
+      if (posts.waitsForFile(v.file_path)) continue;
+      rmSync(v.file_path, { force: true });
+      db.prepare("UPDATE hook_variants SET file_path = NULL WHERE id = ?").run(v.id);
+    }
   }
 
   /** The variants of a test that still need their own video (A is the clip's own). */
@@ -168,6 +180,7 @@ export class HookLab {
     if (this.busy || !this.settings().on) return;
     this.busy = true;
     try {
+      this.tidy();
       await this.start();
       await this.send();
       await this.finish();

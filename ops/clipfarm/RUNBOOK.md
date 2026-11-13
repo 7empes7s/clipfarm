@@ -245,6 +245,7 @@ Never add a policy with Include **Everyone** and Action **Allow** to this applic
 | `/`, `/assets/*`, `/sw.js` | No | The app itself. The service worker is fetched with your sign-in cookie, so it works behind Access. |
 | `/api/*` (clips, approve, post, videos) | Never | This is what Access protects. |
 | `/api/health` | No | Only checked on the box (`deploy.sh`, `clipfarm:check`), which does not go through Cloudflare. |
+| `/oauth/youtube/callback`, `/oauth/tiktok/callback`, `/oauth/instagram/callback` | **Yes** (below) | Where YouTube, TikTok and Meta send the browser back after "Connect channel" in Settings, Accounts. These three exact paths only. The server acts on one only when it carries a one-time code it handed out itself minutes before, and answers with nothing but a redirect into the app. |
 | Webhooks | None exist | clipfarm calls Postiz and the platforms; nothing calls clipfarm from outside. If a webhook is added later, it needs its own secret and its own bypass, in that issue. |
 | `/manifest.webmanifest`, `/icons/*` | No, unless installing fails (below) | The page asks for the manifest with your sign-in cookie, so it normally works behind Access. |
 
@@ -256,6 +257,22 @@ private (a name, colours and the icon), and the server keeps exactly these paths
 2. Add two public hostnames: `clip.techinsiderbytes.com` with Path `manifest.webmanifest`, and
    `clip.techinsiderbytes.com` with Path `icons/*`.
 3. Policy: Action **Bypass**, Include **Everyone**. Save.
+
+For "Connect channel" (Settings, Accounts: channels clipfarm uploads to itself, each group with
+its own developer app and proxy), add one more application the same way:
+
+1. **Access** → **Applications** → **Add an application** → **Self-hosted**, name `clipfarm oauth callbacks`.
+2. Add three public hostnames, all `clip.techinsiderbytes.com`, with Path `oauth/youtube/callback`,
+   `oauth/tiktok/callback` and `oauth/instagram/callback`.
+3. Policy: Action **Bypass**, Include **Everyone**. Save.
+
+The same three addresses are the redirect URIs to paste into each group's developer apps:
+
+| App | Redirect URI |
+|---|---|
+| Google Cloud project (YouTube Data API v3, OAuth client of type Web application) | `https://clip.techinsiderbytes.com/oauth/youtube/callback` |
+| TikTok developer app (Login Kit + Content Posting API) | `https://clip.techinsiderbytes.com/oauth/tiktok/callback` |
+| Meta app (Facebook Login + Instagram content publishing) | `https://clip.techinsiderbytes.com/oauth/instagram/callback` |
 
 Don't bypass anything else. In particular not `/api/*`: the server would refuse it anyway
 (`CLIPFARM_REQUIRE_ACCESS=1` turns away every request without a sign-in signed by Access).

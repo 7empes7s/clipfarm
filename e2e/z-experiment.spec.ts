@@ -44,6 +44,9 @@ test("experiment: a creator without proof, a badge on the clip, burner accounts 
 
   const { accounts } = (await (await request.get("/api/posting")).json()) as { accounts: ({ id: string } & Record<string, unknown>)[] };
   const x = accounts.find((a) => a.id === "fake-x")!;
+  // Burners post only through a proxy that passed its test (a stand-in here).
+  expect((await request.put("/api/groups/2/proxy", { data: { url: "http://user:e2e-proxy-pass@proxy.example:8080" } })).status()).toBe(200);
+  expect((await request.post("/api/groups/2/proxy/test")).status()).toBe(200);
   try {
     // Its own pace with no gap, so the desktop run's post also goes out at once instead of queuing behind the phone run's.
     const burner = { ...x, role: "burner", enabled: true, maxPerDay: 50, minGapMinutes: 0 };

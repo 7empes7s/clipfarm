@@ -11,12 +11,23 @@ const CERTS_RETRY_MS = 60_000;
 /** Clock difference allowed between Cloudflare and this box. */
 const CLOCK_SKEW_SEC = 60;
 
+/** The Access bypass paths: exactly these, nothing under them. */
+export const OAUTH_CALLBACK_PATHS = ["/oauth/youtube/callback", "/oauth/tiktok/callback", "/oauth/instagram/callback"];
+
 /**
  * Paths that answer without the header: the health check (deploy.sh and clipfarm:check call it on
  * the box) and the files a phone fetches to install the app, which hold nothing private.
  */
 function isOpenPath(path: string): boolean {
-  return path === "/api/health" || path === "/manifest.webmanifest" || /^\/icons\/[\w-]+\.png$/.test(path);
+  return (
+    path === "/api/health" ||
+    path === "/manifest.webmanifest" ||
+    /^\/icons\/[\w-]+\.png$/.test(path) ||
+    // Where YouTube, TikTok and Meta send the browser back after "Connect channel". Cloudflare
+    // Access lets these three through (the sign-in pages cannot carry its token); the handler
+    // only acts on a one-time state it handed out itself.
+    OAUTH_CALLBACK_PATHS.includes(path)
+  );
 }
 
 /** Says whether a Cf-Access-Jwt-Assertion token is a real sign-in for this app. Never throws. */

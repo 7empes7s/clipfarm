@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import type { IntegrationId, IntegrationStatus, SettingField, SettingsInfo } from "../../shared/types";
+import { AccountsSettings } from "./AccountsSettings";
 import { api } from "./api";
 import { shortDate } from "./format";
 import { AutoModeCard } from "./ScoutCard";
@@ -210,6 +211,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
           ))}
         </ul>
       )}
+      <AccountsSettings focus={focus === "accounts"} />
       <AutoModeCard />
       <div className="card look" data-testid="settings-look">
         <h3 id="look-title">Look</h3>

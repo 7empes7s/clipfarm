@@ -1,4 +1,5 @@
-import type { IntegrationId, IntegrationStatus, SetupChecklist, SetupItem } from "../../shared/types.js";
+import type { IntegrationId, IntegrationStatus, IsolationGroup, SetupChecklist, SetupItem } from "../../shared/types.js";
+import { BURNERS_GROUP_ID } from "../../shared/types.js";
 
 export interface ChecklistInput {
   integrations: IntegrationStatus[];
@@ -8,6 +9,24 @@ export interface ChecklistInput {
   activePermissions: number;
   clips: number;
   posted: number;
+  /** The isolation groups (Settings, Accounts); left out where the server has none. */
+  groups?: IsolationGroup[];
+}
+
+/** Burners kept apart: what to buy, what to paste and where, until the burner group can post. */
+function isolationItem(groups: IsolationGroup[]): SetupItem | null {
+  const burners = groups.find((g) => g.id === BURNERS_GROUP_ID);
+  if (!burners) return null;
+  const app = burners.apps.some((a) => a.set);
+  const uris = burners.apps.map((a) => a.redirectUri).join(", ");
+  const done = burners.blocked === null && app;
+  let line: string;
+  if (done) line = `Burners leave from their own address (${burners.proxy.check?.exitIp ?? "tested"}) with their own apps.`;
+  else if (!burners.proxy.set) {
+    line = `Buy one residential or ISP proxy with a fixed address (any provider) and paste it under Burners, then tap Test. Each group also needs its own developer apps; the redirect addresses to paste in them: ${uris}.`;
+  } else if (burners.blocked) line = `Burners: ${burners.blocked}`;
+  else line = `The burners' proxy works. Now paste the keys of the burners' own YouTube, TikTok or Instagram app and tap Connect channel. Redirect addresses: ${uris}.`;
+  return { id: "isolation", label: "Burner accounts kept apart", done, line, href: "#settings/accounts", action: "Open Accounts" };
 }
 
 /** What still stands between a fresh install and the first posted clip, in the order to do it. */
@@ -22,6 +41,7 @@ export function buildChecklist(input: ChecklistInput): SetupChecklist {
     .filter((id) => !ready(id))
     .map((id) => `${byId.get(id)?.label ?? id} (${byId.get(id)?.configured ? "not tested" : "not set"})`);
 
+  const isolation = input.groups ? isolationItem(input.groups) : null;
   const items: SetupItem[] = [
     {
       id: "keys",
@@ -44,6 +64,7 @@ export function buildChecklist(input: ChecklistInput): SetupChecklist {
       href: input.postingAccounts === null ? "#settings/postiz" : "#dashboard/accounts",
       action: input.postingAccounts === null ? "How to link one" : "Open accounts",
     },
+    ...(isolation ? [isolation] : []),
     {
       id: "permission",
       label: "A creator who said yes",

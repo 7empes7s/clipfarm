@@ -19,6 +19,9 @@ import type {
   Platform,
   RejectReason,
   IntegrationId,
+  IsolationInfo,
+  DirectPlatform,
+  ProxyCheck,
   SettingsInfo,
   SetupChecklist,
   Post,
@@ -131,6 +134,18 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  groups: () => call<IsolationInfo>("/api/groups"),
+  addGroup: (name: string, kind: string) => call<IsolationInfo>("/api/groups", { method: "POST", body: JSON.stringify({ name, kind }) }),
+  removeGroup: (id: number) => call<IsolationInfo>(`/api/groups/${id}`, { method: "DELETE" }),
+  saveGroupApp: (id: number, platform: DirectPlatform, keys: { id: string; secret: string }) =>
+    call<IsolationInfo>(`/api/groups/${id}/apps/${platform}`, { method: "PUT", body: JSON.stringify(keys) }),
+  removeGroupApp: (id: number, platform: DirectPlatform) => call<IsolationInfo>(`/api/groups/${id}/apps/${platform}`, { method: "DELETE" }),
+  saveGroupProxy: (id: number, url: string) => call<IsolationInfo>(`/api/groups/${id}/proxy`, { method: "PUT", body: JSON.stringify({ url }) }),
+  removeGroupProxy: (id: number) => call<IsolationInfo>(`/api/groups/${id}/proxy`, { method: "DELETE" }),
+  testGroupProxy: (id: number) => call<IsolationInfo & { check: ProxyCheck }>(`/api/groups/${id}/proxy/test`, { method: "POST" }),
+  connectChannel: (id: number, platform: DirectPlatform) => call<{ url: string }>(`/api/groups/${id}/connect/${platform}`, { method: "POST" }),
+  moveAccount: (accountId: string, groupId: number) =>
+    call<IsolationInfo>(`/api/accounts/${encodeURIComponent(accountId)}/group`, { method: "PUT", body: JSON.stringify({ groupId }) }),
   trends: () => call<TrendReport>("/api/trends"),
   refreshTrends: () => call<TrendReport>("/api/trends/refresh", { method: "POST" }),
   saveTrendWeight: (weight: number) => call<TrendReport>("/api/trends/weight", { method: "PUT", body: JSON.stringify({ weight }) }),

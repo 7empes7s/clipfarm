@@ -122,6 +122,7 @@ function FlagRow({ post, onChange }: { post: Post; onChange: () => Promise<void>
         <span>
           {post.accountName}, {PLATFORM_LABELS[post.platform]}
         </span>
+        {post.groupName && <span>Group {post.groupName}{post.exitIp && `, left from ${post.exitIp}`}</span>}
         <span>{post.views === null ? "No views yet" : `${compact(post.views)} views`}</span>
         {post.url && (
           <a href={post.url} target="_blank" rel="noreferrer">

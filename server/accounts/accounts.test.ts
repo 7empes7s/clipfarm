@@ -221,6 +221,8 @@ describe("accountsAllowedFor", () => {
     ...DEFAULTS,
     pace: { maxPerDay: 3, minGapMinutes: 90 },
     pausedReason: null,
+    groupId: 1,
+    direct: false,
     ...o,
   });
   const permission = { id: 1, kind: "whop-campaign", allowedPlatforms: ["tiktok", "youtube"] } as Permission;

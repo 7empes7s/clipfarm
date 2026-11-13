@@ -15,6 +15,7 @@ export const FAKE_ACCOUNTS: PostingAccount[] = [
 export class FakePostingService implements PostingService {
   readonly name = "fake";
   readonly label = "Test posting service";
+  readonly isolates = true;
   dailyCaps: Partial<Record<Platform, number>> = {};
   /** Every call made, in order, so tests can check nothing was called. */
   calls: ("listAccounts" | "publish" | "refresh" | "accountStats")[] = [];

@@ -11,6 +11,7 @@ import type {
 import { WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types.js";
 import type { PostMetrics, StatPoint } from "../../shared/growth.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { maskIp } from "../isolation/rules.js";
 import { mergeMetrics, offsetFor, parseMetrics } from "../growth/series.js";
 import { estimateEarnings } from "./earnings.js";
 import type { PostUpdate, TrackedPost } from "./types.js";
@@ -49,16 +50,21 @@ interface PostRow {
   removal_at: string | null;
   strike_at: string | null;
   kind: string;
+  group_name: string | null;
+  exit_ip: string | null;
+  note: string | null;
 }
 
 const FLAG_COLUMNS: Record<PostFlag, string> = { claim: "claim_at", removal: "removal_at", strike: "strike_at" };
 
 const SELECT = `
-  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.proof_url, m.cpm_rate_usd, m.min_views, m.kind
+  SELECT p.*, c.title AS clip_title, c.source_id, s.creator_name, m.campaign_url, m.proof_url, m.cpm_rate_usd, m.min_views, m.kind,
+    g.name AS group_name
   FROM posts p
   JOIN clips c ON c.id = p.clip_id
   JOIN sources s ON s.id = c.source_id
-  JOIN permissions m ON m.id = p.permission_id`;
+  JOIN permissions m ON m.id = p.permission_id
+  LEFT JOIN isolation_groups g ON g.id = p.group_id`;
 
 function toPost(r: PostRow): Post {
   return {
@@ -89,6 +95,10 @@ function toPost(r: PostRow): Post {
     whopPayoutAt: r.whop_approved_at ? new Date(new Date(r.whop_approved_at).getTime() + WHOP_HOLD_DAYS * 86_400_000).toISOString() : null,
     experiment: r.kind === "experiment",
     flags: { claim: r.claim_at, removal: r.removal_at, strike: r.strike_at },
+    groupName: r.group_name,
+    // The full address stays on the server: the screen gets its network.
+    exitIp: maskIp(r.exit_ip),
+    note: r.note,
     estimatedEarningsUsd: estimateEarnings(r.views, r.cpm_rate_usd, r.min_views, r.kind === "whop-campaign" ? WHOP_FEE : 0),
   };
 }
@@ -107,8 +117,14 @@ export interface NewPost {
   caption: string;
   scheduledAt: string;
   postedAt: string | null;
+  /** The account's isolation group, the address the post left from, and a note on a waiting post. */
+  groupId?: number | null;
+  exitIp?: string | null;
+  note?: string | null;
   /** The title and hook it goes out with, when they are not the clip's own (a hook variant). */
   variant?: { title: string; hook: string };
+  /** The variant's own video, kept with an upload that clipfarm sends itself (now or later). */
+  variantFile?: string | null;
 }
 
 export class PostsRepo {
@@ -121,7 +137,8 @@ export class PostsRepo {
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO posts (clip_id, permission_id, platform, account_id, account_name, service, external_id, status,
-           url, error, caption, scheduled_at, posted_at, created_at, variant_title, variant_hook) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           url, error, caption, scheduled_at, posted_at, created_at, group_id, exit_ip, note, variant_title, variant_hook, variant_file)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         p.clipId,
@@ -138,10 +155,37 @@ export class PostsRepo {
         p.scheduledAt,
         p.postedAt,
         this.now().toISOString(),
+        p.groupId ?? null,
+        p.exitIp ?? null,
+        p.note ?? null,
         p.variant?.title ?? null,
         p.variant?.hook ?? null,
+        p.variantFile ?? null,
       );
     return this.get(Number(lastInsertRowid));
+  }
+
+  /** Posts clipfarm uploads itself that are due: waiting, and their time has come. */
+  dueDirect(): number[] {
+    return (
+      this.db
+        .prepare("SELECT id FROM posts WHERE service = 'direct' AND status = 'scheduled' AND external_id IS NULL AND scheduled_at <= ? ORDER BY scheduled_at, id")
+        .all(this.now().toISOString()) as { id: number }[]
+    ).map((r) => r.id);
+  }
+
+  /** How a direct upload ended. */
+  settle(id: number, r: { status: PostStatus; externalId?: string | null; url?: string | null; error: string | null; exitIp?: string | null }): Post {
+    this.db
+      .prepare("UPDATE posts SET status = ?, external_id = ?, url = ?, error = ?, exit_ip = ?, note = NULL, posted_at = ? WHERE id = ?")
+      .run(r.status, r.externalId ?? null, r.url ?? null, r.error, r.exitIp ?? null, r.status === "posted" ? this.now().toISOString() : null, id);
+    return this.get(id);
+  }
+
+  /** Moves a waiting direct upload to a later time, with the reason. */
+  postpone(id: number, at: Date, note: string): Post {
+    this.db.prepare("UPDATE posts SET scheduled_at = ?, note = ? WHERE id = ?").run(at.toISOString(), note, id);
+    return this.get(id);
   }
 
   /** The hook variant a post went out as; null when it went out with the clip's own title and hook. */
@@ -150,6 +194,16 @@ export class PostsRepo {
       | { title: string | null; hook: string | null }
       | undefined;
     return row?.title != null && row.hook != null ? { title: row.title, hook: row.hook } : null;
+  }
+
+  /** The variant video a post uploads; null when it uploads the clip's own. */
+  variantFile(id: number): string | null {
+    return (this.db.prepare("SELECT variant_file FROM posts WHERE id = ?").pluck().get(id) as string | null | undefined) ?? null;
+  }
+
+  /** Whether an upload that has not gone out yet still needs this variant video. */
+  waitsForFile(file: string): boolean {
+    return this.db.prepare("SELECT 1 FROM posts WHERE variant_file = ? AND status = 'scheduled' AND external_id IS NULL").get(file) !== undefined;
   }
 
   get(id: number): Post {

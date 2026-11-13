@@ -21,9 +21,11 @@ import { noAccountReason, routingBlock, routingBlockText } from "../../shared/ro
 import { AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
+import type { Isolation } from "../isolation/isolation.js";
 import { isActive, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildCaption } from "./caption.js";
+import { type DirectPoster, QUOTA_NOTE } from "./direct/direct.js";
 import { campaignProblems, clipTranscript, problemsLine } from "./compliance.js";
 import { assertCanPost } from "./gate.js";
 import type { PostsRepo } from "./repo.js";
@@ -67,6 +69,12 @@ export interface PublisherDeps {
   service: PostingService;
   /** Our settings per posting account; made over the posts database when left out. */
   accounts?: AccountsRepo;
+  /**
+   * Isolation groups: burners post only through a group with a working proxy, and channels connected
+   * here upload with their group's app. The server always passes it; left out (tests of other rules),
+   * there are no groups and every account posts through the service.
+   */
+  isolation?: Isolation;
   /** The stream a clip was cut from, to match it to an account's niche. */
   vodTitle?: (vodId: number) => string | null;
   /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
@@ -97,6 +105,7 @@ export class Publisher {
   private synced = false;
   readonly accounts: AccountsRepo;
   lastRefreshError: string | null = null;
+  private direct: DirectPoster | null = null;
 
   constructor(private deps: PublisherDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -105,6 +114,41 @@ export class Publisher {
 
   get service(): PostingService {
     return this.deps.service;
+  }
+
+  /** Uploads for channels connected in clipfarm itself (it needs our account list, so it is made after us). */
+  useDirect(direct: DirectPoster): void {
+    this.direct = direct;
+  }
+
+  /** Why the way this account posts would tie it to others, whatever its group's proxy says. */
+  private routeBlock(account: ChannelAccount): string | null {
+    const { isolation, service } = this.deps;
+    if (!isolation) return null;
+    if (account.direct) return this.direct ? this.direct.problem(account, isolation.get(account.groupId)) : "Direct uploads are not set up on this server.";
+    if (account.role === "burner" && !service.isolates) {
+      return `It is a burner linked in ${service.label}, which posts from this server's own address with one shared app. Connect it in Settings, Accounts instead.`;
+    }
+    return null;
+  }
+
+  /** The proxy only matters to accounts that use it: burners, and channels that upload through their group. */
+  private usesGroup(account: ChannelAccount): boolean {
+    return this.deps.isolation !== undefined && (account.role === "burner" || account.direct);
+  }
+
+  /** Why isolation keeps this account from posting, from the last proxy test. */
+  private isolationBlock(account: ChannelAccount): string | null {
+    const route = this.routeBlock(account);
+    if (route || !this.usesGroup(account)) return route;
+    return this.deps.isolation!.problem(this.deps.isolation!.get(account.groupId));
+  }
+
+  /** The same before a post goes out: a proxy test that is a day old is run again first. */
+  private async isolationBlockNow(account: ChannelAccount): Promise<string | null> {
+    const route = this.routeBlock(account);
+    if (route || !this.usesGroup(account)) return route;
+    return this.deps.isolation!.freshProblem(this.deps.isolation!.get(account.groupId));
   }
 
   /** Reads the connected accounts from the posting service into our list. */
@@ -198,14 +242,16 @@ export class Publisher {
     // An experiment clip is offered burner accounts only: main accounts are not in its list at all.
     return accounts.filter((a) => !experiment || a.role === "burner").map((account) => {
       const blocked = account.disabled
-        ? `Disconnected in ${service.label}`
+        ? account.direct
+          ? "Its sign-in ran out: connect it again in Settings, Accounts"
+          : `Disconnected in ${service.label}`
         : !account.enabled
           ? account.pausedReason
             ? "Paused after a strike"
             : "Switched off"
           : account.health === "banned"
             ? "Marked banned, so it is skipped"
-            : (routed(account) ?? broken(account));
+            : (routed(account) ?? broken(account) ?? this.isolationBlock(account));
       return {
         account,
         canPost: blocked === null,
@@ -247,15 +293,47 @@ export class Publisher {
    * the campaign's rules are checked on the variant's words.
    */
   async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant): Promise<PostOutcome> {
-    const { clips, posts, service } = this.deps;
+    const { clips, posts, service, isolation } = this.deps;
     const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant);
-    const results = await service.publish(
-      { path: variant?.filePath ?? clips.filePath(clip.id), fileName: `${slug(variant?.title ?? clip.title)}.mp4` },
-      planned.map((p) => p.item),
-    );
-    const made = planned.map(({ item, permission, at }) => {
+    // Channels connected here are uploaded by clipfarm, through their group; the rest go to the service.
+    const viaService = planned.filter((p) => !p.account.direct);
+    const results =
+      viaService.length > 0
+        ? await service.publish(
+            { path: variant?.filePath ?? clips.filePath(clip.id), fileName: `${slug(variant?.title ?? clip.title)}.mp4` },
+            viaService.map((p) => p.item),
+          )
+        : [];
+    const made: Post[] = [];
+    for (const { item, account, permission, at, note } of planned) {
+      const groupId = isolation ? account.groupId : null;
+      if (account.direct) {
+        const waiting = posts.insert({
+          clipId: clip.id,
+          permissionId: permission.id,
+          platform: item.account.platform,
+          accountId: item.account.id,
+          accountName: item.account.name,
+          service: "direct",
+          externalId: null,
+          status: "scheduled",
+          url: null,
+          error: null,
+          caption: item.caption,
+          scheduledAt: at.toISOString(),
+          postedAt: null,
+          groupId,
+          note,
+          variant: variant && { title: variant.title, hook: variant.hook },
+          // Kept with the post: it may go out later (a set time, a busy account, a full quota).
+          variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
+        });
+        // "Post now" uploads at once; a later time is picked up by the timer when it is due.
+        made.push(item.when === null && this.direct ? await this.direct.send(waiting.id) : waiting);
+        continue;
+      }
       const r = results.find((x) => x.accountId === item.account.id);
-      return posts.insert({
+      made.push(posts.insert({
         clipId: clip.id,
         permissionId: permission.id,
         platform: item.account.platform,
@@ -269,9 +347,11 @@ export class Publisher {
         caption: item.caption,
         scheduledAt: at.toISOString(),
         postedAt: r?.postedAt ?? null,
+        groupId,
+        note,
         variant: variant && { title: variant.title, hook: variant.hook },
-      });
-    });
+      }));
+    }
     return { posts: made, skipped };
   }
 
@@ -314,6 +394,7 @@ export class Publisher {
     const picked = accountIds.map((id) => {
       const account = known.find((a) => a.id === id);
       if (!account) throw new ValidationError("One of the accounts is no longer connected. Reload and pick again.");
+      if (account.disabled && account.direct) throw new ValidationError(`${account.name}'s sign-in ran out. Connect it again in Settings, Accounts.`);
       if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
       return account;
     });
@@ -359,10 +440,18 @@ export class Publisher {
       return why === null;
     });
     if (allowed.length === 0) throw new ValidationError(`${skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
+    // Isolation: a burner posts only through a group whose proxy works, and never through a shared app.
+    const cleared: ChannelAccount[] = [];
+    for (const account of allowed) {
+      const why = await this.isolationBlockNow(account);
+      if (why) skipped.push({ accountId: account.id, accountName: account.name, reason: `${account.name} cannot post: ${why}` });
+      else cleared.push(account);
+    }
+    if (cleared.length === 0) throw new ValidationError(`${skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
 
     for (const platform of PLATFORMS) {
       const cap = service.dailyCaps[platform];
-      const wanted = allowed.filter((a) => a.platform === platform).length;
+      const wanted = cleared.filter((a) => a.platform === platform && !a.direct).length;
       if (cap === undefined || wanted === 0) continue;
       const used = posts.countToday(service.name, platform);
       if (used + wanted > cap) {
@@ -375,9 +464,23 @@ export class Publisher {
     const wantedAt = when ?? now;
     // Where this clip already is, or is about to be: each account keeps its distance from the others.
     const clipTimes = posts.clipTimes(clip.id);
-    const planned = allowed.map((account) => {
+    const { isolation } = this.deps;
+    // YouTube uploads being planned in this go, per group and Pacific day.
+    const reserved = new Map<string, number>();
+    const planned = cleared.map((account) => {
       const elsewhere = clipTimes.filter((c) => c.accountId !== account.id).map((c) => c.at);
-      const at = nextFreeSlot(posts.takenTimes(account.id), wantedAt, account.pace, elsewhere);
+      const taken = posts.takenTimes(account.id);
+      let at = nextFreeSlot(taken, wantedAt, account.pace, elsewhere);
+      let note: string | null = null;
+      // A direct YouTube upload costs the group's app 1,600 of its daily units: when the day is
+      // full, the post waits for the reset instead of failing.
+      if (isolation && account.direct && account.platform === "youtube") {
+        for (let open = isolation.uploadSlot(account.groupId, at, reserved); open.getTime() !== at.getTime(); open = isolation.uploadSlot(account.groupId, at, reserved)) {
+          at = nextFreeSlot(taken, open, account.pace, elsewhere);
+          note = QUOTA_NOTE;
+        }
+        isolation.reserveUpload(reserved, account.groupId, at);
+      }
       clipTimes.push({ accountId: account.id, at });
       // The covering permission must still be in force when the post goes out.
       const permission = routedAt(account, at);
@@ -389,7 +492,7 @@ export class Publisher {
         when: when === null && at.getTime() === now.getTime() ? null : at,
         paidPromotion: permission.kind === "whop-campaign",
       };
-      return { item, permission, at };
+      return { item, account, permission, at, note };
     });
 
     return { clip, planned, skipped };

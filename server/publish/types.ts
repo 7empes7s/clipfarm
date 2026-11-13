@@ -65,6 +65,12 @@ export interface VideoFile {
 export interface PostingService {
   readonly name: PostingServiceName;
   readonly label: string;
+  /**
+   * True when the service keeps each account's posts to that account's isolation group. Postiz and
+   * Upload-Post cannot (one address and one app for everyone), so a burner linked there is refused.
+   * The stand-in for tests and demos sends nothing anywhere, so it counts.
+   */
+  readonly isolates?: boolean;
   /** Posts per platform per day the service allows; empty when it has none. */
   readonly dailyCaps: Partial<Record<Platform, number>>;
   listAccounts(): Promise<PostingAccount[]>;

@@ -95,6 +95,7 @@ export function StatsTab() {
                 <span>
                   {p.accountName} · {PLATFORM_LABELS[p.platform]}
                 </span>
+                {p.groupName && <span>Group {p.groupName}{p.exitIp && `, left from ${p.exitIp}`}</span>}
                 <span>{p.views === null ? "No views yet" : `${p.views.toLocaleString()} views`}</span>
                 <span>{usd(p.estimatedEarningsUsd)} estimated</span>
               </div>

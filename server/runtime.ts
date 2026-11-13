@@ -8,6 +8,7 @@ import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { engineSetupHandler } from "./engine/setup.js";
 import { proxyMaker, videoReranker } from "./google/rerank.js";
 import { THUMBS_JOB, thumbsHandler, ThumbsRepo } from "./google/thumbs.js";
+import { Isolation } from "./isolation/isolation.js";
 import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
 import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
@@ -22,6 +23,7 @@ import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
 import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
 import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
+import { DirectPoster } from "./publish/direct/direct.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
 import { PoliteFetcher } from "./scout/polite.js";
@@ -43,6 +45,8 @@ export interface Runtime {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  isolation: Isolation;
+  direct: DirectPoster;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
   scout: Scout;
@@ -71,14 +75,18 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const clips = new ClipsRepo(db);
   const posts = new PostsRepo(db);
   const thumbs = new ThumbsRepo(db);
+  const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
   const publisher = new Publisher({
     sources,
     clips,
     posts,
     service: config.postingService,
+    isolation,
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
   });
+  const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
+  publisher.useDirect(direct);
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const watchRepo = new WatchlistRepo(db, sources);
@@ -184,6 +192,8 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     clips,
     posts,
     publisher,
+    isolation,
+    direct,
     accountStats,
     growth,
     scout,

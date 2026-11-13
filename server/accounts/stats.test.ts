@@ -64,6 +64,9 @@ const post = (o: Partial<Post>): Post => ({
   whopPayoutAt: null,
   experiment: false,
   flags: { claim: null, removal: null, strike: null },
+  groupName: null,
+  exitIp: null,
+  note: null,
   estimatedEarningsUsd: 0,
   ...o,
 });

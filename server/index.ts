@@ -23,6 +23,8 @@ const {
   clips,
   posts,
   publisher,
+  isolation,
+  direct,
   accountStats,
   growth,
   scout,
@@ -92,6 +94,7 @@ const app = createApp({
   engine: { engine: config.engine, fake: config.fakeEngine },
   google: { ai: config.google, thumbs, auto: !config.fakes },
   settings: { store: settings, demo: config.fakes },
+  isolation: { isolation, direct, demo: config.fakes },
   trends: radar,
   hookLab,
   growth,
@@ -122,6 +125,11 @@ const refreshTimer = setInterval(() => {
   background();
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
+// Posts clipfarm uploads itself go out when they are due; every proxy is tested again once a day.
+const directTimer = setInterval(() => void direct.runDue(), 60_000);
+directTimer.unref();
+const proxyTimer = setInterval(() => void isolation.recheckStale(), 3600_000);
+proxyTimer.unref();
 // Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.
 const growthRound = () => {
   void growth
@@ -151,6 +159,8 @@ function shutdown() {
   // A running job is aborted and put back in the queue for the next start.
   queue.stop();
   clearInterval(refreshTimer);
+  clearInterval(directTimer);
+  clearInterval(proxyTimer);
   clearInterval(growthTimer);
   poller.stop();
   live.stop();
