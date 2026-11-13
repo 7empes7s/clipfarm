@@ -57,7 +57,7 @@ function amount(digits: string, suffix: string | undefined): number {
 const MONEY = /\$\s?(\d[\d,]*(?:\.\d+)?)\s?([km])?\b/i;
 const COUNT = /(\d[\d,]*(?:\.\d+)?)\s?([km])?\b/i;
 
-function money(s: string): number | null {
+export function money(s: string): number | null {
   const m = MONEY.exec(s);
   return m ? amount(m[1]!, m[2]) : null;
 }

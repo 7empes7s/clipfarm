@@ -41,6 +41,7 @@ import type { ClipThumbs, GoogleSettings, GoogleStatus } from "../../shared/goog
 import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/trends";
 
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
+import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -145,6 +146,12 @@ export const api = {
   recommendation: (id: number, action: "apply" | "undo" | "dismiss") =>
     call<GrowthInfo>(`/api/growth/recommendations/${id}/${action}`, { method: "POST" }),
   setDigestZone: (zone: string) => call<GrowthInfo>("/api/growth/digest-zone", { method: "PUT", body: JSON.stringify({ zone }) }),
+  scout: () => call<ScoutInfo>("/api/scout"),
+  scoutNow: () => call<ScoutInfo>("/api/scout/run", { method: "POST" }),
+  scoutMark: (id: number, status: ScoutStatus) =>
+    // keepalive: "Join" opens the campaign's page, and the note that it was tapped must still arrive.
+    call<ScoutInfo>(`/api/scout/campaigns/${id}`, { method: "PUT", body: JSON.stringify({ status }), keepalive: true }),
+  scoutAuto: (on: boolean) => call<ScoutInfo>("/api/scout/auto", { method: "PUT", body: JSON.stringify({ on }) }),
   live: () => call<LiveInfo>("/api/live"),
   arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
   disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),

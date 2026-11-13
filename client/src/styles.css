@@ -3307,6 +3307,142 @@ button.danger {
   }
 }
 
+/* Campaigns for you: the scout's ranked list. One card, hairlines between campaigns; the estimate per day is the loud number. */
+.scout {
+  margin: var(--s4) 0;
+}
+.scout .card-head {
+  align-items: center;
+}
+.scout-list {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  counter-reset: scout;
+}
+.scout-list > li {
+  counter-increment: scout;
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--line);
+}
+.scout-list > li:last-child {
+  padding-bottom: 0;
+}
+.scout-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.scout-name {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.scout-name h4 {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: var(--t-md);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+/* The rank is a real order: best first. */
+.scout-name h4::before {
+  content: counter(scout) ". ";
+  color: var(--accent-strong);
+}
+.scout-day {
+  flex: none;
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  text-align: right;
+}
+.scout-day b {
+  font-family: var(--font-head);
+  font-size: var(--t-xl);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.scout-day span {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.scout-facts {
+  margin: 0;
+  font-size: var(--t-sm);
+}
+.scout-rules {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--t-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.scout-why {
+  font-size: var(--t-sm);
+}
+.scout-why summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.scout-why dl {
+  display: grid;
+  gap: var(--s2);
+  margin: 0 0 var(--s2);
+  padding: var(--s3);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+}
+.scout-why dt {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  font-weight: 600;
+}
+.scout-why dt b {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.scout-why dd {
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.scout-asked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  font-weight: 600;
+}
+.scout-auto {
+  margin-top: var(--s4);
+}
+.scout-plan {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  font-size: var(--t-sm);
+}
+.scout-plan li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s1) var(--s3);
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+}
+.scout-plan-name {
+  font-weight: 600;
+}
+
 /* Google credit card and the thumbnail picker */
 .google-spent {
   margin: var(--s2) 0 0;
