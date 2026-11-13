@@ -291,12 +291,16 @@ export class SourcesRepo {
     if (count(`jobs WHERE status IN ('queued', 'running') AND ${jobsOfSource}`) > 0) {
       throw new ValidationError(`A job is still working on ${creatorName}. Cancel it in Jobs or wait for it, then try again.`);
     }
+    if (count("live_captures WHERE status = 'recording' AND source_id = @id") > 0) {
+      throw new ValidationError(`${creatorName} is being recorded live. Switch them off on the Launch day card, then try again.`);
+    }
     const files = (
       this.db
         .prepare(
           `SELECT file_path AS f FROM clips WHERE source_id = @id UNION SELECT master_path FROM clips WHERE source_id = @id
            UNION SELECT file_path FROM picks WHERE source_id = @id UNION SELECT thumb_path FROM picks WHERE source_id = @id
-           UNION SELECT file_path FROM hook_variants WHERE test_id IN (SELECT id FROM hook_tests WHERE clip_id IN ${ofSource})`,
+           UNION SELECT file_path FROM hook_variants WHERE test_id IN (SELECT id FROM hook_tests WHERE clip_id IN ${ofSource})
+           UNION SELECT file_path FROM live_segments WHERE capture_id IN (SELECT id FROM live_captures WHERE source_id = @id)`,
         )
         .all({ id }) as { f: string | null }[]
     ).flatMap((r) => (r.f ? [r.f] : []));
@@ -307,6 +311,7 @@ export class SourcesRepo {
       run(`DELETE FROM clip_reviews WHERE clip_id IN ${ofSource}`);
       run(`DELETE FROM jobs WHERE ${jobsOfSource}`);
       run("DELETE FROM picks WHERE source_id = @id");
+      run("DELETE FROM live_captures WHERE source_id = @id");
       // The watchlist keeps what it detected, so the same video is not queued again.
       run("UPDATE detected_vods SET vod_id = NULL WHERE vod_id IN (SELECT id FROM vods WHERE source_id = @id)");
       const clips = run("DELETE FROM clips WHERE source_id = @id");

@@ -31,6 +31,7 @@ import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
+import { LaunchCard } from "./LaunchCard";
 import { Sheet } from "./Sheet";
 import { HookLabView, TrendsView } from "./Trends";
 
@@ -91,6 +92,7 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
         </p>
       )}
       {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
+      {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
       {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}

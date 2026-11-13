@@ -17,6 +17,8 @@ import { FakePostingService, NoPostingService } from "./publish/fake.js";
 import { PostizService } from "./publish/postiz.js";
 import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
+import { FakeLiveCapturer, type LiveCapturer, PlatformLiveCapturer, YtDlpLiveCapturer } from "./live/capturer.js";
+import { DEFAULT_LAUNCH_AT } from "./live/plan.js";
 import { FakeProofFetcher, HttpProofFetcher, type ProofFetcher } from "./sources/proof.js";
 import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
 import { KickClient } from "./sources/watchlist/platforms/kick.js";
@@ -59,6 +61,23 @@ export interface Config {
   trendSource: () => TrendSource;
   /** The cloud AI model that tags trends and writes hook variants; null without a key (and in demo mode). */
   aiChat: () => ChatClient | null;
+  /** Live mode: records streams while they are live, in rolling segments. */
+  live: {
+    capturer: LiveCapturer;
+    /** A new segment starts this often, and each runs `overlapSec` longer. */
+    segmentSec: number;
+    overlapSec: number;
+    /** Hours a segment's video is kept. */
+    keepHours: number;
+    /** Clips cut per segment. */
+    maxPicks: number;
+    /** Most streams recorded at once. */
+    maxStreams: number;
+    /** The launch time until the manager changes it on the Launch day card. */
+    launchAt: string;
+    /** The app's web address, named to the push services as the sender of notifications. */
+    pushSubject: string;
+  };
   /** Reads the proof pages of public clipping allowances. */
   proofFetcher: ProofFetcher;
   /** Keys pasted in Settings, on top of the env. */
@@ -236,6 +255,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
           new KickClient(),
           liveWatchClient(settings, ["YOUTUBE_API_KEY"], (now) => new YouTubeClient({ apiKey: now.env.YOUTUBE_API_KEY })),
         ],
+    live: {
+      // Demo mode: a made-up stream of two short segments, so LIVE clips show up within seconds.
+      capturer: fakeDownloads ? new FakeLiveCapturer({ maxSegments: 2 }) : new PlatformLiveCapturer(new YtDlpLiveCapturer(env.YT_DLP_BIN ?? "yt-dlp")),
+      segmentSec: Math.max(1, Number(env.LIVE_SEGMENT_SEC) || (fakeDownloads ? 30 : 600)),
+      // As long as the longest clip, so every moment is whole in one segment.
+      overlapSec: Math.max(0, Number(env.LIVE_OVERLAP_SEC || (fakeDownloads ? 30 : 60))),
+      keepHours: Math.max(0, Number(env.LIVE_KEEP_HOURS || 3)),
+      maxPicks: Math.max(1, Number(env.LIVE_MAX_PICKS) || 3),
+      maxStreams: Math.max(1, Number(env.LIVE_MAX_STREAMS) || 4),
+      launchAt: env.LAUNCH_AT && !Number.isNaN(new Date(env.LAUNCH_AT).getTime()) ? new Date(env.LAUNCH_AT).toISOString() : DEFAULT_LAUNCH_AT,
+      pushSubject: env.PUBLIC_URL || "https://clip.techinsiderbytes.com",
+    },
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
     proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
