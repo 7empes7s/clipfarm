@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#0b1118" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f2fa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#15111f" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="clipfarm" />
@@ -12,11 +13,23 @@
     <!-- use-credentials: behind Cloudflare Access the manifest is only served with the sign-in cookie. -->
     <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23c8341f'/></svg>" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <title>clipfarm</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- The splash: the logo on the theme's own colour until the app has started (styles.css, .splash). -->
+    <div id="root">
+      <div class="splash" role="status" aria-label="clipfarm is starting">
+        <svg width="96" height="96" viewBox="0 0 512 512" aria-hidden="true">
+          <rect class="logo-tile" width="512" height="512" rx="116" />
+          <g class="logo-mark">
+            <rect x="108" y="128" width="48" height="256" rx="24" />
+            <rect x="356" y="128" width="48" height="256" rx="24" />
+            <path d="M218 208v96a14 14 0 0 0 21 12l72-48a14 14 0 0 0 0-24l-72-48a14 14 0 0 0-21 12z" />
+          </g>
+        </svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
