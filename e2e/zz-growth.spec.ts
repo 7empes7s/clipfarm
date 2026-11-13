@@ -110,5 +110,6 @@ test("campaigns: the list, a report with its read and chart, compare, and a reco
   await expect(dash).toContainText("Make 20-30 s the default clip length");
   await expectFits(page);
 
-  expect(errors).toEqual([]);
+  // The one refusal above (saving without an account) is the browser's only complaint.
+  expect(errors).toEqual(["Failed to load resource: the server responded with a status of 400 (Bad Request)"]);
 });
