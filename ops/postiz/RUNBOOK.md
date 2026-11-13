@@ -13,15 +13,29 @@ Nobody types or reads a secret: the script makes them and never prints one.
 
 | Piece | Where |
 |---|---|
-| Containers: `postiz` (v2.25.3), `postiz-postgres`, `postiz-redis`, `temporal`, `temporal-postgres` | Docker, compose project `postiz` |
+| Containers: `postiz` (v2.25.3), `postiz-postgres`, `postiz-redis`, `temporal`, `temporal-postgres`, `temporal-elasticsearch` | Docker, compose project `postiz` |
 | Compose file, `.env`, backup script | `/opt/postiz/` |
-| Data (database, uploads, Redis, Temporal) | `/opt/postiz/{postgres,uploads,config,redis,temporal-postgres}` |
+| Data (database, uploads, Redis, Temporal) | `/opt/postiz/{postgres,uploads,config,redis,temporal-postgres,temporal-es}` |
 | Web app | `127.0.0.1:5300` only, published through Caddy (`:80`) and the Cloudflare tunnel |
 | systemd | `postiz.service`, `postiz-backup.service`, `postiz-backup.timer` |
 | Backups | `/opt/backups/YYYY-MM-DD/postiz.sql.gz`, newest 3 kept |
 
-Memory: the containers are capped at 2176 MiB in total (Postiz 1280, its Postgres 256,
-Redis 96, Temporal 384, Temporal's Postgres 160). Idle use is usually well below that.
+Memory: the containers are capped at 2816 MiB in total (Postiz 1280, its Postgres 256,
+Redis 96, Temporal 384, Temporal's Postgres 160, Temporal's Elasticsearch 640). Idle use is
+usually well below that.
+
+Elasticsearch is there because Postiz needs it: Postiz registers more Text search attributes
+than Temporal's Postgres store allows (3), and without Elasticsearch its backend stops at start
+with `cannot have more than 3 search attribute of type Text` (every API call then gives 502 and
+nobody can sign up or log in). It runs as one node with a 256 MB heap (`ES_JAVA_OPTS`) inside a
+640 MiB cap; don't lower the cap below about twice the heap, the JVM uses memory outside it. The
+installer makes its data folder (`/opt/postiz/temporal-es`, owned by uid 1000, the container's
+user) and raises `vm.max_map_count` to 262144 when it is lower (kept in
+`/etc/sysctl.d/99-postiz-elasticsearch.conf`). It only holds Temporal's search index, so it is
+not in the backups.
+
+The `postiz` container is `healthy` only when both the web page and the backend (`/api/`)
+answer; the installer waits for both.
 
 ---
 
@@ -38,7 +52,7 @@ systemd-run --pipe --wait --collect --quiet /bin/bash -c 'test -d /opt/postiz/re
 
 It is safe to run again at any time: a second run changes nothing that is already right. In order, it:
 
-1. Checks the box: docker runs, port 5300 is free (or already Postiz), 2500 MB of memory and
+1. Checks the box: docker runs, port 5300 is free (or already Postiz), 3150 MB of memory and
    10 GB of disk are free. If not, it stops with the reason and starts nothing.
 2. Creates `/opt/postiz` with the compose file and the backup script.
 3. Writes `/opt/postiz/.env` (root only, mode 600) from `.env.example` with fresh random values for
@@ -47,7 +61,8 @@ It is safe to run again at any time: a second run changes nothing that is alread
 4. Installs `postiz.service`, the backup service and timer, and puts the Postiz block in
    `/etc/caddy/Caddyfile` in place of the "being installed" placeholder (the old file is kept
    next to it as `Caddyfile.bak-postiz-<time>`; if Caddy refuses the new file, the old one is put back).
-5. Pulls the images, starts Postiz and waits until it answers (2-5 minutes the first time).
+5. Pulls the images, starts Postiz and waits until the web page and the backend answer (2-5
+   minutes the first time).
 6. Once an account exists (step 3): checks Postiz's API key, saves it in
    `/etc/clipfarm/clipfarm.env` for clipfarm, and closes sign-ups.
 
@@ -58,6 +73,7 @@ Postiz is installed.
   postiz.service: active
   postiz-backup.timer: active
   http://127.0.0.1:5300/: answers (307)
+  Backend (http://127.0.0.1:5300/api/): answers (200)
   https://postiz.techinsiderbytes.com/: answers (307)
   Platform keys set: none
   API key for clipfarm: not made yet: open the site, sign up (the first account is the admin), then run this again
@@ -66,7 +82,8 @@ Next: connect channels in Postiz (...)
 ```
 
 A line starting with `postiz-install:` and a non-zero exit says what is wrong, in plain words
-(not enough memory, port taken, Postiz did not answer, the public address does not answer).
+(not enough memory, port taken, Postiz or its backend did not answer, the public address does
+not answer).
 Fix that and run the same command again.
 
 If port 5300 is taken by something else: set `POSTIZ_PORT=<free port>` in `/opt/postiz/.env`
@@ -231,7 +248,7 @@ npm run postiz:check
 ```
 
 You should see `OK: Postiz at ... answered with N connected accounts.` and one line per channel.
-`NOT OK: ...` says what is wrong (key refused, not reachable, wrong URL, variable not set).
+`NOT OK: ...` says what is wrong (key refused, backend down, not reachable, wrong URL, variable not set).
 A channel marked `disabled` must be reconnected in Postiz.
 
 ---
@@ -258,7 +275,7 @@ and `.env` are not in it.
 ```bash
 systemctl status postiz --no-pager
 cd /opt/postiz && docker compose ps
-docker compose logs --tail 100 postiz           # or temporal, postiz-postgres, ...
+docker compose logs --tail 100 postiz           # or temporal, temporal-elasticsearch, postiz-postgres, ...
 docker stats --no-stream | grep -E 'postiz|temporal'
 ```
 

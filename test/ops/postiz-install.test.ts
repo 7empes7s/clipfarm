@@ -53,7 +53,7 @@ describe('ops/postiz/install.sh', () => {
     clipfarmEnv = join(root, 'clipfarm.env');
     calls = join(root, 'calls');
     state = join(root, 'state');
-    for (const dir of [bin, state, join(root, 'systemd')]) mkdirSync(dir);
+    for (const dir of [bin, state, join(root, 'systemd'), join(root, 'sysctl.d')]) mkdirSync(dir);
     writeFileSync(calls, '');
     writeFileSync(caddyfile, PLACEHOLDER);
     writeFileSync(join(root, 'meminfo'), 'MemTotal:        7931000 kB\nMemAvailable:    4158000 kB\n');
@@ -77,7 +77,22 @@ esac`,
     );
     fake('caddy');
     fake('ss', `[ -f "${state}/port-taken" ] && echo 'LISTEN 0 4096 127.0.0.1:5300 0.0.0.0:*'; exit 0`);
-    fake('curl', `[ -f "${state}/running" ] && printf 307 || printf 000`);
+    // curl: 307 once Postiz runs; with state/backend-down the page still answers but /api/ gives 502.
+    fake(
+      'curl',
+      `[ -f "${state}/running" ] || { printf 000; exit 0; }
+case "$*" in */api/*) [ -f "${state}/backend-down" ] && { printf 502; exit 0; } ;; esac
+printf 307`,
+    );
+    // sysctl: vm.max_map_count lives in the state folder (the kernel default when not set).
+    fake(
+      'sysctl',
+      `case "$*" in
+  "-n vm.max_map_count") cat "${state}/max-map-count" 2>/dev/null || echo 65530 ;;
+  *-w*) printf '%s\\n' "\${@: -1}" | sed 's/.*=//' > "${state}/max-map-count" ;;
+esac`,
+    );
+    fake('chown');
     fake('node', `echo "OK: Postiz at $POSTIZ_URL answered with 0 connected accounts."`);
   });
 
@@ -93,6 +108,7 @@ esac`,
         CADDYFILE: caddyfile,
         CLIPFARM_ENV_FILE: clipfarmEnv,
         MEMINFO: join(root, 'meminfo'),
+        SYSCTL_DIR: join(root, 'sysctl.d'),
         POSTIZ_NODE: join(bin, 'node'),
         MIN_DISK_MB: '1',
         HEALTH_TIMEOUT: '1',
@@ -132,6 +148,7 @@ esac`,
     expect(log.indexOf('systemctl daemon-reload')).toBeLessThan(log.indexOf('systemctl enable --now postiz.service'));
 
     expect(output).toContain('postiz.service: active');
+    expect(output).toContain('Backend (http://127.0.0.1:5300/api/): answers (307)');
     expect(output).toContain('Platform keys set: none');
     expect(output).toMatch(/connect channels in Postiz/i);
   });
@@ -242,11 +259,45 @@ esac`,
     expect(callLog()).not.toContain('systemctl');
   });
 
-  it('stops with a plain reason when less than 2.5 GB of memory is available', () => {
-    writeFileSync(join(root, 'meminfo'), 'MemTotal:        7931000 kB\nMemAvailable:    1024000 kB\n');
+  it('makes the Elasticsearch data folder for the container user and raises vm.max_map_count, once', () => {
+    const first = run();
+    expect(first.status).toBe(0);
+    expect(statSync(join(postizDir, 'temporal-es')).mode & 0o777).toBe(0o700);
+    expect(callLog()).toContain(`chown 1000 ${join(postizDir, 'temporal-es')}`);
+    expect(callLog()).toContain('sysctl -q -w vm.max_map_count=262144');
+    expect(readFileSync(join(root, 'sysctl.d', '99-postiz-elasticsearch.conf'), 'utf8')).toMatch(/^vm\.max_map_count=262144$/m);
+    expect(first.output).toMatch(/raised vm\.max_map_count from 65530 to 262144/);
+    const log = callLog();
+    expect(log.indexOf('sysctl -q -w')).toBeLessThan(log.indexOf('systemctl enable --now postiz.service'));
+
+    writeFileSync(calls, '');
+    const second = run();
+    expect(second.status).toBe(0);
+    expect(callLog()).not.toContain('sysctl -q -w');
+    expect(second.output).not.toContain('vm.max_map_count');
+  });
+
+  it('leaves vm.max_map_count alone when it is already high enough', () => {
+    writeFileSync(join(state, 'max-map-count'), '1048576\n');
+    expect(run().status).toBe(0);
+    expect(callLog()).not.toContain('sysctl -q -w');
+    expect(existsSync(join(root, 'sysctl.d', '99-postiz-elasticsearch.conf'))).toBe(false);
+  });
+
+  it('fails when the web page answers but the backend gives 502, and says so', () => {
+    writeFileSync(join(state, 'backend-down'), '');
     const { status, output } = run();
     expect(status).not.toBe(0);
-    expect(output).toMatch(/1000 MB of memory is available.*2500 MB/);
+    expect(output).toMatch(/web page answers on port 5300 but its backend \(\/api\/\) does not \(502\)/);
+    expect(output).toContain('docker compose logs --tail 100 postiz');
+    expect(output).not.toContain('Postiz is installed');
+  });
+
+  it('stops with a plain reason when less than 3.15 GB of memory is available', () => {
+    writeFileSync(join(root, 'meminfo'), 'MemTotal:        7931000 kB\nMemAvailable:    3072000 kB\n');
+    const { status, output } = run();
+    expect(status).not.toBe(0);
+    expect(output).toMatch(/3000 MB of memory is available.*3150 MB/);
     expect(existsSync(envFile)).toBe(false);
     expect(callLog()).not.toContain('systemctl enable');
   });

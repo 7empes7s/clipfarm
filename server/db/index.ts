@@ -483,6 +483,28 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- The daily live proof and the launch drill: one row per video (or live stream) it ran on.
+  -- vod_id has no foreign key: removing a source removes its videos, and the run's numbers stay.
+  CREATE TABLE proof_runs (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    asked_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting',
+    label TEXT NOT NULL DEFAULT '',
+    url TEXT,
+    vod_id INTEGER,
+    step TEXT NOT NULL DEFAULT '',
+    problems TEXT NOT NULL DEFAULT '[]',
+    metrics TEXT NOT NULL DEFAULT '{}',
+    options TEXT NOT NULL DEFAULT '{}',
+    requested_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT
+  );
+  CREATE INDEX proof_runs_vod ON proof_runs(vod_id);
+  `,
+  `
   -- Submit window: a campaign post that has to be submitted by hand within 30 minutes of going live.
   -- "held" posts wait in clipfarm and are handed to the posting service when they are due.
   ALTER TABLE posts ADD COLUMN needs_submit INTEGER NOT NULL DEFAULT 0;

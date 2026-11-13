@@ -94,6 +94,7 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   captionWords: [],
   postCount: 0,
   experiment: false,
+  proof: false,
   videoUrl: "",
   masterUrl: "",
   createdAt: "2026-11-19T00:00:00.000Z",

@@ -1,8 +1,11 @@
 # Postiz on Mulinux. Adapted from the official compose
 # (github.com/gitroomhq/postiz-docker-compose, AGPL-3.0) with these changes for a shared 7.6 GB box:
-# - every image pinned, every service memory-limited (total 2176 MiB), restart: unless-stopped;
+# - every image pinned, every service memory-limited (total 2816 MiB), restart: unless-stopped;
 # - only the web app is published, on 127.0.0.1 (Caddy + the Cloudflare tunnel put it on the internet);
-# - Temporal keeps its search data in Postgres instead of Elasticsearch (saves ~600 MB), no Temporal UI;
+# - Temporal keeps its search data in Elasticsearch, as upstream does: Postiz registers more Text search
+#   attributes than Temporal's Postgres store allows (3), and its backend does not start without them.
+#   Elasticsearch runs with a 256 MB heap and a 640 MiB cap. No Temporal UI;
+# - the postiz health check tests the backend (/api/) too: the web page alone answers while it is down;
 # - data lives under /opt/postiz/ (bind mounts), secrets come from .env next to this file.
 # Install and run it with ops/postiz/RUNBOOK.md. To update, bump the pinned tags below.
 name: postiz
@@ -51,7 +54,8 @@ services:
     ports:
       - 127.0.0.1:${POSTIZ_PORT:-5300}:5000
     healthcheck:
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:5000/',res=>process.exit(res.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"]
+      # Healthy only when both the web page (/) and the backend behind it (/api/) answer below 500.
+      test: ["CMD", "node", "-e", "const http=require('http');const up=p=>new Promise(done=>{const r=http.get('http://localhost:5000'+p,res=>{res.resume();done(res.statusCode<500)});r.on('error',()=>done(false));r.setTimeout(4000,()=>{r.destroy();done(false)})});Promise.all([up('/'),up('/api/')]).then(a=>process.exit(a.every(Boolean)?0:1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -116,6 +120,28 @@ services:
       retries: 5
       start_period: 10s
 
+  temporal-elasticsearch:
+    image: elasticsearch:7.17.27
+    restart: unless-stopped
+    mem_limit: 640m
+    logging: *logging
+    environment:
+      cluster.routing.allocation.disk.threshold_enabled: 'true'
+      cluster.routing.allocation.disk.watermark.low: 512mb
+      cluster.routing.allocation.disk.watermark.high: 256mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 128mb
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
+      xpack.security.enabled: 'false'
+    volumes:
+      - /opt/postiz/temporal-es:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   temporal:
     image: temporalio/auto-setup:1.28.1
     restart: unless-stopped
@@ -127,7 +153,9 @@ services:
       POSTGRES_USER: temporal
       POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD in .env}
       POSTGRES_SEEDS: temporal-postgres
-      ENABLE_ES: 'false'
+      ENABLE_ES: 'true'
+      ES_SEEDS: temporal-elasticsearch
+      ES_VERSION: v7
       TEMPORAL_NAMESPACE: default
     healthcheck:
       test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
@@ -137,4 +165,6 @@ services:
       start_period: 30s
     depends_on:
       temporal-postgres:
+        condition: service_healthy
+      temporal-elasticsearch:
         condition: service_healthy

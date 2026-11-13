@@ -25,6 +25,7 @@ import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import type { LiveManager } from "./live/manager.js";
 import { parsePushSubscription } from "./live/notify.js";
 import type { LiveRepo } from "./live/repo.js";
+import type { ProofRunner } from "./liveproof/service.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import type { DirectPoster } from "./publish/direct/direct.js";
@@ -66,6 +67,8 @@ export interface AppDeps {
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
   /** Live mode: the Launch day card's switches, and who gets notifications. */
   live?: { manager: LiveManager; repo: LiveRepo };
+  /** The daily live proof and the launch drill (the Dashboard's Proof card). */
+  proof?: ProofRunner;
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
   engine?: { engine: Engine; fake: boolean };
   /** Gemini on the Google credit: its spend and switches for the Dashboard, and the thumbnail options of approved clips. */
@@ -131,6 +134,7 @@ export function createApp({
   suggested = [],
   watchlist,
   live,
+  proof,
   engine,
   google,
   settings,
@@ -510,6 +514,25 @@ export function createApp({
       const endpoint = (req.body ?? {}).endpoint as unknown;
       if (typeof endpoint === "string") repo.removePushSubscription(endpoint);
       res.json(manager.info());
+    });
+  }
+
+  if (proof) {
+    app.get("/api/proof", (_req, res) => {
+      res.json(proof.info());
+    });
+
+    // Asked for here, worked through by the proof runner: on the real pipeline, kept private, never posted.
+    app.post("/api/proof/run", (_req, res) => {
+      proof.request("app");
+      proof.tick();
+      res.status(202).json(proof.info());
+    });
+
+    app.post("/api/proof/drill", (_req, res) => {
+      proof.requestDrill("app");
+      proof.tick();
+      res.status(202).json(proof.info());
     });
   }
 

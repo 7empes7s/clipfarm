@@ -404,6 +404,11 @@ function ClipFrame({
               {Math.round(current.durationSec)} s
             </span>
             {current.experiment && <ExperimentBadge />}
+            {current.proof && (
+              <span className="over-chip proof-tag" title="Made by the daily proof" data-testid="proof-tag">
+                Proof
+              </span>
+            )}
           </div>
           <LiveTag clip={current} />
         </div>
