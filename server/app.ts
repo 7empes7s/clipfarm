@@ -277,6 +277,13 @@ export function createApp({
     res.status(202).json({ clip: updated, job });
   });
 
+  // The Fix button on a quality warning: applies the suggested change and remakes the clip.
+  app.post("/api/clips/:id/fix", (req, res) => {
+    const clip = clips.applyFix(idParam(req.params.id));
+    const job = queue.enqueue(RENDER_CLIP_JOB, { clipId: clip.id }, { clipId: clip.id, maxAttempts: 2 });
+    res.status(202).json({ clip, job });
+  });
+
   // The data folder may sit under a dot folder (.e2e-data), which send() refuses by default.
   const sendOpts = { dotfiles: "allow" as const };
 

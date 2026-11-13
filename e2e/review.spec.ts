@@ -71,6 +71,10 @@ test("approve, reject with a reason, undo, edit a trim and set a face cam", asyn
   await expect(sheet.getByTestId("trim-end")).not.toHaveText(endBefore!);
   const newTitle = `Edited ${test.info().project.name}`;
   await sheet.getByLabel("Title").fill(newTitle);
+  // Effects: all five are on; turn the loudness one off for this clip.
+  const effects = sheet.getByRole("group", { name: "Effects" });
+  await expect(effects.getByRole("checkbox", { checked: true })).toHaveCount(5);
+  await effects.getByLabel("Even loudness").uncheck();
   await expectFits(page);
   await sheet.getByRole("button", { name: "Save and remake clip" }).click();
   await expect(sheet).toBeHidden();
@@ -83,6 +87,25 @@ test("approve, reject with a reason, undo, edit a trim and set a face cam", asyn
   const edited = clips.find((c) => c.title === newTitle)!;
   expect(edited.status).toBe("pending");
   expect(edited.durationSec).toBeCloseTo(before.durationSec - 0.5, 1);
+
+  // The check after the render saw the quiet sound: a warning chip with the reason, and Fix remakes it.
+  await request.post(`/api/clips/${editId}/approve`);
+  await page.getByRole("link", { name: /^Approved/ }).click();
+  const warned = page.getByTestId("clip").filter({ hasText: newTitle });
+  await expect(warned.getByTestId("quality")).toContainText("The sound is too quiet");
+  await expect(warned.getByTestId("quality")).toContainText("Even out the loudness, then remake the clip.");
+  await expectFits(page);
+  await warned.getByRole("button", { name: "Fix" }).click();
+  await expect
+    .poll(
+      async () => {
+        const all = (await (await request.get("/api/clips")).json()) as { id: number; status: string; quality: { issues: unknown[] } | null }[];
+        const c = all.find((x) => x.id === editId)!;
+        return c.status === "pending" ? c.quality?.issues.length : c.status;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(0);
 
   // Face cam: drag a box on a frame of Demo Streamer B (no face cam yet).
   await page.getByRole("link", { name: /^Sources/ }).click();

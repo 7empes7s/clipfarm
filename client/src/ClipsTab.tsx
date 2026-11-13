@@ -7,6 +7,7 @@ import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
+import { QualityChips } from "./QualityChips";
 import { shortDate, usd } from "./format";
 import { filterClips } from "./review";
 
@@ -138,6 +139,7 @@ export function ClipsTab({
                       <ExperimentBadge /> Burner accounts only, no export.
                     </p>
                   )}
+                  <QualityChips clip={clip} onFixed={() => void refresh()} />
                   {gap && (
                     <p className="hint" data-testid="routing-gap">
                       {gap}

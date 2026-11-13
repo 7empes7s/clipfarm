@@ -122,7 +122,7 @@ Rules you must follow:
 - Flag honestly: spoiler (story twists, plot reveals, deaths of characters), cutscene (mostly an unplayed story cutscene),
   ending (a game, mission chain or story ending), leak (unreleased or leaked footage/info), breaks_brief (anything the campaign brief or the creator's off-limits note forbids).
   Flagged clips are thrown away, so when unsure, flag it.
-- hook: at most 8 words, shown on screen for the first 2 seconds. title: specific, with the streamer's name and a promise, at most 70 characters.
+- hook: at most 8 words, shown on screen for the first 1.5 seconds. title: specific, with the streamer's name and a promise, at most 70 characters.
 - score 0-100 for how likely the clip is to keep viewers watching. reason: one sentence on why it works.
 - layout: "full" when the whole screen matters (map, menus, chat, wide action), else "center".`;
 
