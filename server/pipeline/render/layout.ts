@@ -1,4 +1,5 @@
 import type { ClipLayout, FaceCam } from "../../../shared/types.js";
+import { finishFilter, PLAIN, type PolishPlan } from "../polish/plan.js";
 
 export const OUT_W = 1080;
 export const OUT_H = 1920;
@@ -101,9 +102,10 @@ export function planLayout(layout: ClipLayout, srcW: number, srcH: number, faceC
 
 /**
  * The ffmpeg filter graph for a plan: each panel cropped, scaled (and blurred) from the input,
- * laid onto a black 1080×1920 canvas, then the ASS captions burned in. Output label [v].
+ * laid onto a black 1080×1920 canvas, then the finishing touches (zooms, the ASS captions, loop
+ * ending, progress bar). Output label [v].
  */
-export function videoFilter(plan: LayoutPlan, assFile: string | null): string {
+export function videoFilter(plan: LayoutPlan, assFile: string | null, polish: PolishPlan = PLAIN, durationSec = 0): string {
   const n = plan.panels.length;
   const parts = [`[0:v]fps=${OUT_FPS},split=${n}${plan.panels.map((_, i) => `[s${i}]`).join("")}`];
   plan.panels.forEach((p, i) => {
@@ -116,7 +118,6 @@ export function videoFilter(plan: LayoutPlan, assFile: string | null): string {
   plan.panels.forEach((p, i) => {
     parts.push(`[c${i}][p${i}]overlay=${p.out.x}:${p.out.y}:shortest=1[c${i + 1}]`);
   });
-  const subs = assFile ? `ass=${assFile},` : "";
-  parts.push(`[c${n}]${subs}format=yuv420p[v]`);
+  parts.push(finishFilter(`c${n}`, "v", assFile, polish, durationSec));
   return parts.join(";");
 }

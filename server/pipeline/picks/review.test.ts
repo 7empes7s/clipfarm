@@ -56,6 +56,20 @@ describe("reviewPick", () => {
     expect(reviewPick(raw({ hook: "Spoiler: the ending" }), sentences, words, ["the ending"]).keep).toBe(false);
   });
 
+  it("drops a pick outside the campaign's own clip length", () => {
+    // A 25 s pick: fine by default, too long for a 20 s campaign, too short for a 30 s one.
+    expect(reviewPick(raw(), sentences, words, []).keep).toBe(true);
+    expect(reviewPick(raw(), sentences, words, [], { minSec: null, maxSec: 20 })).toMatchObject({
+      keep: false,
+      dropReason: "Left out: the campaign takes clips of 20 s at most",
+    });
+    expect(reviewPick(raw(), sentences, words, [], { minSec: 30, maxSec: null })).toMatchObject({
+      keep: false,
+      dropReason: "Left out: the campaign takes clips of 30 s at least",
+    });
+    expect(reviewPicks([raw()], sentences, words, [], 5, { minSec: 15, maxSec: 45 })[0]!.dropReason).toBeNull();
+  });
+
   it("snaps kept picks to sentence boundaries and drops ones that cannot fit 15-60 s", () => {
     expect(reviewPick(raw({ startSec: 11, endSec: 33 }), sentences, words, [])).toEqual({
       keep: true,

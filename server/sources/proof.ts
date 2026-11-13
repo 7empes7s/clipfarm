@@ -84,18 +84,38 @@ export class FakeProofFetcher implements ProofFetcher {
   }
 }
 
-const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " " };
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  lt: "<",
+  gt: ">",
+  nbsp: " ",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+  ndash: "–",
+  mdash: "—",
+};
+
+/** "&amp;" and "&#39;" as the characters they stand for. */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-z]+);/gi, (m, name: string) => ENTITIES[name.toLowerCase()] ?? m);
+}
 
 /** The words of a page (HTML or JSON) as one lower-case line, so a quote can be looked up in it. */
 export function pageText(raw: string): string {
-  return raw
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/\\[nrt]/g, " ")
-    .replace(/\\(["'/])/g, "$1")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&([a-z]+);/gi, (m, name: string) => ENTITIES[name.toLowerCase()] ?? m)
+  return decodeEntities(
+    raw
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\[nrt]/g, " ")
+      .replace(/\\(["'/])/g, "$1")
+      .replace(/<[^>]*>/g, " "),
+  )
     .replace(/[‘’ʼ]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[–—]/g, "-")

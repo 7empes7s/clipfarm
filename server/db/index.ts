@@ -299,7 +299,21 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
-  // 13: which engine handled what in each transcript and round of picks (the fallback chain).
+  `
+  -- Clip polish: the effects turned off per clip, where the reaction peaks in the master, and the
+  -- result of the automatic check on the latest render.
+  ALTER TABLE clips ADD COLUMN effects TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE clips ADD COLUMN peak_sec REAL;
+  ALTER TABLE clips ADD COLUMN quality TEXT;
+  `,
+  `
+  -- Campaign import: a campaign's rules (JSON), when its page was last read, and Whop's approval and payout taps.
+  ALTER TABLE permissions ADD COLUMN campaign_rules TEXT;
+  ALTER TABLE permissions ADD COLUMN campaign_checked_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
+  `,
+  // Which engine handled what in each transcript and round of picks (the fallback chain).
   `
   CREATE TABLE engine_runs (
     id INTEGER PRIMARY KEY,

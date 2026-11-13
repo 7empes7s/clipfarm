@@ -1,5 +1,6 @@
 import type { Db } from "../db/index.js";
-import type { Platform, Post, PostFlag, PostingRules, PostingServiceName, PostStatus } from "../../shared/types.js";
+import type { Platform, Post, PostFlag, PostingRules, PostingServiceName, PostStatus, WhopStep } from "../../shared/types.js";
+import { WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { estimateEarnings } from "./earnings.js";
 import type { PostUpdate, TrackedPost } from "./types.js";
@@ -32,6 +33,8 @@ interface PostRow {
   views_updated_at: string | null;
   views_source: "service" | "manual" | null;
   whop_submitted_at: string | null;
+  whop_approved_at: string | null;
+  whop_paid_at: string | null;
   claim_at: string | null;
   removal_at: string | null;
   strike_at: string | null;
@@ -71,9 +74,12 @@ function toPost(r: PostRow): Post {
     viewsUpdatedAt: r.views_updated_at,
     viewsSource: r.views_source,
     whopSubmittedAt: r.whop_submitted_at,
+    whopApprovedAt: r.whop_approved_at,
+    whopPaidAt: r.whop_paid_at,
+    whopPayoutAt: r.whop_approved_at ? new Date(new Date(r.whop_approved_at).getTime() + WHOP_HOLD_DAYS * 86_400_000).toISOString() : null,
     experiment: r.kind === "experiment",
     flags: { claim: r.claim_at, removal: r.removal_at, strike: r.strike_at },
-    estimatedEarningsUsd: estimateEarnings(r.views, r.cpm_rate_usd, r.min_views),
+    estimatedEarningsUsd: estimateEarnings(r.views, r.cpm_rate_usd, r.min_views, r.kind === "whop-campaign" ? WHOP_FEE : 0),
   };
 }
 
@@ -225,9 +231,23 @@ export class PostsRepo {
     return this.get(id);
   }
 
-  markWhopSubmitted(id: number): Post {
-    if (this.get(id).experiment) throw new ValidationError("Experiment posts are never sent to Whop.");
-    this.db.prepare("UPDATE posts SET whop_submitted_at = ? WHERE id = ?").run(this.now().toISOString(), id);
+  /**
+   * The Whop steps, tapped by hand in order (Whop has no clipper API): sent, approved, paid.
+   * Taking a step back takes the later ones back with it; the first time a step was tapped is kept.
+   */
+  setWhopStep(id: number, step: WhopStep, on: boolean): Post {
+    const post = this.get(id);
+    if (post.experiment) throw new ValidationError("Experiment posts are never sent to Whop.");
+    const at = { submitted: post.whopSubmittedAt, approved: post.whopApprovedAt, paid: post.whopPaidAt };
+    const i = WHOP_STEPS.indexOf(step);
+    if (on && i > 0 && !at[WHOP_STEPS[i - 1]!]) {
+      throw new ValidationError(i === 1 ? "Mark it sent to Whop first." : "Mark it approved by Whop first.");
+    }
+    const now = this.now().toISOString();
+    const value = (s: WhopStep) => (s === step ? (on ? (at[s] ?? now) : null) : on || WHOP_STEPS.indexOf(s) < i ? at[s] : null);
+    this.db
+      .prepare("UPDATE posts SET whop_submitted_at = ?, whop_approved_at = ?, whop_paid_at = ? WHERE id = ?")
+      .run(value("submitted"), value("approved"), value("paid"), id);
     return this.get(id);
   }
 

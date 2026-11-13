@@ -4,6 +4,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Clip, Source } from "../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { campaignInput } from "../../test/helpers.js";
 import { createApp } from "../app.js";
 import { openDb } from "../db/index.js";
@@ -190,7 +191,7 @@ describe("retimeCaptions", () => {
 });
 
 describe("parseClipEdit", () => {
-  const clip = { status: "pending", postCount: 0, masterDurationSec: 30 } as Clip;
+  const clip = { status: "pending", postCount: 0, masterDurationSec: 30, effects: DEFAULT_EFFECTS } as Clip;
   const source = { creatorName: "Ana", faceCam: null } as Source;
   const ok = { title: "T", hook: "", captionText: "", layout: "full", startSec: 1, endSec: 20 };
 
@@ -206,6 +207,16 @@ describe("parseClipEdit", () => {
     [{ title: "  " }, "Enter the title"],
   ])("refuses %o", (patch, message) => {
     expect(() => parseClipEdit({ ...ok, ...patch }, clip, source)).toThrow(message);
+  });
+
+  it("keeps the clip's effects unless one is switched with true or false", () => {
+    expect(parseClipEdit(ok, clip, source).effects).toEqual(DEFAULT_EFFECTS);
+    const off = { ...clip, effects: { ...DEFAULT_EFFECTS, zoom: false } };
+    expect(parseClipEdit({ ...ok, effects: { progressBar: false, loudness: "no", other: true } }, off, source).effects).toEqual({
+      ...DEFAULT_EFFECTS,
+      zoom: false,
+      progressBar: false,
+    });
   });
 
   it("refuses clips longer than 60 s and posted clips", () => {

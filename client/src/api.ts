@@ -2,6 +2,7 @@ import type {
   AccountChoice,
   AccountsInfo,
   AllowanceFind,
+  CampaignDraft,
   ChannelSettings,
   Clip,
   Dashboard,
@@ -34,6 +35,7 @@ import type {
   WatchedCreator,
   WatchedCreatorInput,
   Watchlist,
+  WhopStep,
 } from "../../shared/types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -49,6 +51,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   sources: () => call<Source[]>("/api/sources"),
   addSource: (input: NewSourceInput) => call<Source>("/api/sources", { method: "POST", body: JSON.stringify(input) }),
+  readCampaign: (url: string, text?: string) =>
+    call<CampaignDraft>("/api/campaigns/read", { method: "POST", body: JSON.stringify({ url, text }) }),
+  saveCampaign: (input: NewSourceInput) => call<Source>("/api/campaigns", { method: "POST", body: JSON.stringify(input) }),
   suggested: () => call<SuggestedCreator[]>("/api/sources/suggested"),
   addSuggested: (names: string[]) =>
     call<{ added: Source[]; suggested: SuggestedCreator[] }>("/api/sources/suggested", { method: "POST", body: JSON.stringify({ names }) }),
@@ -72,6 +77,7 @@ export const api = {
   undoReview: () => call<Clip>("/api/clips/undo", { method: "POST" }),
   editClip: (id: number, edit: ClipEditInput) =>
     call<{ clip: Clip; job: Job }>(`/api/clips/${id}/edit`, { method: "POST", body: JSON.stringify(edit) }),
+  fixClip: (id: number) => call<{ clip: Clip; job: Job }>(`/api/clips/${id}/fix`, { method: "POST" }),
   setFaceCam: (sourceId: number, faceCam: FaceCam | null) =>
     call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify(faceCam ?? { clear: true }) }),
   loadDemo: () => call<Job>("/api/demo", { method: "POST" }),
@@ -84,7 +90,8 @@ export const api = {
   posts: () => call<Post[]>("/api/posts"),
   refreshPosts: () => call<{ updated: number; error: string | null }>("/api/posts/refresh", { method: "POST" }),
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),
-  markWhop: (id: number) => call<Post>(`/api/posts/${id}/whop`, { method: "POST" }),
+  markWhop: (id: number, step: WhopStep, on: boolean) =>
+    call<Post>(`/api/posts/${id}/whop`, { method: "POST", body: JSON.stringify({ step, on }) }),
   flagPost: (id: number, flag: PostFlag, on: boolean) =>
     call<Post>(`/api/posts/${id}/flags`, { method: "POST", body: JSON.stringify({ flag, on }) }),
   stats: () => call<Stats>("/api/stats"),

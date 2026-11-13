@@ -5,6 +5,7 @@ import { HttpError } from "../errors.js";
 import type { JobHandler, JobQueue } from "../jobs/queue.js";
 import type { PicksRepo } from "../picks/repo.js";
 import { bannedTerms, reviewPicks } from "../pipeline/picks/review.js";
+import { pickerBrief } from "../publish/compliance.js";
 import { toSentences } from "../pipeline/picks/sentences.js";
 import { measureLoudness } from "../pipeline/picks/signals.js";
 import type { Picker } from "../pipeline/picks/types.js";
@@ -102,7 +103,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
         words: words.map((w) => ({ word: w.word, startSec: round(w.startSec - fromSec), endSec: round(w.endSec - fromSec) })),
         signals: { loudness: deps.vods.loudness(capture.vodId).slice(Math.floor(fromSec), Math.ceil(endSec)), chat: null },
         creatorName: source.creatorName,
-        briefRules: permission.briefRules,
+        briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
         // It may also name moments in the context, which were picked before: ask for more than are kept.
         maxPicks: maxPicks * 3,
@@ -119,7 +120,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
       .map((p) => ({ ...p, startSec: p.startSec + fromSec, endSec: p.endSec + fromSec }))
       // Not what an earlier segment already covered, and not the same moment twice.
       .filter((p) => p.endSec > seg.startSec && !before.some((b) => p.startSec < b.endSec && b.startSec < p.endSec));
-    const reviewed = reviewPicks(fresh, toSentences(words), words, bannedTerms(permission.briefRules, source.bannedContent), maxPicks)
+    const reviewed = reviewPicks(fresh, toSentences(words), words, [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])], maxPicks, permission.rules ?? undefined)
       // A moment that runs past what is recorded so far comes back with the next segment, whole.
       .filter((p) => p.dropReason || coveringSegment(stored, p.startSec, p.endSec));
     const kept = reviewed.filter((p) => !p.dropReason).length;

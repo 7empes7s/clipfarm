@@ -39,7 +39,14 @@ export type Reviewed =
  * or mentioning a banned phrase is dropped, and the window must snap to sentence boundaries
  * within the length limits.
  */
-export function reviewPick(pick: RawPick, sentences: Sentence[], words: Word[], bans: string[]): Reviewed {
+export function reviewPick(
+  pick: RawPick,
+  sentences: Sentence[],
+  words: Word[],
+  bans: string[],
+  /** The campaign's own clip length, when it has one. */
+  length: { minSec: number | null; maxSec: number | null } = { minSec: null, maxSec: null },
+): Reviewed {
   const wanted = { startSec: pick.startSec, endSec: pick.endSec };
   const flagged = (Object.keys(FLAG_REASONS) as (keyof PickFlags)[]).filter((k) => pick.flags[k]);
   if (flagged.length > 0) {
@@ -50,6 +57,9 @@ export function reviewPick(pick: RawPick, sentences: Sentence[], words: Word[], 
   const text = [pick.title, pick.hook, wordsIn(words, range).map((w) => w.word).join(" ")].join(" \n ");
   const banned = bans.find((t) => mentions(text, t));
   if (banned) return { keep: false, dropReason: `Left out: the brief bans "${banned}"`, range };
+  const sec = range.endSec - range.startSec;
+  if (length.maxSec !== null && sec > length.maxSec) return { keep: false, dropReason: `Left out: the campaign takes clips of ${length.maxSec} s at most`, range };
+  if (length.minSec !== null && sec < length.minSec) return { keep: false, dropReason: `Left out: the campaign takes clips of ${length.minSec} s at least`, range };
   return { keep: true, range };
 }
 
@@ -67,12 +77,13 @@ export function reviewPicks(
   words: Word[],
   bans: string[],
   maxPicks: number,
+  length?: { minSec: number | null; maxSec: number | null },
 ): ReviewedPick[] {
   const kept: TimeRange[] = [];
   return [...picks]
     .sort((a, b) => b.score - a.score)
     .map((p): ReviewedPick | null => {
-      const r = reviewPick(p, sentences, words, bans);
+      const r = reviewPick(p, sentences, words, bans, length);
       if (!r.keep) return { ...p, ...r.range, dropReason: r.dropReason };
       if (kept.some((k) => r.range.startSec < k.endSec && k.startSec < r.range.endSec)) {
         return { ...p, ...r.range, dropReason: "Left out: overlaps a better pick" };

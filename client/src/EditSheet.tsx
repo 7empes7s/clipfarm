@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { Clip, ClipLayout, Source } from "../../shared/types";
-import { CLIP_LAYOUT_LABELS, CLIP_LAYOUTS, CLIP_MAX_SEC, CLIP_MIN_SEC } from "../../shared/types";
+import type { Clip, ClipEffects, ClipLayout, Source } from "../../shared/types";
+import { CLIP_EFFECT_LABELS, CLIP_EFFECTS, CLIP_LAYOUT_LABELS, CLIP_LAYOUTS, CLIP_MAX_SEC, CLIP_MIN_SEC } from "../../shared/types";
 import { api } from "./api";
 import { clock } from "./format";
 import { Sheet } from "./Sheet";
@@ -13,7 +13,7 @@ function fmt(sec: number): string {
   return `${clock(sec)}.${tenths}`;
 }
 
-/** Trim (±0.5 s), retitle, fix caption typos and switch layout; saving queues a new render. */
+/** Trim (±0.5 s), retitle, fix caption typos, switch layout and turn effects on or off; saving queues a new render. */
 export function EditSheet({ clip, source, onClose, onSaved }: { clip: Clip; source?: Source; onClose: () => void; onSaved: (clip: Clip) => void }) {
   const [start, setStart] = useState(clip.startSec);
   const [end, setEnd] = useState(clip.endSec);
@@ -26,6 +26,7 @@ export function EditSheet({ clip, source, onClose, onSaved }: { clip: Clip; sour
       .join(" "),
   );
   const [layout, setLayout] = useState<ClipLayout>(clip.layout);
+  const [effects, setEffects] = useState<ClipEffects>(clip.effects);
   const [playhead, setPlayhead] = useState(clip.startSec);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -74,7 +75,7 @@ export function EditSheet({ clip, source, onClose, onSaved }: { clip: Clip; sour
     setSaving(true);
     setError(null);
     try {
-      const { clip: saved } = await api.editClip(clip.id, { title, hook, captionText, layout, startSec: start, endSec: end });
+      const { clip: saved } = await api.editClip(clip.id, { title, hook, captionText, layout, startSec: start, endSec: end, effects });
       onSaved(saved);
     } catch (err) {
       setError((err as Error).message);
@@ -140,7 +141,7 @@ export function EditSheet({ clip, source, onClose, onSaved }: { clip: Clip; sour
           <input value={title} maxLength={100} required onChange={(e) => setTitle(e.target.value)} />
         </label>
         <label>
-          Hook (on screen for the first 2 s)
+          Hook (on screen for the first 1.5 s)
           <input value={hook} maxLength={100} onChange={(e) => setHook(e.target.value)} />
         </label>
         <label>
@@ -160,6 +161,17 @@ export function EditSheet({ clip, source, onClose, onSaved }: { clip: Clip; sour
             );
           })}
           {!source?.faceCam && <p className="hint">Face cam on top needs the face cam position: set it in Sources.</p>}
+        </fieldset>
+
+        <fieldset className="layouts">
+          <legend>Effects</legend>
+          {CLIP_EFFECTS.map((e) => (
+            <label key={e} className="layout">
+              <input type="checkbox" checked={effects[e]} onChange={(ev) => setEffects({ ...effects, [e]: ev.target.checked })} />
+              {CLIP_EFFECT_LABELS[e]}
+            </label>
+          ))}
+          <p className="hint">Zooms land on the loudest moment and on shouted words. The loop ending fades back to the first frame.</p>
         </fieldset>
 
         {error && (

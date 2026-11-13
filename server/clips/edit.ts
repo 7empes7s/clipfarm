@@ -1,5 +1,5 @@
-import type { Clip, ClipEditInput, ClipLayout, Source, Word } from "../../shared/types.js";
-import { CLIP_LAYOUTS, CLIP_MAX_SEC, CLIP_MIN_SEC } from "../../shared/types.js";
+import type { Clip, ClipEditInput, ClipEffects, ClipLayout, Source, Word } from "../../shared/types.js";
+import { CLIP_EFFECTS, CLIP_LAYOUTS, CLIP_MAX_SEC, CLIP_MIN_SEC } from "../../shared/types.js";
 import { ValidationError } from "../errors.js";
 
 /** The caption words shown inside [startSec, endSec] (master seconds). */
@@ -56,6 +56,11 @@ export function parseClipEdit(body: unknown, clip: Clip, source: Source): ClipEd
   const length = endSec - startSec;
   if (length < CLIP_MIN_SEC) throw new ValidationError(`The clip must be at least ${CLIP_MIN_SEC} seconds long.`);
   if (length > CLIP_MAX_SEC) throw new ValidationError(`The clip must be ${CLIP_MAX_SEC} seconds or shorter.`);
+  // An effect is switched only by a true or false; anything else keeps the clip's setting.
+  const sent = (b.effects ?? {}) as Record<string, unknown>;
+  const effects = Object.fromEntries(
+    CLIP_EFFECTS.map((e) => [e, typeof sent[e] === "boolean" ? sent[e] : clip.effects[e]]),
+  ) as ClipEffects;
   return {
     title: text(b.title, "title", 100, true),
     hook: text(b.hook, "hook", 100, false),
@@ -63,5 +68,6 @@ export function parseClipEdit(body: unknown, clip: Clip, source: Source): ClipEd
     layout,
     startSec,
     endSec,
+    effects,
   };
 }

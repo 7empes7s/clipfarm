@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccountCard, Clip, Job, Post, Source, Vod } from "../../shared/types.js";
+import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { buildDashboard, earningsRows, goals, vodProgress } from "./build.js";
 
 const now = new Date("2026-11-19T15:00:00.000Z"); // a Thursday; the week began Monday 16th
@@ -28,6 +29,8 @@ const source = (id: number, minViews: number | null, cpm = 1.5): Source => ({
       proofQuote: null,
       proofCheckedAt: null,
       reviewReason: null,
+      rules: null,
+      campaignCheckedAt: null,
       createdAt: "2026-11-01T00:00:00.000Z",
     },
   ],
@@ -56,6 +59,9 @@ const post = (o: Partial<Post> & Pick<Post, "permissionId">): Post => ({
   viewsUpdatedAt: null,
   viewsSource: null,
   whopSubmittedAt: null,
+  whopApprovedAt: null,
+  whopPaidAt: null,
+  whopPayoutAt: null,
   experiment: false,
   flags: { claim: null, removal: null, strike: null },
   estimatedEarningsUsd: 0,
@@ -69,6 +75,8 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   vodId: 1,
   title: `Clip ${clipId}`,
   hook: "",
+  effects: DEFAULT_EFFECTS,
+  quality: null,
   reason: "",
   score: null,
   durationSec: 25,
