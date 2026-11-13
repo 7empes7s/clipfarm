@@ -5,6 +5,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Word } from "../shared/types.js";
+import { DEFAULT_EFFECTS } from "../shared/types.js";
 import { createApp } from "../server/app.js";
 import { ClipsRepo } from "../server/clips/repo.js";
 import { openDb } from "../server/db/index.js";
@@ -58,11 +59,11 @@ describe("re-render an edited clip (real ffmpeg on a generated sample)", () => {
   it("cuts the trim, lays it out at 1080×1920 with audio and burns the captions in", async () => {
     const master = join(dir, "master.mp4");
     await generateSample(master, 10, undefined, "1280x720");
-    const base = { clipId: 1, sourceId: 1, masterPath: master, startSec: 2, endSec: 5.5, layout: "stacked" as const, hook: "WAIT FOR IT" };
+    const base = { clipId: 1, sourceId: 1, masterPath: master, startSec: 2, endSec: 5.5, layout: "stacked" as const, hook: "WAIT FOR IT", effects: DEFAULT_EFFECTS, peakSec: null };
     const faceCam = { x: 0.7, y: 0.05, w: 0.25, h: 0.3 };
 
     const withCaptions = join(dir, "with.mp4");
-    const duration = await renderClip({ ...base, captionWords: WORDS, faceCam }, withCaptions, dir);
+    const { durationSec: duration } = await renderClip({ ...base, captionWords: WORDS, faceCam }, withCaptions, dir);
     const info = await probe(withCaptions);
     expect(info).toMatchObject({ width: 1080, height: 1920, hasAudio: true });
     expect(Math.abs(info.duration - 3.5)).toBeLessThanOrEqual(0.1);

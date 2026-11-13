@@ -299,6 +299,13 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  -- Clip polish: the effects turned off per clip, where the reaction peaks in the master, and the
+  -- result of the automatic check on the latest render.
+  ALTER TABLE clips ADD COLUMN effects TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE clips ADD COLUMN peak_sec REAL;
+  ALTER TABLE clips ADD COLUMN quality TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {
