@@ -26,6 +26,8 @@ import type { LiveRepo } from "./live/repo.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import type { DirectPoster } from "./publish/direct/direct.js";
+import { scoutRoutes } from "./scout/routes.js";
+import type { Scout } from "./scout/service.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import { buildChecklist } from "./settings/checklist.js";
 import { configuredMap, integration, isConfigured, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
@@ -76,6 +78,8 @@ export interface AppDeps {
   hookLab?: HookLab;
   /** Test campaigns, their reports and the daily digest. */
   growth?: GrowthLab;
+  /** The campaign scout: "Campaigns for you" and auto mode. */
+  scout?: Scout;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -130,6 +134,7 @@ export function createApp({
   trends,
   hookLab,
   growth,
+  scout,
   seedDemoClip,
   clientDir,
   access,
@@ -717,6 +722,7 @@ export function createApp({
     });
   }
   if (growth) app.use("/api/growth", growthRoutes(growth));
+  if (scout) app.use("/api/scout", scoutRoutes(scout));
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));

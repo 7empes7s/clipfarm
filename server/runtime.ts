@@ -26,6 +26,9 @@ import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline
 import { DirectPoster } from "./publish/direct/direct.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
+import { PoliteFetcher } from "./scout/polite.js";
+import { ScoutRepo } from "./scout/repo.js";
+import { Scout } from "./scout/service.js";
 import type { Settings } from "./settings/store.js";
 import { SourcesRepo } from "./sources/repo.js";
 import { TrendRadar } from "./trends/radar.js";
@@ -46,6 +49,7 @@ export interface Runtime {
   direct: DirectPoster;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
+  scout: Scout;
   queue: JobQueue;
   watchRepo: WatchlistRepo;
   radar: TrendRadar;
@@ -72,7 +76,15 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const posts = new PostsRepo(db);
   const thumbs = new ThumbsRepo(db);
   const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
-  const publisher = new Publisher({ sources, clips, posts, service: config.postingService, isolation, vodTitle: (id) => vods.get(id).title });
+  const publisher = new Publisher({
+    sources,
+    clips,
+    posts,
+    service: config.postingService,
+    isolation,
+    vodTitle: (id) => vods.get(id).title,
+    campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
+  });
   const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
   publisher.useDirect(direct);
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
@@ -106,6 +118,18 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     platformStats: config.platformStats,
     notifier,
     computeUsdPerHour: config.computeUsdPerHour,
+  });
+  const scout: Scout = new Scout({
+    repo: new ScoutRepo(db),
+    sources,
+    posts,
+    accounts: () => publisher.accounts.list(),
+    fetcher: new PoliteFetcher(config.scout.fetcher, { gapMs: config.scout.gapMs }),
+    startUrls: config.scout.startUrls,
+    notifier,
+    watched: () => watchRepo.list().map((c) => c.name),
+    // Only while the radar's reading is fresh (boost() is null otherwise).
+    trending: () => (radar.boost() ? radar.videos().map((v) => v.streamer ?? v.channel) : []),
   });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
@@ -172,6 +196,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     direct,
     accountStats,
     growth,
+    scout,
     queue,
     watchRepo,
     radar,

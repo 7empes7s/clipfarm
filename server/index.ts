@@ -27,6 +27,7 @@ const {
   direct,
   accountStats,
   growth,
+  scout,
   queue,
   watchRepo,
   radar,
@@ -97,6 +98,7 @@ const app = createApp({
   trends: radar,
   hookLab,
   growth,
+  scout,
   seedDemoClip,
   clientDir,
   access: config.access ?? undefined,
@@ -145,6 +147,8 @@ void live.start();
 allowance.start(6 * 3600_000);
 // Looks every hour for running campaigns whose page was last read a day or more ago.
 campaigns.start(3600_000);
+// Looks every hour whether the daily campaign scout is due. Public pages only, one every five seconds.
+scout.start(3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -162,6 +166,7 @@ function shutdown() {
   live.stop();
   allowance.stop();
   campaigns.stop();
+  scout.stop();
   server.close(() => {
     void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();

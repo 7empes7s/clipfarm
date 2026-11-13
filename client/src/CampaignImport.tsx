@@ -4,7 +4,7 @@ import { CAMPAIGN_FIELDS, NO_CAMPAIGN_RULES } from "../../shared/types";
 import { api } from "./api";
 
 /** A draft with nothing read: every field is the manager's to fill, each marked "check this". */
-function emptyDraft(campaignUrl: string): CampaignDraft {
+export function emptyDraft(campaignUrl: string): CampaignDraft {
   return {
     campaignUrl,
     creatorName: null,

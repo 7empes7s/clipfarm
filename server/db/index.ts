@@ -469,6 +469,19 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (group_id, day)
   );
   `,
+  `
+  -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
+  CREATE TABLE scouted_campaigns (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL,
+    facts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    notified INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL,
+    read_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

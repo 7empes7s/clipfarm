@@ -117,6 +117,7 @@ env-only.
 | `YT_DLP_BIN` | `yt-dlp` | Path to the yt-dlp binary |
 | `CLIPFARM_FAKES` | – | `1` uses the fakes (downloader, transcriber, picker, posting) and adds a demo-clip button for e2e |
 | `FAKE_VOD_SEC` | `10` | Length of the fake downloader's test clip |
+| `SCOUT_URLS` | Content Rewards sitemap and clipping listing | Public pages the campaign scout starts from, comma-separated |
 | `PICKER` | local engine | `fake` takes the loudest moments (demos only, it cannot flag spoilers) |
 | `LLM_API_KEY` | `OPENAI_API_KEY` | Key for the cloud picking model (only used with "Use cloud AI for speed") |
 | `LLM_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API, e.g. `https://openrouter.ai/api/v1`, `https://api.cerebras.ai/v1` |
@@ -277,6 +278,38 @@ campaign, or brings the record with the same link (or the creator of the same na
 
 In demo mode (`CLIPFARM_FAKES=1`) campaign pages are made up on the server: any link is a running
 demo campaign; a link containing `bare`, `blocked`, `gone` or `ended` shows those cases.
+
+## Campaign scout
+
+clipfarm finds campaigns by itself (`server/scout/`). Once a day, and on **Scout now**, it reads the
+public Content Rewards sitemap and listing, the campaign pages they name and the agency pages those
+link to. Joining stays the manager's one tap: the scout never signs in anywhere.
+
+- **Polite** (`polite.ts`, `robots.ts`): every site's robots.txt is read first and obeyed (a site
+  whose robots.txt cannot be read is left alone), requests go out one at a time, at least 5 s apart
+  (longer when Crawl-delay asks), and a run reads at most 120 pages; the rest waits for the next day.
+- **Read** (`extract.ts`): what the campaign import reads (pay, minimum views, platforms, creator,
+  rules, end date) plus the payout minimum and maximum, the budget used and total, audience
+  requirements and how many clippers joined. What a page does not say stays empty.
+- **Score** (`score.ts`), shown line by line under **Why this one**:
+  `expected earnings per clip × budget left × fit × streams × (1 − rule risk − competition)`.
+  Earnings per clip add up, per platform, the pay per 1,000 views × our typical views there (the
+  middle of our own posts once there are 5, else a starting guess) × the chance of reaching the
+  views that pay. GTA scores × 1.5, other gaming × 1.2, the rest × 0.7, and a creator in today's fastest GTA clips
+  (the trend radar) × 1.2 on top. "No AI content", an audience
+  requirement and rules shown only after joining are the rule risk; few dollars left per clipper is
+  the competition.
+- **Campaigns for you** on the Dashboard: the top 5 with the estimate per day and the key rules.
+  **Join** opens the campaign page; back in clipfarm, **Yes, I joined** opens the campaign form
+  filled in from the page (the campaign import), and a saved campaign leaves the list by itself.
+  **Not interested** hides it.
+- **Auto mode** (Settings, off to start with): the clips the posting accounts can carry in a day are
+  shared over the joined campaigns by score (`auto.ts`). A campaign that ended, or has under 10% of
+  its budget left, gets none, and a post under a campaign whose share is used is held until tomorrow.
+- **Push**: "2 new campaigns worth joining (est. $X/day)" and "TJR budget at 85%, switching effort
+  to Y", once each, to the phones that turned notifications on.
+
+In demo mode the scout reads made-up pages (`server/scout/fake.ts`) with no wait.
 
 ## Creators who publicly allow clipping
 
