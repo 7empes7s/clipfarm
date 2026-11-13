@@ -69,6 +69,8 @@ export interface PublisherDeps {
   accounts?: AccountsRepo;
   /** The stream a clip was cut from, to match it to an account's niche. */
   vodTitle?: (vodId: number) => string | null;
+  /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
+  campaignLimit?: (permission: Permission, clipId: number) => string | null;
   now?: () => Date;
 }
 
@@ -333,8 +335,9 @@ export class Publisher {
     const allowed = routed.filter((account) => {
       const permission = routedAt(account, now)!;
       const problems = this.rulesBroken(clip, permission, account.platform, this.caption(clip, source, permission, account.platform));
-      if (problems.length > 0) skipped.push({ accountId: account.id, accountName: account.name, reason: `${account.name} was left out. ${problemsLine(problems)}` });
-      return problems.length === 0;
+      const why = problems.length > 0 ? problemsLine(problems) : (this.deps.campaignLimit?.(permission, clip.id) ?? null);
+      if (why) skipped.push({ accountId: account.id, accountName: account.name, reason: `${account.name} was left out. ${why}` });
+      return why === null;
     });
     if (allowed.length === 0) throw new ValidationError(`${skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
 

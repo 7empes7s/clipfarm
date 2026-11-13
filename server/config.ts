@@ -20,8 +20,11 @@ import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
 import { FakeLiveCapturer, type LiveCapturer, PlatformLiveCapturer, YtDlpLiveCapturer } from "./live/capturer.js";
 import { DEFAULT_LAUNCH_AT } from "./live/plan.js";
+import { DEFAULT_SCOUT_URLS } from "./scout/extract.js";
+import { DEMO_SCOUT_START, FakeScoutFetcher } from "./scout/fake.js";
+import { SCOUT_GAP_MS } from "./scout/polite.js";
 import { FakeCampaignFetcher } from "./sources/campaign/fake.js";
-import { FakeProofFetcher, HttpProofFetcher, type ProofFetcher } from "./sources/proof.js";
+import { FakeProofFetcher, HttpProofFetcher, isPublicWebUrl, type ProofFetcher } from "./sources/proof.js";
 import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
 import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
@@ -86,6 +89,8 @@ export interface Config {
   campaignFetcher: ProofFetcher;
   /** The cloud model that helps read a campaign page, only while "Use cloud AI for speed" is on and a key is set. */
   campaignChat: () => ChatClient | null;
+  /** The campaign scout: how it reads public pages, where it starts, and its wait between two requests. */
+  scout: { fetcher: ProofFetcher; startUrls: string[]; gapMs: number };
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -284,7 +289,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
     campaignFetcher: fakes ? new FakeCampaignFetcher() : new HttpProofFetcher(),
     campaignChat: fakes ? () => null : liveCampaignChat(settings, engine),
+    scout: {
+      fetcher: fakes ? new FakeScoutFetcher() : new HttpProofFetcher(),
+      startUrls: fakes ? [DEMO_SCOUT_START] : scoutUrls(env.SCOUT_URLS),
+      // The fake reaches no site, so the demo does not wait.
+      gapMs: fakes ? 0 : SCOUT_GAP_MS,
+    },
   };
+}
+
+/** The scout's starting pages: SCOUT_URLS (comma-separated https links), else the defaults. */
+export function scoutUrls(raw: string | undefined): string[] {
+  const urls = (raw ?? "").split(",").map((u) => u.trim()).filter((u) => u.startsWith("https://") && isPublicWebUrl(u));
+  return urls.length > 0 ? urls : DEFAULT_SCOUT_URLS;
 }
 
 /** The cloud chat model for these settings; null without a key. */

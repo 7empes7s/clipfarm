@@ -286,6 +286,16 @@ export class PostsRepo {
     ).n;
   }
 
+  /** The clips that went out today (UTC) under one permission record. */
+  clipsTodayUnder(permissionId: number): number[] {
+    const day = this.now().toISOString().slice(0, 10);
+    return (
+      this.db
+        .prepare("SELECT DISTINCT clip_id FROM posts WHERE permission_id = ? AND status != 'failed' AND substr(created_at, 1, 10) = ?")
+        .all(permissionId, day) as { clip_id: number }[]
+    ).map((r) => r.clip_id);
+  }
+
   setManualViews(id: number, views: number): Post {
     this.get(id);
     this.db

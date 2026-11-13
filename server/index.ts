@@ -14,7 +14,7 @@ import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier } = openRuntime();
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, scout, queue, liveRepo, notifier } = openRuntime();
 const mediaDir = config.mediaDir;
 
 const watchRepo = new WatchlistRepo(db, sources);
@@ -74,6 +74,7 @@ const app = createApp({
   engine: { engine: config.engine, fake: config.fakeEngine },
   settings: { store: settings, demo: config.fakes },
   growth,
+  scout,
   seedDemoClip,
   clientDir,
   access: config.access ?? undefined,
@@ -110,6 +111,8 @@ void live.start();
 allowance.start(6 * 3600_000);
 // Looks every hour for running campaigns whose page was last read a day or more ago.
 campaigns.start(3600_000);
+// Looks every hour whether the daily campaign scout is due. Public pages only, one every five seconds.
+scout.start(3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,
@@ -125,6 +128,7 @@ function shutdown() {
   live.stop();
   allowance.stop();
   campaigns.stop();
+  scout.stop();
   server.close(() => {
     void Promise.all([queue.idle(), live.settled()]).then(() => {
       db.close();

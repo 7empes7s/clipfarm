@@ -30,7 +30,7 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
 
-    expect(db.pragma("user_version", { simple: true })).toBe(16);
+    expect(db.pragma("user_version", { simple: true })).toBe(17);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").pluck().all();
     expect(tables).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations"]));
     const postColumns = db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all();

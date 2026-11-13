@@ -193,7 +193,7 @@ export function App() {
         </p>
       )}
 
-      {tab === "dashboard" && <DashboardTab view={dashView} clips={clips} sources={sources} jobs={jobs} />}
+      {tab === "dashboard" && <DashboardTab view={dashView} clips={clips} sources={sources} jobs={jobs} onCampaignDraft={setDraft} />}
       {tab === "inbox" && (waiting ? <Skeleton shape="frame" /> : <InboxTab clips={clips} sources={sources} jobs={jobs} updateClips={updateClips} refresh={refresh} />)}
       {(tab === "approved" || tab === "posted" || tab === "rejected") &&
         (waiting ? <Skeleton shape="card" count={2} /> : <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} />)}

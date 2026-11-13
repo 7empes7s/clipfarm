@@ -1,9 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountCard,
   AccountHealth,
   AccountRole,
   AccountsInfo,
+  CampaignDraft,
   Clip,
   DailyPoint,
   Dashboard,
@@ -33,6 +34,7 @@ import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { LaunchCard } from "./LaunchCard";
+import { ScoutCard } from "./ScoutCard";
 import { Sheet } from "./Sheet";
 import { Avatar, EmptyState, Icon, Ring, Skeleton, Sparkline } from "./ui";
 
@@ -50,7 +52,20 @@ const STAGE_LABEL = { transcript: "Transcript", picks: "Picks", render: "Render"
 const STAGE_STATE_LABEL = { waiting: "Waiting", running: "Running", done: "Done", failed: "Failed" } as const;
 
 /** The dashboard: today's numbers, pipeline progress, every clip, account stats and earnings. */
-export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; clips: Clip[]; sources: Source[]; jobs: Job[] }) {
+export function DashboardTab({
+  view,
+  clips,
+  sources,
+  jobs,
+  onCampaignDraft,
+}: {
+  view: DashView;
+  clips: Clip[];
+  sources: Source[];
+  jobs: Job[];
+  /** A scouted campaign was joined: opens the campaign form, filled in from its page. */
+  onCampaignDraft: (draft: CampaignDraft) => void;
+}) {
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +109,11 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
       {!dash && !error && (view === "today" || view === "earnings") && <Skeleton shape="tiles" />}
       {!dash && !error && (view === "progress" || view === "experiment") && <Skeleton shape="card" count={2} />}
       {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
-      {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
+      {dash && view === "today" && (
+        <Today dash={dash} jobs={jobs} onLoaded={load}>
+          <ScoutCard refreshKey={String(sources.reduce((n, s) => n + s.permissions.length, 0))} onJoined={onCampaignDraft} />
+        </Today>
+      )}
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
       {view === "accounts" && <Accounts sources={sources} />}
@@ -104,7 +123,7 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
   );
 }
 
-function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoaded: () => Promise<void> }) {
+function Today({ dash, jobs, onLoaded, children }: { dash: Dashboard; jobs: Job[]; onLoaded: () => Promise<void>; children?: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const t = dash.today;
   const making = jobs.find((j) => j.type === "demo-data" && (j.status === "queued" || j.status === "running"));
@@ -157,6 +176,7 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
         <Tile label="Cost this week" value={usd(t.costWeekUsd)} />
         <Tile label="Cost per approved clip" value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)} />
       </dl>
+      {children}
       {(dash.growth.campaigns.length > 0 || dash.growth.recommendations.length > 0) && (
         <div className="card dash-campaigns" data-testid="dash-campaigns">
           <h3 className="mini">Test campaigns</h3>

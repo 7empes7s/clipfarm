@@ -20,8 +20,12 @@ import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { Publisher } from "./publish/publisher.js";
 import { PostsRepo } from "./publish/repo.js";
+import { PoliteFetcher } from "./scout/polite.js";
+import { ScoutRepo } from "./scout/repo.js";
+import { Scout } from "./scout/service.js";
 import type { Settings } from "./settings/store.js";
 import { SourcesRepo } from "./sources/repo.js";
+import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import { VodsRepo } from "./vods/repo.js";
 
 export interface Runtime {
@@ -36,6 +40,7 @@ export interface Runtime {
   publisher: Publisher;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
+  scout: Scout;
   queue: JobQueue;
   liveRepo: LiveRepo;
   notifier: Notifier;
@@ -55,7 +60,14 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const picks = new PicksRepo(db);
   const clips = new ClipsRepo(db);
   const posts = new PostsRepo(db);
-  const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
+  const publisher = new Publisher({
+    sources,
+    clips,
+    posts,
+    service: config.postingService,
+    vodTitle: (id) => vods.get(id).title,
+    campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
+  });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
@@ -74,6 +86,17 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     platformStats: config.platformStats,
     notifier,
     computeUsdPerHour: config.computeUsdPerHour,
+  });
+  const watchlist = new WatchlistRepo(db, sources);
+  const scout: Scout = new Scout({
+    repo: new ScoutRepo(db),
+    sources,
+    posts,
+    accounts: () => publisher.accounts.list(),
+    fetcher: new PoliteFetcher(config.scout.fetcher, { gapMs: config.scout.gapMs }),
+    startUrls: config.scout.startUrls,
+    notifier,
+    watched: () => watchlist.list().map((c) => c.name),
   });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
@@ -120,5 +143,5 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
-  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, queue, liveRepo, notifier };
+  return { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, growth, scout, queue, liveRepo, notifier };
 }
