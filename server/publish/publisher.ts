@@ -72,6 +72,16 @@ export interface PublisherDeps {
   now?: () => Date;
 }
 
+/** Another hook on the same cut (the hook lab): its own title, on-screen hook and rendered video. */
+export interface PostVariant {
+  title: string;
+  hook: string;
+  filePath: string;
+}
+
+/** The words a post goes out with: the clip's own, or a hook variant's. */
+type Copy = Pick<PostVariant, "title" | "hook">;
+
 /** Why a picked account gets no post, or null when it can take one. */
 function skipReason(a: ChannelAccount): string | null {
   if (!a.enabled && a.pausedReason) return `${a.name} is paused after a strike, so nothing was sent to it.`;
@@ -103,9 +113,9 @@ export class Publisher {
     return accounts;
   }
 
-  private caption(clip: Clip, source: Source, permission: Permission, platform: Platform): string {
+  private caption(copy: Copy, source: Source, permission: Permission, platform: Platform): string {
     return buildCaption({
-      title: clip.title,
+      title: copy.title,
       creatorName: source.creatorName,
       channelUrl: source.channelUrls[0] ?? null,
       briefRules: permission.briefRules,
@@ -114,16 +124,19 @@ export class Publisher {
     });
   }
 
-  /** The compliance check: why this clip, with this caption, breaks the campaign's rules on a platform. Empty for records without rules. */
-  private rulesBroken(clip: Clip, permission: Permission, platform: Platform, caption: string): string[] {
+  /**
+   * The compliance check: why this clip, with the title, hook and caption it goes out with, breaks
+   * the campaign's rules on a platform. Empty for records without rules.
+   */
+  private rulesBroken(clip: Clip, copy: Copy, permission: Permission, platform: Platform, caption: string): string[] {
     if (permission.kind !== "whop-campaign" || !permission.rules) return [];
     return campaignProblems({
       rules: permission.rules,
       allowedPlatforms: permission.allowedPlatforms,
       platform,
       caption,
-      title: clip.title,
-      hook: clip.hook,
+      title: copy.title,
+      hook: copy.hook,
       transcript: clipTranscript(clip),
       durationSec: clip.durationSec,
     });
@@ -137,14 +150,16 @@ export class Publisher {
     const { posts, clips, sources } = this.deps;
     const post = posts.get(postId);
     if (on && step === "submitted" && !post.experiment) {
-      const problems = this.rulesBroken(clips.get(post.clipId), sources.permission(post.permissionId), post.platform, post.caption);
+      const clip = clips.get(post.clipId);
+      // A hook variant is checked on the title and hook it was posted with, not the clip's own.
+      const problems = this.rulesBroken(clip, posts.variantOf(postId) ?? clip, sources.permission(post.permissionId), post.platform, post.caption);
       if (problems.length > 0) throw new ValidationError(`Not marked as sent. ${problemsLine(problems)}`);
     }
     return posts.setWhopStep(postId, step, on);
   }
 
   /** Our list of accounts, read from the service once per server start (and on every sync). */
-  private async knownAccounts(): Promise<ChannelAccount[]> {
+  async knownAccounts(): Promise<ChannelAccount[]> {
     return this.synced ? this.accounts.list() : this.syncAccounts();
   }
 
@@ -174,7 +189,7 @@ export class Publisher {
     const broken = (account: ChannelAccount): string | null => {
       const routes = active.filter((p) => routingBlock(p, account, accounts) === null);
       const permission = routes.find((p) => p.kind !== "experiment") ?? routes[0];
-      const problems = permission ? this.rulesBroken(clip, permission, account.platform, this.caption(clip, source, permission, account.platform)) : [];
+      const problems = permission ? this.rulesBroken(clip, clip, permission, account.platform, this.caption(clip, source, permission, account.platform)) : [];
       return problems.length > 0 ? problemsLine(problems) : null;
     };
     const text = [clip.title, clip.hook, source.creatorName, clip.vodId === null ? null : vodTitle?.(clip.vodId)].join(" ");
@@ -226,12 +241,14 @@ export class Publisher {
    * permission, brief, routing, the permission's end date, daily caps) runs before the service is asked
    * to post; posts on a busy account are moved to its next free slot. Accounts that are switched
    * off, marked banned or that do not take the clip's permission kind are left out and named in `skipped`.
+   * A `variant` posts the same cut under another title and hook; every check stays the same, and
+   * the campaign's rules are checked on the variant's words.
    */
-  async post(clipId: number, accountIds: string[], when: Date | null): Promise<PostOutcome> {
+  async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant): Promise<PostOutcome> {
     const { clips, posts, service } = this.deps;
-    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when);
+    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant);
     const results = await service.publish(
-      { path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` },
+      { path: variant?.filePath ?? clips.filePath(clip.id), fileName: `${slug(variant?.title ?? clip.title)}.mp4` },
       planned.map((p) => p.item),
     );
     const made = planned.map(({ item, permission, at }) => {
@@ -250,6 +267,7 @@ export class Publisher {
         caption: item.caption,
         scheduledAt: at.toISOString(),
         postedAt: r?.postedAt ?? null,
+        variant: variant && { title: variant.title, hook: variant.hook },
       });
     });
     return { posts: made, skipped };
@@ -272,7 +290,7 @@ export class Publisher {
     return { wouldPost, skipped };
   }
 
-  private async plan(clipId: number, accountIds: string[], when: Date | null) {
+  private async plan(clipId: number, accountIds: string[], when: Date | null, variant?: Copy) {
     const { clips, sources, posts, service } = this.deps;
     if (accountIds.length === 0) throw new ValidationError("Pick at least one account.");
     if (new Set(accountIds).size !== accountIds.length) throw new ValidationError("Each account can be picked once.");
@@ -280,6 +298,7 @@ export class Publisher {
     if (when && when.getTime() < now.getTime() - 60_000) throw new ValidationError("Pick a time in the future.");
 
     const clip = clips.get(clipId);
+    const copy: Copy = variant ?? clip;
     const source = sources.get(clip.sourceId);
     // First pass without platforms: refuses missing or expired records before any service call.
     assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
@@ -332,7 +351,7 @@ export class Publisher {
     // Compliance: a clip that breaks its campaign's rules does not go out under that campaign.
     const allowed = routed.filter((account) => {
       const permission = routedAt(account, now)!;
-      const problems = this.rulesBroken(clip, permission, account.platform, this.caption(clip, source, permission, account.platform));
+      const problems = this.rulesBroken(clip, copy, permission, account.platform, this.caption(copy, source, permission, account.platform));
       if (problems.length > 0) skipped.push({ accountId: account.id, accountName: account.name, reason: `${account.name} was left out. ${problemsLine(problems)}` });
       return problems.length === 0;
     });
@@ -362,8 +381,8 @@ export class Publisher {
       if (!permission) throw new ValidationError(`${routingReason(account, at)} Nothing was posted.`);
       const item: PublishItem = {
         account,
-        title: clip.title,
-        caption: this.caption(clip, source, permission, account.platform),
+        title: copy.title,
+        caption: this.caption(copy, source, permission, account.platform),
         when: when === null && at.getTime() === now.getTime() ? null : at,
         paidPromotion: permission.kind === "whop-campaign",
       };
@@ -406,7 +425,7 @@ export class Publisher {
     });
     const permission = covering!;
     const caption = this.caption(clip, source, permission, platform);
-    const problems = this.rulesBroken(clip, permission, platform, caption);
+    const problems = this.rulesBroken(clip, clip, permission, platform, caption);
     if (problems.length > 0) throw new ValidationError(problemsLine(problems));
     return {
       clipId: clip.id,

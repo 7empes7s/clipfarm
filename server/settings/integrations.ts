@@ -45,7 +45,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
   {
     id: "openai",
     label: "OpenAI",
-    purpose: "Optional speed-up. clipfarm transcribes and picks on its own server; with this key you can switch on \"Use cloud AI for speed\" on the Dashboard.",
+    purpose: "Optional speed-up. clipfarm transcribes and picks on its own server; with this key you can switch on \"Use cloud AI for speed\" on the Dashboard. It also tags the trend radar's titles and writes hook variants for the hook lab.",
     fields: [
       key("OPENAI_API_KEY", "API key", "sk-…"),
       plain("LLM_BASE_URL", "Picking model address (optional)", "https://api.openai.com/v1", false, true),
@@ -62,7 +62,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
   {
     id: "youtube",
     label: "YouTube",
-    purpose: "Finds new streams and live channels on YouTube.",
+    purpose: "Finds new streams and live channels on YouTube, and reads which GTA Shorts are winning today (Dashboard, Trends).",
     fields: [key("YOUTUBE_API_KEY", "YouTube Data API key", "AIza…")],
   },
   {
