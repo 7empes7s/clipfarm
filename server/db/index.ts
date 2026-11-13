@@ -371,33 +371,6 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
-  -- Account isolation: groups of accounts that share developer apps and a way out to the internet.
-  -- Keys and proxy addresses are in the secrets file, not here. A NULL group_id is the built-in
-  -- group of the account's role (1 Main, 2 Burners).
-  CREATE TABLE isolation_groups (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    kind TEXT NOT NULL,
-    proxy_check TEXT,
-    created_at TEXT NOT NULL
-  );
-  INSERT INTO isolation_groups (id, name, kind, created_at) VALUES
-    (1, 'Main', 'main', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    (2, 'Burners', 'burner', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
-  ALTER TABLE posting_accounts ADD COLUMN group_id INTEGER REFERENCES isolation_groups(id);
-  ALTER TABLE posting_accounts ADD COLUMN token_expires_at TEXT;
-  ALTER TABLE posts ADD COLUMN group_id INTEGER;
-  ALTER TABLE posts ADD COLUMN exit_ip TEXT;
-  ALTER TABLE posts ADD COLUMN note TEXT;
-  -- YouTube API units a group's app used, per Pacific day.
-  CREATE TABLE youtube_quota (
-    group_id INTEGER NOT NULL,
-    day TEXT NOT NULL,
-    units INTEGER NOT NULL,
-    PRIMARY KEY (group_id, day)
-  );
-  `,
-  `
   -- Trend radar: today's fastest short videos (titles and numbers only, never media).
   CREATE TABLE trend_videos (
     video_id TEXT PRIMARY KEY,
@@ -442,6 +415,35 @@ export const MIGRATIONS: string[] = [
   -- The title and hook a post went out with when they are a hook variant's; NULL: the clip's own.
   ALTER TABLE posts ADD COLUMN variant_title TEXT;
   ALTER TABLE posts ADD COLUMN variant_hook TEXT;
+  `,
+  `
+  -- Account isolation: groups of accounts that share developer apps and a way out to the internet.
+  -- Keys and proxy addresses are in the secrets file, not here. A NULL group_id is the built-in
+  -- group of the account's role (1 Main, 2 Burners).
+  CREATE TABLE isolation_groups (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL,
+    proxy_check TEXT,
+    created_at TEXT NOT NULL
+  );
+  INSERT INTO isolation_groups (id, name, kind, created_at) VALUES
+    (1, 'Main', 'main', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    (2, 'Burners', 'burner', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  ALTER TABLE posting_accounts ADD COLUMN group_id INTEGER REFERENCES isolation_groups(id);
+  ALTER TABLE posting_accounts ADD COLUMN token_expires_at TEXT;
+  ALTER TABLE posts ADD COLUMN group_id INTEGER;
+  ALTER TABLE posts ADD COLUMN exit_ip TEXT;
+  ALTER TABLE posts ADD COLUMN note TEXT;
+  -- The video of the hook variant a waiting upload goes out with; NULL: the clip's own video.
+  ALTER TABLE posts ADD COLUMN variant_file TEXT;
+  -- YouTube API units a group's app used, per Pacific day.
+  CREATE TABLE youtube_quota (
+    group_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    units INTEGER NOT NULL,
+    PRIMARY KEY (group_id, day)
+  );
   `,
 ];
 

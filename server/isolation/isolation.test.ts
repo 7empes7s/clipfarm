@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
@@ -13,6 +13,7 @@ import { ClipsRepo } from "../clips/repo.js";
 import { openDb } from "../db/index.js";
 import { JobQueue } from "../jobs/queue.js";
 import { PicksRepo } from "../picks/repo.js";
+import { HookLab } from "../hooklab/lab.js";
 import { DirectPoster } from "../publish/direct/direct.js";
 import { FakePlatforms } from "../publish/direct/fake.js";
 import { FakePostingService } from "../publish/fake.js";
@@ -143,7 +144,7 @@ function setup(opts: { service?: FakePostingService | PostizService } = {}) {
   };
 
   return {
-    app, db, settings, sources, isolation, direct, publisher, posts, real, experiment, newClip, groups, group, setApp, setProxy, testProxy, connect, account,
+    app, db, settings, sources, clips, isolation, direct, publisher, posts, clock, real, experiment, newClip, groups, group, setApp, setProxy, testProxy, connect, account,
     fastPace, post, ready, setNow: (d: Date) => (now = d),
   };
 }
@@ -520,6 +521,92 @@ function appDeps(t: ReturnType<typeof setup>) {
     isolation: { isolation: t.isolation, direct: t.direct, demo: false },
   };
 }
+
+describe("hook variants on channels connected here", () => {
+  it("uploads the variant's own video and title, now and when a waiting post is picked up later", async () => {
+    const t = setup();
+    await t.ready();
+    t.fastPace(BURNER_YT);
+    fake.reset();
+    const variantPath = join(dir, "variant-b.mp4");
+    writeFileSync(variantPath, Buffer.alloc(9000, 3));
+    const variant = { title: "VARIANT B TITLE", hook: "Wait for it", filePath: variantPath };
+
+    const now = await t.publisher.post(t.newClip(t.experiment.id).id, [BURNER_YT], null, variant);
+    expect(now.posts[0]).toMatchObject({ status: "posted", service: "direct" });
+    expect(fake.uploads).toEqual([expect.objectContaining({ channel: "burnerchan", title: "VARIANT B TITLE", bytes: 9000 })]);
+
+    const due = new Date(NOON.getTime() + 2 * 3600_000);
+    const later = await t.publisher.post(t.newClip(t.experiment.id, "Second").id, [BURNER_YT], due, variant);
+    expect(later.posts[0]).toMatchObject({ status: "scheduled" });
+    t.setNow(new Date(due.getTime() + 60_000));
+    expect(await t.direct.runDue()).toBe(1);
+    expect(fake.uploads[1]).toMatchObject({ title: "VARIANT B TITLE", bytes: 9000 });
+
+    // The video is gone by the time the post is due: it fails, the clip's own video is not sent in its place.
+    const third = await t.publisher.post(t.newClip(t.experiment.id, "Third").id, [BURNER_YT], new Date(due.getTime() + 2 * 3600_000), variant);
+    rmSync(variantPath);
+    t.setNow(new Date(due.getTime() + 3 * 3600_000));
+    expect(await t.direct.runDue()).toBe(0);
+    expect(t.posts.get(third.posts[0]!.id)).toMatchObject({ status: "failed", error: "The video of this hook variant is gone, so this post was not sent." });
+    expect(fake.uploads.length).toBe(2);
+  });
+
+  it("sends the hook lab's winner to a main channel as the variant, also when it has to wait for the quota", async () => {
+    const t = setup();
+    await t.ready();
+    expect((await t.connect(BURNERS_GROUP_ID, "youtube", "burnertwo")).status).toBe(302);
+    const BURNER_TWO = "direct-youtube-UC-burnertwo";
+    for (const id of [BURNER_YT, BURNER_TWO, MAIN_YT]) t.fastPace(id);
+    const queued: number[] = [];
+    const lab = new HookLab({ db: t.db, clips: t.clips, sources: t.sources, posts: t.posts, publisher: t.publisher, enqueueRender: (id) => queued.push(id), now: t.clock });
+    lab.saveSettings({ on: true });
+    const clip = t.clips.create({ sourceId: t.real.id, vodId: null, title: "He actually landed the jump", hook: "No way", filePath: videoPath, durationSec: 24 });
+    t.clips.setStatus(clip.id, "approved");
+    fake.reset();
+
+    await lab.tick();
+    const [b] = lab.variantsToRender(queued[0]!);
+    const variantPath = join(dir, "variant-winner.mp4");
+    writeFileSync(variantPath, Buffer.alloc(7000, 5));
+    lab.setVariantFile(b!.id, variantPath);
+    await lab.tick();
+    const variants = lab.info().tests[0]!.variants;
+    expect(variants.map((v) => v.label)).toEqual(["A", "B"]);
+    // Each burner gets its own variant: A is the clip as approved; B has its own title and video,
+    // and goes out a little later (accounts post the same clip some time apart).
+    const bPost = t.posts.get(variants[1]!.postId!);
+    expect(bPost.status).toBe("scheduled");
+    const bAt = new Date(bPost.scheduledAt);
+    expect(bAt.getTime()).toBeGreaterThan(NOON.getTime());
+    t.setNow(bAt);
+    expect(await t.direct.runDue()).toBe(1);
+    expect(fake.uploads.map((u) => [u.title, u.bytes])).toEqual([
+      ["He actually landed the jump", 4096],
+      [variants[1]!.title, 7000],
+    ]);
+
+    // B wins while the main app's quota is used up: its post waits, and so does its video.
+    t.db.prepare("UPDATE posts SET views = 900 WHERE id = ?").run(bPost.id);
+    fake.quotaExceeded = true;
+    t.setNow(new Date(bAt.getTime() + 6 * 3600_000 + 60_000));
+    await lab.tick();
+    // Two main channels: the one connected here, and the one linked in the posting service.
+    expect(lab.info().tests[0]).toMatchObject({ status: "done", mainPosts: 2 });
+    const waiting = t.posts.list().find((p) => p.accountId === MAIN_YT)!;
+    expect(waiting).toMatchObject({ status: "scheduled", scheduledAt: "2026-11-20T08:00:00.000Z" });
+    expect(existsSync(variantPath)).toBe(true);
+
+    fake.quotaExceeded = false;
+    t.setNow(new Date("2026-11-20T08:00:30.000Z"));
+    expect(await t.direct.runDue()).toBe(1);
+    expect(fake.uploads[2]).toMatchObject({ channel: "mainchan", title: variants[1]!.title, bytes: 7000 });
+    // Sent: the lab tidies the video away on its next look.
+    await lab.tick();
+    expect(existsSync(variantPath)).toBe(false);
+    expect(existsSync(videoPath)).toBe(true);
+  });
+});
 
 describe("YouTube quota per app", () => {
   it("counts units per group, stops at the limit and goes on after the reset", async () => {

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { ChannelAccount, DirectPlatform, IsolationInfo, Post } from "../../../shared/types.js";
 import { DIRECT_PLATFORMS, PLATFORM_LABELS } from "../../../shared/types.js";
 import type { AccountsRepo } from "../../accounts/repo.js";
@@ -181,11 +182,14 @@ export class DirectPoster {
       if (platform === "youtube" && isolation.quotaFull(group.id)) return this.waitForQuota(postId, group);
       const client = PLATFORM_CLIENTS[platform];
       const ctx = this.ctx(group, platform);
+      // A hook variant goes out with its own video and title, never the clip's in their place.
+      const variantFile = posts.variantFile(postId);
+      if (variantFile && !existsSync(variantFile)) return failed("The video of this hook variant is gone, so this post was not sent.");
       try {
         const access = await this.access(ctx, client, account);
         const sent = await client.upload(ctx, { id: account.id.slice(`direct-${platform}-`.length), handle: account.handle }, access, {
-          path: clips.filePath(post.clipId),
-          title: post.clipTitle,
+          path: variantFile ?? clips.filePath(post.clipId),
+          title: posts.variantOf(postId)?.title ?? post.clipTitle,
           caption: post.caption,
           paidPromotion: permission.kind === "whop-campaign",
         });

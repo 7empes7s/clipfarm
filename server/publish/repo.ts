@@ -123,6 +123,8 @@ export interface NewPost {
   note?: string | null;
   /** The title and hook it goes out with, when they are not the clip's own (a hook variant). */
   variant?: { title: string; hook: string };
+  /** The variant's own video, kept with an upload that clipfarm sends itself (now or later). */
+  variantFile?: string | null;
 }
 
 export class PostsRepo {
@@ -135,8 +137,8 @@ export class PostsRepo {
     const { lastInsertRowid } = this.db
       .prepare(
         `INSERT INTO posts (clip_id, permission_id, platform, account_id, account_name, service, external_id, status,
-           url, error, caption, scheduled_at, posted_at, created_at, group_id, exit_ip, note, variant_title, variant_hook)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           url, error, caption, scheduled_at, posted_at, created_at, group_id, exit_ip, note, variant_title, variant_hook, variant_file)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         p.clipId,
@@ -158,6 +160,7 @@ export class PostsRepo {
         p.note ?? null,
         p.variant?.title ?? null,
         p.variant?.hook ?? null,
+        p.variantFile ?? null,
       );
     return this.get(Number(lastInsertRowid));
   }
@@ -191,6 +194,16 @@ export class PostsRepo {
       | { title: string | null; hook: string | null }
       | undefined;
     return row?.title != null && row.hook != null ? { title: row.title, hook: row.hook } : null;
+  }
+
+  /** The variant video a post uploads; null when it uploads the clip's own. */
+  variantFile(id: number): string | null {
+    return (this.db.prepare("SELECT variant_file FROM posts WHERE id = ?").pluck().get(id) as string | null | undefined) ?? null;
+  }
+
+  /** Whether an upload that has not gone out yet still needs this variant video. */
+  waitsForFile(file: string): boolean {
+    return this.db.prepare("SELECT 1 FROM posts WHERE variant_file = ? AND status = 'scheduled' AND external_id IS NULL").get(file) !== undefined;
   }
 
   get(id: number): Post {

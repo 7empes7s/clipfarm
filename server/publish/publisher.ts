@@ -323,6 +323,8 @@ export class Publisher {
           groupId,
           note,
           variant: variant && { title: variant.title, hook: variant.hook },
+          // Kept with the post: it may go out later (a set time, a busy account, a full quota).
+          variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
         });
         // "Post now" uploads at once; a later time is picked up by the timer when it is due.
         made.push(item.when === null && this.direct ? await this.direct.send(waiting.id) : waiting);
