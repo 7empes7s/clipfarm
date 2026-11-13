@@ -5,6 +5,7 @@ import type {
   AccountRole,
   AccountsInfo,
   Clip,
+  DailyPoint,
   Dashboard,
   Job,
   PermissionKind,
@@ -33,6 +34,7 @@ import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { LaunchCard } from "./LaunchCard";
 import { Sheet } from "./Sheet";
+import { Avatar, EmptyState, Icon, Ring, Skeleton, Sparkline } from "./ui";
 
 export const DASH_VIEWS = [
   { id: "today", label: "Today" },
@@ -89,6 +91,8 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
         </p>
       )}
       {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
+      {!dash && !error && (view === "today" || view === "earnings") && <Skeleton shape="tiles" />}
+      {!dash && !error && (view === "progress" || view === "experiment") && <Skeleton shape="card" count={2} />}
       {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
       {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
       {dash && view === "progress" && <Progress dash={dash} />}
@@ -108,42 +112,50 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
   return (
     <>
       {dash.empty && (
-        <div className="empty dash-empty">
-          <p>Nothing here yet. Add a campaign and a stream link in Sources, or try the dashboard with demo data first.</p>
-          <p className="hint">Demo data is made from test patterns: ten clips, two streams, posts and account stats. None of it can be posted.</p>
-          {making ? (
-            <p role="status">Making demo data… {Math.round(making.progress * 100)}%</p>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                setError(null);
-                void api.loadDemoData().then(onLoaded, (err: Error) => setError(err.message));
-              }}
-            >
-              Load demo data
-            </button>
-          )}
-          {(error ?? failed?.error) && (
-            <p className="error" role="alert">
-              {error ?? failed?.error}
-            </p>
-          )}
+        <div className="dash-empty">
+          <EmptyState
+            icon="dashboard"
+            title="Your numbers start with a first stream"
+            action={{ label: "Add a campaign", href: "#sources" }}
+            extra={
+              <>
+                <p className="hint">
+                  Or look around first with demo data made from test patterns: ten clips, two streams, posts and account stats.
+                  None of it can be posted.
+                </p>
+                {making ? (
+                  <p role="status">Making demo data… {Math.round(making.progress * 100)}%</p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      void api.loadDemoData().then(onLoaded, (err: Error) => setError(err.message));
+                    }}
+                  >
+                    Load demo data
+                  </button>
+                )}
+                {(error ?? failed?.error) && (
+                  <p className="error" role="alert">
+                    {error ?? failed?.error}
+                  </p>
+                )}
+              </>
+            }
+          >
+            Nothing here yet. Add a campaign and a stream link in Sources: views, clips waiting and earnings fill in from there.
+          </EmptyState>
         </div>
       )}
       <dl className="tiles" data-testid="today">
-        <Tile label="Waiting for review" value={String(t.waiting)} href="#inbox" />
+        <Tile lead label={t.viewsTodayFrom === "accounts" ? "Views today" : "Views on today's posts"} value={compact(t.viewsToday)} trend={dash.trends.views} />
+        <Tile label="Waiting for review" value={String(t.waiting)} href="#inbox" trend={dash.trends.clips} />
+        <Tile label="Earnings this week (estimate)" value={usd(t.earningsWeekUsd)} trend={dash.trends.earnings} />
         <Tile label="Approved, not posted" value={String(t.approved)} href="#approved" />
         <Tile label="Posted today" value={String(t.postedToday)} href="#posted" />
-        <Tile label={t.viewsTodayFrom === "accounts" ? "Views today" : "Views on today's posts"} value={compact(t.viewsToday)} />
-        <Tile label="Earnings this week (estimate)" value={usd(t.earningsWeekUsd)} />
         <Tile label="Cost this week" value={usd(t.costWeekUsd)} />
-        <Tile
-          label="Cost per approved clip"
-          value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)}
-          wide
-        />
+        <Tile label="Cost per approved clip" value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)} />
       </dl>
 
       <EngineCard jobs={jobs} />
@@ -189,83 +201,120 @@ function Setup({ refreshKey }: { refreshKey: string }) {
     };
   }, [refreshKey]);
   if (!list || list.done) return null;
-  const left = list.items.filter((i) => !i.done).length;
+  const done = list.items.filter((i) => i.done).length;
+  const next = list.items.find((i) => !i.done);
+  const others = list.items.filter((i) => i !== next);
   return (
     <div className="card setup" data-testid="setup">
-      <div className="card-head">
-        <h3>Finish setting up</h3>
-        <span className="hint">{left} of {list.items.length} left</span>
-      </div>
-      <ol className="setup-list">
-        {list.items.map((item) => (
-          <li key={item.id} className={item.done ? "setup-done" : undefined}>
-            <span className="setup-mark" aria-hidden="true">
-              {item.done ? "✓" : ""}
-            </span>
-            <div className="setup-text">
-              <span className="setup-label">
-                {item.label}
-                <span className="visually-hidden">{item.done ? " (done)" : " (to do)"}</span>
-              </span>
-              <span className="hint">{item.line}</span>
-            </div>
-            {!item.done && (
-              <a className="button" href={item.href}>
-                {item.action}
+      <div className="setup-head">
+        <Ring done={done} total={list.items.length} label={`${done} of ${list.items.length} setup steps done`} />
+        <div className="setup-next">
+          <h3>Finish setting up</h3>
+          {next && (
+            <>
+              <p className="setup-label">{next.label}</p>
+              <p className="hint">{next.line}</p>
+              <a className="button primary" href={next.href}>
+                {next.action}
               </a>
-            )}
-          </li>
-        ))}
-      </ol>
+            </>
+          )}
+        </div>
+      </div>
+      <details>
+        <summary>
+          The other steps: {done} done, {list.items.length - done - 1} to do
+        </summary>
+        <ol className="setup-list">
+          {others.map((item) => (
+            <li key={item.id} className={item.done ? "setup-done" : undefined}>
+              <span className="setup-mark" aria-hidden="true">
+                {item.done && <Icon name="approve" size={14} />}
+              </span>
+              <div className="setup-text">
+                <span className="setup-label">
+                  {item.label}
+                  <span className="visually-hidden">{item.done ? " (done)" : " (to do)"}</span>
+                </span>
+                <span className="hint">{item.line}</span>
+              </div>
+              {!item.done && (
+                <a className="button" href={item.href}>
+                  {item.action}
+                </a>
+              )}
+            </li>
+          ))}
+        </ol>
+      </details>
     </div>
   );
 }
 
-/** Who on the watchlist is streaming now (from the watchlist's own checks). */
+/** The watched creators as a row of faces, whoever is live first with a pulsing ring. */
 function LiveNow() {
-  const [live, setLive] = useState<WatchedCreator[] | null>(null);
+  const [creators, setCreators] = useState<WatchedCreator[] | null>(null);
   useEffect(() => {
     let on = true;
     api.watchlist().then(
-      (w) => on && setLive(w.creators.filter((c) => c.live)),
-      () => on && setLive(null),
+      (w) => on && setCreators(w.creators),
+      () => on && setCreators(null),
     );
     return () => {
       on = false;
     };
   }, []);
-  if (live === null) return null;
+  if (creators === null) return null;
+  const live = creators.filter((c) => c.live);
+  const rest = creators.filter((c) => !c.live);
   return (
     <>
       <h3 className="sub">Live now</h3>
-      {live.length === 0 ? (
-        <p className="hint">
-          Nobody on the <a href="#watchlist">watchlist</a> is live.
-        </p>
+      {creators.length === 0 ? (
+        <EmptyState icon="watchlist" title="Nobody to watch yet" action={{ label: "Add a creator", href: "#watchlist" }}>
+          Put the streamers you clip on the watchlist. Their new streams are picked up on their own, and you see here who is live.
+        </EmptyState>
       ) : (
-        <ul className="stack" data-testid="dash-live">
-          {live.map((c) => (
-            <li key={c.id} className="job">
-              <div className="job-line">
-                <a className="job-name" href={c.live!.url} target="_blank" rel="noreferrer">
-                  {c.name}
+        <>
+          <p className="hint">
+            {live.length === 0 ? "Nobody on the " : `${live.length} live on the `}
+            <a href="#watchlist">watchlist</a>
+            {live.length === 0 ? " is live." : "."}
+          </p>
+          <ul className="faces" data-testid="dash-live">
+            {live.map((c) => (
+              <li key={c.id}>
+                <a href={c.live!.url} target="_blank" rel="noreferrer" title={c.live!.game ? `${c.live!.game}: ${c.live!.title}` : c.live!.title}>
+                  <Avatar name={c.name} live />
+                  <span className="who">{c.name}</span>
+                  <span className="on-air">
+                    Live<span className="visually-hidden"> on {WATCH_PLATFORM_LABELS[c.live!.platform]}</span>
+                  </span>
                 </a>
-                <span className="job-status">{WATCH_PLATFORM_LABELS[c.live!.platform]}</span>
-              </div>
-              <span className="hint">{c.live!.game ? `${c.live!.game}: ${c.live!.title}` : c.live!.title}</span>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+            {rest.map((c) => (
+              <li key={c.id}>
+                <a href="#watchlist">
+                  <Avatar name={c.name} />
+                  <span className="who">{c.name}</span>
+                  <span className="where">{c.channels[0] ? WATCH_PLATFORM_LABELS[c.channels[0].platform] : "No channel"}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </>
   );
 }
 
-function Tile({ label, value, href, wide }: { label: string; value: string; href?: string; wide?: boolean }) {
+function Tile({ label, value, href, trend, lead }: { label: string; value: string; href?: string; trend?: DailyPoint[]; lead?: boolean }) {
   return (
-    <div className={wide ? "tile wide" : "tile"}>
+    <div className={lead ? "tile tile-hero tile-lead" : trend ? "tile tile-hero" : "tile"}>
       <dt>{href ? <a href={href}>{label}</a> : label}</dt>
       <dd>{value}</dd>
+      {trend && <Sparkline values={trend.map((p) => p.value)} />}
     </div>
   );
 }
@@ -291,7 +340,9 @@ function Progress({ dash }: { dash: Dashboard }) {
 
       <h3 className="sub">Streams</h3>
       {dash.vods.length === 0 ? (
-        <p className="empty">No streams yet. Add a stream link to a campaign in Sources.</p>
+        <EmptyState icon="link" title="No streams yet" action={{ label: "Paste a stream link", href: "#sources" }}>
+          Paste a stream link on a campaign in Sources. Its transcript, picks and renders are tracked here, step by step.
+        </EmptyState>
       ) : (
         <ul className="stack">
           {dash.vods.map((v) => (
@@ -448,7 +499,28 @@ function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sour
         {shown.length} of {clips.length} clips
       </p>
       {shown.length === 0 ? (
-        <p className="empty">{clips.length === 0 ? "No clips yet." : "No clips match these filters."}</p>
+        clips.length === 0 ? (
+          <EmptyState icon="play" title="No clips yet" action={{ label: "Paste a stream link", href: "#sources" }}>
+            Every clip made from your streams is listed here, with where it was posted and its views.
+          </EmptyState>
+        ) : (
+          <EmptyState
+            icon="play"
+            title="No clips match these filters"
+            action={{
+              label: "Clear the filters",
+              onClick: () => {
+                setCreator("");
+                setCampaign("");
+                setPlatform("");
+                setWhen("all");
+                setSince(0);
+              },
+            }}
+          >
+            Widen the creator, campaign, platform or date to see more.
+          </EmptyState>
+        )
       ) : (
         <ul className="outputs">
           {shown.map((c) => {
@@ -458,7 +530,7 @@ function Outputs({ clips, posts, sources }: { clips: Clip[]; posts: Post[]; sour
             return (
               <li key={c.id} className={`output output-${state}`} data-testid="output">
                 <button type="button" className="output-play" aria-label={`Play ${c.title}`} onClick={() => setPlaying(c)}>
-                  <span aria-hidden="true">▶</span>
+                  <Icon name="play" />
                 </button>
                 <div className="output-body">
                   <div className="job-line">
@@ -542,7 +614,7 @@ function Accounts({ sources }: { sources: Source[] }) {
         {error}
       </p>
     );
-  if (!info) return <p className="hint">Loading accounts…</p>;
+  if (!info) return <Skeleton shape="card" count={2} />;
   const edited = info.cards.find((c) => c.accountId === editing);
   return (
     <>
@@ -565,18 +637,27 @@ function Accounts({ sources }: { sources: Source[] }) {
           {syncNote}
         </p>
       )}
-      <p className="hint">
-        {info.service === "none"
-          ? "No posting service is set up, so there are no account stats yet. Add Postiz or Upload-Post in Settings."
-          : `Stats come from ${info.label}, read every ${info.refreshHours} hours to stay inside its limits.`}
-      </p>
+      {info.service !== "none" && (
+        <p className="hint">
+          Stats come from {info.label}, read every {info.refreshHours} hours to stay inside its limits.
+        </p>
+      )}
       {info.error && (
         <p className="error" role="alert">
           {info.error}
         </p>
       )}
       {info.cards.length === 0 ? (
-        <p className="empty">No accounts yet. Connect accounts in the posting service (Postiz or Upload-Post) and they show up here.</p>
+        info.service === "none" ? (
+          <EmptyState icon="posted" title="Connect a posting service" action={{ label: "Open Settings", href: "#settings/postiz" }}>
+            No accounts yet. Add Postiz or Upload-Post in Settings, and the accounts linked there show up here with their
+            stats.
+          </EmptyState>
+        ) : (
+          <EmptyState icon="posted" title="Link your first account" action={{ label: "Look for linked accounts", onClick: () => void sync() }}>
+            No accounts yet. Link each TikTok, YouTube or Instagram account once in {info.label}, then sync. clipfarm posts to them from then on.
+          </EmptyState>
+        )
       ) : (
         <ul className="stack">
           {info.cards.map((c) => (
@@ -947,7 +1028,9 @@ function Earnings({ dash }: { dash: Dashboard }) {
       </dl>
       <p className="hint">A post earns only once it reaches its campaign's minimum views. Mark posts sent to Whop in Posted.</p>
       {rows.length === 0 ? (
-        <p className="empty">No posts yet, so nothing earned.</p>
+        <EmptyState icon="approved" title="Nothing earned yet" action={{ label: "Post an approved clip", href: "#approved" }}>
+          No posts yet. Earnings are estimated from the views of each post and its campaign's pay per 1,000 views.
+        </EmptyState>
       ) : (
         <table className="breakdown earnings" data-testid="earnings">
           <thead>
