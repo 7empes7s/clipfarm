@@ -149,6 +149,9 @@ describe("routing by permission kind", () => {
     const info = (await request(t.app).get("/api/posting").expect(200)).body as { accounts: ChannelAccount[] };
     expect(noAccountReason(whop.source.permissions, info.accounts, NOW)).toMatch(/^No account takes “Whop campaign” clips yet\./);
     expect(noAccountReason(t.clipOf("own-content", "Us").source.permissions, info.accounts, NOW)).toBeNull();
+    // A record on hold (its proof is gone) is not in force: the gate says "needs review", not this.
+    const onHold = whop.source.permissions.map((p) => ({ ...p, reviewReason: "The page is gone." }));
+    expect(noAccountReason(onHold, info.accounts, NOW)).toBeNull();
   });
 
   it("a creator with two kinds of permission posts under the one each account takes", async () => {

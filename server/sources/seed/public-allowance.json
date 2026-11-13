@@ -1,0 +1,231 @@
+{
+  "about": "Starter list for \"Add suggested creators\": live streamers who invite clipping of their streams in public. Every proofUrl was fetched and every proofQuote found on it on the checkedOn date, with the same check the weekly job runs. Most proofs are open clipping-campaign pages (the creator or their agency invites anyone to clip; joining the campaign is only needed to be paid by it), one is the creator's own words in a news report. The big names are first; the smaller ones are not known GTA streamers and are here because the invitation is clear. Campaign pages change and close: the weekly check puts an entry on hold when its page or words are gone. Edit freely: an entry needs name, channels, proofUrl, proofQuote and checkedOn. Names, links and short quotes only, no media.",
+  "compiledOn": "2026-11-12",
+  "creators": [
+    {
+      "name": "Lacy",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "lacy"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/Lacy",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring Lacy",
+      "checkedOn": "2026-11-12",
+      "rules": "Lacy must be the main focus. Name Lacy in the caption or on-screen text and use #Lacy. Never show him in a bad light, no hate farming, no logos. Post only on TikTok, Instagram Reels, YouTube Shorts and X. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram",
+        "x"
+      ],
+      "note": "Big variety streamer. Proof: the rules page of his open clipping campaign (\"A Reach Campaign · Powered by Lacy\")."
+    },
+    {
+      "name": "JasonTheWeen",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "jasontheween"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/JasonTheWeen",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring JasonTheWeen",
+      "checkedOn": "2026-11-12",
+      "rules": "He must be the main focus. Name JasonTheWeen in the caption or on-screen text and use #JasonTheWeen. Never show him in a bad light, no hate farming, no logos. Post only on TikTok, Instagram Reels, YouTube Shorts and X. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram",
+        "x"
+      ],
+      "note": "Big variety streamer. Proof: the rules page of his open clipping campaign (\"A Reach Campaign · Powered by JasonTheWeen\")."
+    },
+    {
+      "name": "Clix",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "clix"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://reachclipping.com/Clix",
+      "proofQuote": "Content may be sourced from any video/stream/clip featuring Clix",
+      "checkedOn": "2026-11-12",
+      "rules": "Footage from 2026 onwards only, Clix as the main focus. Name Clix in the caption or on-screen text and use #Clix. Never show him in a bad light, no hate farming, no logos, no AI-made video. Post only on TikTok, Instagram Reels and YouTube Shorts. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram"
+      ],
+      "note": "Pro Fortnite player and big streamer. Proof: the rules page of his open clipping campaign for November 2026 (\"A Reach Campaign · Powered by Clix\"); it may close when the month ends."
+    },
+    {
+      "name": "HasanAbi",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "hasanabi"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://www.thegamer.com/hasan-given-up-intellectual-property/",
+      "proofQuote": "I have basically given up my intellectual property completely",
+      "checkedOn": "2026-11-12",
+      "rules": "He asks for a link back to his Twitch and socials, above all when the clips earn money.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram",
+        "x"
+      ],
+      "note": "Top Twitch streamer who has played GTA RP. Proof: his own words on stream, quoted by TheGamer in August 2022 (\"I want them to be able to keep monetizing\"). An older statement: read it before relying on it."
+    },
+    {
+      "name": "Marlon",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "marlon"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/e32128fa-fba4-4b01-bebc-f167ed68d1ea",
+      "proofQuote": "Get paid to clip Marlon's content.",
+      "checkedOn": "2026-11-12",
+      "rules": "Post on TikTok and Instagram Reels. The full rules are linked from the campaign page: read them there first, and join the campaign to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "instagram"
+      ],
+      "note": "Variety streamer. Proof: his open clipping campaign on Content Rewards, run by the agency Reach (which also runs Lacy's and JasonTheWeen's)."
+    },
+    {
+      "name": "Bobby VanRiper",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "bobby_vanriper"
+        },
+        {
+          "platform": "youtube",
+          "handle": "bobbyvanriper"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/f583b069-ced7-49e5-9ed3-2d3a13d6df0c",
+      "proofQuote": "Get paid to clip Bobby VanRiper's content.",
+      "checkedOn": "2026-11-12",
+      "rules": "Post on TikTok, Instagram Reels and YouTube Shorts. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram"
+      ],
+      "note": "Smaller Twitch streamer (Fortnite). On the check day his stream title read \"CLIPPING CAMPAIGN IS LIVE\" and \"GTA 6 SOON\". Proof: his open clipping campaign on Content Rewards, run by Clipping Nation."
+    },
+    {
+      "name": "SkiiMaskTimmy",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "skiimasktimmy"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/9a53cf91-e0ac-4157-bed0-81eb7095827d",
+      "proofQuote": "Clip his Twitch streams, live or VODs",
+      "checkedOn": "2026-11-12",
+      "rules": "Keep his face cam visible and put Twitch.tv/skiimasktimmy on every clip. Post on TikTok, Instagram Reels and YouTube Shorts. The full rules are in the campaign's guidelines; join it to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram"
+      ],
+      "note": "Smaller Twitch streamer. Not known as a GTA streamer: only streams titled or filed under GTA VI are picked up. Proof: his open clipping campaign on Content Rewards, run by ClippedIn."
+    },
+    {
+      "name": "Gattouz0",
+      "channels": [
+        {
+          "platform": "kick",
+          "handle": "gattouz0"
+        }
+      ],
+      "language": "",
+      "proofUrl": "https://contentrewards.com/c/campaigns/bc8f7d6a-3a31-4a4a-88ea-bb88245e418e",
+      "proofQuote": "Get paid to turn Gattouz0's best livestream and YouTube moments into viral short-form videos!",
+      "checkedOn": "2026-11-12",
+      "rules": "English-only clips. Post on TikTok and Instagram Reels. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "instagram"
+      ],
+      "note": "Kick streamer (reactions, stories, gaming). Not known as a GTA streamer: only streams titled or filed under GTA VI are picked up. Proof: his own \"official clipping campaign\" on Content Rewards."
+    },
+    {
+      "name": "Boeshi",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "darealboeshi"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/5c01ecdb-a148-4489-ba26-5aadbbb5bf69",
+      "proofQuote": "most entertaining gaming moments from his Twitch streams into viral short-form content",
+      "checkedOn": "2026-11-12",
+      "rules": "Send viewers back to twitch.tv/darealboeshi. Post on TikTok, Instagram Reels and YouTube Shorts. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram"
+      ],
+      "note": "Smaller Twitch gaming streamer. Not known as a GTA streamer: only streams titled or filed under GTA VI are picked up. Proof: his open clipping campaign on Content Rewards, run by ClipLaunch."
+    },
+    {
+      "name": "NYZ",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "imnyzzz"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/8219aa3d-2d55-44e1-9cc0-ac078421bd44",
+      "proofQuote": "Turn his best moments into clips that blow up on TikTok, IG, Shorts and X",
+      "checkedOn": "2026-11-12",
+      "rules": "Every clip should send viewers to his Twitch (@imnyzzz). Post on TikTok, Instagram Reels, YouTube Shorts and X. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "youtube",
+        "instagram",
+        "x"
+      ],
+      "note": "Smaller Twitch entertainment streamer. Not known as a GTA streamer: only streams titled or filed under GTA VI are picked up. Proof: his open clipping campaign on Content Rewards, run by Xposure."
+    },
+    {
+      "name": "MegaMcqueen",
+      "channels": [
+        {
+          "platform": "twitch",
+          "handle": "megamcqueen"
+        }
+      ],
+      "language": "en",
+      "proofUrl": "https://contentrewards.com/c/campaigns/c519ca4d-6ec1-440a-9708-4c1a0ff81d0a",
+      "proofQuote": "Clip mcqueen and Angel best moments on Twitch and post them on TikTok and Instagram",
+      "checkedOn": "2026-11-12",
+      "rules": "Clips should bring viewers to their Twitch. Post on TikTok and Instagram Reels. Join the campaign on the page to be paid.",
+      "allowedPlatforms": [
+        "tiktok",
+        "instagram"
+      ],
+      "note": "Smaller Twitch streamer. Not known as a GTA streamer: only streams titled or filed under GTA VI are picked up. Proof: an open clipping campaign on Content Rewards, run by Motion Clipping."
+    }
+  ]
+}

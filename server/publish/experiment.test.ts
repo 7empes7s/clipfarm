@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { AccountChoice, ChannelSettings, Dashboard, NewPermissionInput, Post, PostingAccount } from "../../shared/types.js";
 import { accountsAllowedFor, noAccountReason, routingBlock, routingBlockText } from "../../shared/routing.js";
 import { PERMISSION_KINDS } from "../../shared/types.js";
-import { campaignInput } from "../../test/helpers.js";
+import { allowanceInput, campaignInput } from "../../test/helpers.js";
 import { AccountStatsStore } from "../accounts/stats.js";
 import { createApp } from "../app.js";
 import { ClipsRepo } from "../clips/repo.js";
@@ -104,6 +104,14 @@ describe("an experiment record", () => {
     expect((await request(app).get("/api/clips")).body[0].experiment).toBe(true);
     sources.addPermission(source.id, campaignInput().permission);
     expect((await request(app).get("/api/clips")).body[0].experiment).toBe(false);
+  });
+
+  it("a public allowance on hold is not in force: the clips stay experiment clips", async () => {
+    const { app, sources, source } = setup();
+    sources.addPermission(source.id, allowanceInput().permission);
+    expect((await request(app).get("/api/clips")).body[0].experiment).toBe(false);
+    sources.flagForReview(sources.get(source.id).permissions.at(-1)!.id, "The page is gone.");
+    expect((await request(app).get("/api/clips")).body[0].experiment).toBe(true);
   });
 });
 

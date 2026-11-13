@@ -10,11 +10,12 @@ import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
 import { SettingsTab } from "./SettingsTab";
 import { StatsTab } from "./StatsTab";
+import { SuggestedSheet } from "./SuggestedSheet";
 import { WatchlistTab } from "./WatchlistTab";
 import { Clips } from "./Clips";
 import { clock, shortDate, usd } from "./format";
 
-const STATE_LABEL = { active: "Allowed", expired: "Expired", none: "No permission" } as const;
+const STATE_LABEL = { active: "Allowed", "needs-review": "Needs review", expired: "Expired", none: "No permission" } as const;
 const VOD_STATUS_LABEL: Record<Vod["status"], string> = {
   queued: "Waiting",
   downloading: "Downloading audio",
@@ -82,6 +83,7 @@ export function App() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [suggestedOpen, setSuggestedOpen] = useState(false);
   const [permissionFor, setPermissionFor] = useState<Source | null>(null);
   const [faceCamFor, setFaceCamFor] = useState<Source | null>(null);
   // Bumped on every local change to the clips, so a poll that started earlier cannot undo it.
@@ -122,6 +124,7 @@ export function App() {
     setFormOpen(false);
     setPermissionFor(null);
   }, []);
+  const closeSuggested = useCallback(() => setSuggestedOpen(false), []);
   const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
   const counts = tabCounts(clips, sources, jobs);
 
@@ -182,6 +185,12 @@ export function App() {
               Add a campaign
             </button>
           </div>
+          <p className="hint">
+            Start with creators who already say clipping is allowed.{" "}
+            <button type="button" className="link" onClick={() => setSuggestedOpen(true)}>
+              Add suggested creators
+            </button>
+          </p>
           {sources.length === 0 ? (
             <p className="empty">
               No campaigns yet. Add one from a clipping program (like Whop Content Rewards) before adding any stream.
@@ -235,6 +244,15 @@ export function App() {
           }}
         />
       )}
+      {suggestedOpen && (
+        <SuggestedSheet
+          onClose={closeSuggested}
+          onAdded={() => {
+            setSuggestedOpen(false);
+            void refresh();
+          }}
+        />
+      )}
       {faceCamFor && (
         <FaceCamSheet
           source={faceCamFor}
@@ -268,6 +286,21 @@ function SourceCard({
   const perm = source.permissions.at(-1);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
+
+  async function checkAgain(permissionId: number) {
+    setChecking(true);
+    setCheckNote(null);
+    try {
+      setCheckNote((await api.checkPermission(permissionId)).message);
+      onChange();
+    } catch (err) {
+      setCheckNote((err as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function addVod(e: FormEvent) {
     e.preventDefault();
@@ -321,6 +354,27 @@ function SourceCard({
             <dt>Post to</dt>
             <dd>{perm.allowedPlatforms.map((p) => PLATFORM_LABELS[p]).join(", ")}</dd>
           </div>
+          {perm.proofUrl && (
+            <div className="wide" data-testid="proof">
+              <dt>Proof{perm.proofCheckedAt ? `, last seen ${shortDate(perm.proofCheckedAt)}` : ""}</dt>
+              <dd>
+                <blockquote className="proof">“{perm.proofQuote}”</blockquote>
+                <span className="meta">
+                  <a href={perm.proofUrl} target="_blank" rel="noreferrer">
+                    See the proof
+                  </a>
+                  <button type="button" className="link" disabled={checking} onClick={() => void checkAgain(perm.id)}>
+                    {checking ? "Checking…" : "Check again"}
+                  </button>
+                </span>
+                {checkNote && (
+                  <p className="hint" role="status">
+                    {checkNote}
+                  </p>
+                )}
+              </dd>
+            </div>
+          )}
           {perm.note && (
             <div className="wide">
               <dt>Testing</dt>
@@ -363,8 +417,11 @@ function SourceCard({
         </form>
       ) : (
         <p className="blocked">
-          {source.permissionState === "expired" ? "This permission has expired." : "There is no permission yet."} Add a
-          current campaign before adding streams.
+          {source.permissionState === "needs-review"
+            ? `Needs review: ${source.permissions.find((p) => p.reviewReason)?.reviewReason ?? ""} No new streams or posts until then: tap Check again once the page says it again, or add a current campaign.`
+            : `${source.permissionState === "expired" ? "This permission has expired." : "There is no permission yet."} ${
+                perm?.proofUrl ? "Tap Check again to read the proof once more, or add" : "Add"
+              } a current campaign before adding streams.`}
         </p>
       )}
 
