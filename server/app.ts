@@ -9,6 +9,7 @@ import type { AccountStatsStore } from "./accounts/stats.js";
 import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
+import { readLiveVersion } from "./ops/liveVersion.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import type { GoogleAi } from "./google/service.js";
@@ -84,6 +85,8 @@ export interface AppDeps {
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
   clientDir?: string;
+  /** The file the box's auto-deploy writes after each deploy, for the Dashboard's "Live version" card. */
+  deployStatusFile?: string;
   /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests without a token signed by Cloudflare Access. */
   access?: AccessVerifier;
 }
@@ -137,6 +140,7 @@ export function createApp({
   scout,
   seedDemoClip,
   clientDir,
+  deployStatusFile,
   access,
 }: AppDeps): express.Express {
   const app = express();
@@ -726,6 +730,10 @@ export function createApp({
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));
+  });
+
+  app.get("/api/live-version", (_req, res) => {
+    res.json(deployStatusFile ? readLiveVersion(deployStatusFile) : null);
   });
 
   if (accountStats) {

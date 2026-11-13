@@ -35,6 +35,7 @@ import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { LaunchCard } from "./LaunchCard";
+import { LiveVersionCard } from "./LiveVersionCard";
 import { ScoutCard } from "./ScoutCard";
 import { Sheet } from "./Sheet";
 import { HookLabView, TrendsView } from "./Trends";
@@ -205,6 +206,8 @@ function Today({ dash, jobs, onLoaded, children }: { dash: Dashboard; jobs: Job[
       <EngineCard jobs={jobs} />
 
       <GoogleCard refreshKey={String(jobs.filter((j) => j.status === "done").length)} />
+
+      <LiveVersionCard />
 
       <LiveNow />
 
