@@ -32,6 +32,7 @@ import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
+import { LaunchCard } from "./LaunchCard";
 import { Sheet } from "./Sheet";
 import { Avatar, EmptyState, Icon, Ring, Skeleton, Sparkline } from "./ui";
 
@@ -92,6 +93,7 @@ export function DashboardTab({ view, clips, sources, jobs }: { view: DashView; c
       {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
       {!dash && !error && (view === "today" || view === "earnings") && <Skeleton shape="tiles" />}
       {!dash && !error && (view === "progress" || view === "experiment") && <Skeleton shape="card" count={2} />}
+      {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
       {dash && view === "today" && <Today dash={dash} jobs={jobs} onLoaded={load} />}
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
@@ -285,7 +287,7 @@ function LiveNow() {
                 <a href={c.live!.url} target="_blank" rel="noreferrer" title={c.live!.game ? `${c.live!.game}: ${c.live!.title}` : c.live!.title}>
                   <Avatar name={c.name} live />
                   <span className="who">{c.name}</span>
-                  <span className="live-tag">
+                  <span className="on-air">
                     Live<span className="visually-hidden"> on {WATCH_PLATFORM_LABELS[c.live!.platform]}</span>
                   </span>
                 </a>

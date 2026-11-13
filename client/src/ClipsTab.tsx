@@ -5,6 +5,7 @@ import { PLATFORM_LABELS, REJECT_REASON_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
+import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
 import { shortDate } from "./format";
 import { filterClips } from "./review";
@@ -149,6 +150,7 @@ export function ClipsTab({
                     {source?.creatorName ?? "Unknown creator"} · {Math.round(clip.durationSec)} s
                     {clip.rejectReason && ` · ${REJECT_REASON_LABELS[clip.rejectReason]}`}
                   </p>
+                  <LiveTag clip={clip} short />
                   {clip.experiment && (
                     <p className="hint exp-line">
                       <ExperimentBadge /> Burner accounts only, no export.

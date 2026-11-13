@@ -4,6 +4,7 @@ import { PERMISSION_KIND_LABELS, REJECT_REASON_LABELS, REJECT_REASONS } from "..
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { EditSheet } from "./EditSheet";
+import { LiveTag } from "./LiveTag";
 import { type Decision, decide, inboxQueue, type LastAction, merge, nextAfter, undo } from "./review";
 import { buzz, swipeIntent, type SwipeIntent } from "./swipe";
 import { Avatar, EmptyState, Icon } from "./ui";
@@ -394,6 +395,7 @@ function ClipFrame({
             </span>
             {current.experiment && <ExperimentBadge />}
           </div>
+          <LiveTag clip={current} />
         </div>
       </div>
       <button
@@ -458,7 +460,10 @@ function UpNext({ queue, currentId, onPick }: { queue: Clip[]; currentId: number
             <button type="button" aria-current={c.id === currentId ? "true" : undefined} onClick={() => onPick(c.id)}>
               <video src={c.videoUrl} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} />
               <span className="tile-score">{c.score === null ? "–" : Math.round(c.score)}</span>
-              <span className="tile-title">{c.title}</span>
+              <span className="tile-title">
+                {c.live && <span className="live-dot" role="img" aria-label="LIVE" />}
+                {c.title}
+              </span>
             </button>
           </li>
         ))}

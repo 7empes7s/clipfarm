@@ -109,6 +109,30 @@ export class PicksRepo {
     return this.listForVod(vodId);
   }
 
+  /** Adds picks to a stream that is still being recorded; earlier picks (and their clips) stay. */
+  add(vodId: number, sourceId: number, picks: NewPick[]): Pick[] {
+    const ts = this.now().toISOString();
+    const ids: number[] = [];
+    this.db.transaction(() => {
+      const { last } = this.db.prepare("SELECT COALESCE(MAX(rank), 0) AS last FROM picks WHERE vod_id = ?").get(vodId) as { last: number };
+      const insert = this.db.prepare(
+        `INSERT INTO picks (vod_id, source_id, rank, start_sec, end_sec, title, hook, score, reason, flags,
+           drop_reason, layout, status, cost_usd, steps, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      picks.forEach((p, i) =>
+        ids.push(
+          Number(
+            insert.run(
+              vodId, sourceId, last + i + 1, p.startSec, p.endSec, p.title, p.hook, p.score, p.reason, JSON.stringify(p.flags),
+              p.dropReason, p.layout, p.dropReason ? "dropped" : "picked", p.costUsd, JSON.stringify(p.steps), ts,
+            ).lastInsertRowid,
+          ),
+        ),
+      );
+    })();
+    return ids.map((id) => this.get(id));
+  }
+
   private row(id: number): PickRow {
     const row = this.db.prepare("SELECT * FROM picks WHERE id = ?").get(id) as PickRow | undefined;
     if (!row) throw new NotFoundError("That clip was not found.");

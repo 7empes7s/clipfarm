@@ -1115,6 +1115,19 @@ textarea {
   overflow-wrap: anywhere;
   text-shadow: 0 1px 6px var(--well);
 }
+/* A clip cut while the stream was still live says so on the video. */
+.clip-over .live-line {
+  margin: var(--s2) 0 0;
+  font-size: var(--t-sm);
+  text-shadow: 0 1px 6px var(--well);
+}
+.clip-over .live-tag {
+  background: var(--live);
+  color: var(--live-ink);
+}
+.clip-over .live-late {
+  color: var(--well-bad);
+}
 /* The word that follows the finger: what letting go will do. */
 .stamp {
   position: absolute;
@@ -1959,7 +1972,7 @@ button.danger {
     box-shadow: 0 0 0 12px transparent;
   }
 }
-.live-tag {
+.on-air {
   padding: 0 var(--s2);
   border-radius: var(--pill);
   background: var(--live);
@@ -2577,6 +2590,204 @@ button.danger {
 .setup-list a.button {
   grid-column: 2;
   justify-self: start;
+}
+
+/* Launch day card: the countdown sits in the dark well, like a studio clock; switches below it. */
+.launch {
+  margin-bottom: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.launch-well {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--well);
+  color: var(--well-ink);
+}
+.launch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.launch-head h3 {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.launch-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--s3);
+  border: 1px solid color-mix(in srgb, var(--well-ink) 30%, transparent);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The live light is dark until live mode is armed. */
+.launch-state .live-dot {
+  background: color-mix(in srgb, var(--well-ink) 35%, transparent);
+  box-shadow: none;
+}
+.launch-armed .live-dot {
+  background: var(--live);
+  box-shadow: 0 0 0 0.18em color-mix(in srgb, var(--live) 30%, transparent);
+}
+.countdown {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s2);
+  margin: 0;
+}
+.countdown div {
+  min-width: 0;
+  padding: var(--s2) 0;
+  border-top: 2px solid var(--accent);
+}
+.countdown dd {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: clamp(2.5rem, 13vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.countdown dt {
+  margin-top: var(--s1);
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--well-ink) 70%, transparent);
+}
+.launch-out {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.launch-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s3);
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.launch-line {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: color-mix(in srgb, var(--well-ink) 80%, transparent);
+}
+.launch-time {
+  display: grid;
+  gap: var(--s2);
+}
+.launch-time label {
+  display: grid;
+  gap: var(--s1);
+  font-size: 0.875rem;
+}
+.launch-well input {
+  color: var(--ink);
+}
+.launch-buttons {
+  display: flex;
+  gap: var(--s2);
+}
+.launch-buttons button:not(.close) {
+  flex: 1;
+  font-weight: 600;
+}
+.launch-well button:not(.link):not(.primary) {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--well-ink) 40%, transparent);
+  color: var(--well-ink);
+}
+.launch-well button.primary {
+  background: var(--well-ink);
+  border-color: var(--well-ink);
+  color: var(--well);
+}
+.launch-well button.launch-arm:not(:disabled) {
+  background: var(--live);
+  border-color: var(--live);
+  color: var(--live-ink);
+}
+.launch-body {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4) var(--s4);
+}
+.launch-body > p {
+  margin: 0;
+}
+.launch-creators {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.launch-creators li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.launch-creator-text {
+  display: grid;
+  min-width: 0;
+}
+.launch-creator-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.launch-creator-text .hint {
+  overflow-wrap: anywhere;
+}
+.launch-push {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.launch-push .hint {
+  margin: 0;
+}
+
+/* LIVE tag on a clip cut while the stream was still on. */
+.live-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  margin: var(--s1) 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--s2);
+  border-radius: 4px;
+  background: var(--well);
+  color: var(--well-ink);
+  font-family: var(--font-head);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.live-tag .live-dot {
+  margin-right: var(--s1);
+}
+.live-late {
+  color: var(--bad);
+  font-weight: 600;
+}
+.tile-title .live-dot {
+  margin-right: var(--s1);
 }
 
 /* Experiment: dashed like the Burner tag, in the "work in progress" colour, so a test never reads as cleared. */

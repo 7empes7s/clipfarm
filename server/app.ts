@@ -14,6 +14,9 @@ import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
+import type { LiveManager } from "./live/manager.js";
+import { parsePushSubscription } from "./live/notify.js";
+import type { LiveRepo } from "./live/repo.js";
 import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
@@ -46,6 +49,8 @@ export interface AppDeps {
   suggested?: SeedCreator[];
   /** Streamer watchlist and its live / new-VOD checks. */
   watchlist?: { repo: WatchlistRepo; poller: WatchlistPoller };
+  /** Live mode: the Launch day card's switches, and who gets notifications. */
+  live?: { manager: LiveManager; repo: LiveRepo };
   /** The local engine (speech-to-text and picks on this server); `fake` when the server runs on test doubles. */
   engine?: { engine: Engine; fake: boolean };
   /** Keys and connections pasted in the app. `demo`: outside services are stand-ins, so Test calls nothing. */
@@ -95,6 +100,7 @@ export function createApp({
   allowance,
   suggested = [],
   watchlist,
+  live,
   engine,
   settings,
   seedDemoClip,
@@ -376,6 +382,45 @@ export function createApp({
     app.post("/api/watchlist/poll", async (_req, res) => {
       await poller.pollAll();
       res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    });
+  }
+
+  if (live) {
+    const { manager, repo } = live;
+
+    app.get("/api/live", (_req, res) => {
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/launch", async (req, res) => {
+      await manager.setLaunchAt((req.body ?? {}).launchAt);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/arm", async (_req, res) => {
+      await manager.arm(true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/disarm", async (_req, res) => {
+      await manager.arm(false);
+      res.json(manager.info());
+    });
+
+    app.put("/api/live/creators/:id", async (req, res) => {
+      await manager.setCreator(idParam(req.params.id), (req.body ?? {}).on === true);
+      res.json(manager.info());
+    });
+
+    app.post("/api/live/push", (req, res) => {
+      repo.addPushSubscription(parsePushSubscription(req.body), new Date());
+      res.status(201).json(manager.info());
+    });
+
+    app.delete("/api/live/push", (req, res) => {
+      const endpoint = (req.body ?? {}).endpoint as unknown;
+      if (typeof endpoint === "string") repo.removePushSubscription(endpoint);
+      res.json(manager.info());
     });
   }
 

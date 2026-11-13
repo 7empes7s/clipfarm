@@ -50,3 +50,33 @@ self.addEventListener("fetch", (event) => {
     ),
   );
 });
+
+// Live mode: the server says when a recording starts and when the first LIVE clip lands.
+self.addEventListener("push", (event) => {
+  let notice = {};
+  try {
+    notice = event.data ? event.data.json() : {};
+  } catch {
+    // Not ours: show the plain fallback below.
+  }
+  event.waitUntil(
+    self.registration.showNotification(notice.title || "clipfarm", {
+      body: notice.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: typeof notice.url === "string" && notice.url.startsWith("/") ? notice.url : "/" },
+    }),
+  );
+});
+
+// A tap opens the app where the notice points (the Inbox for a clip), in the window already open if there is one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
+      return open ? open.navigate(url).then((w) => (w ?? open).focus()) : self.clients.openWindow(url);
+    }),
+  );
+});
