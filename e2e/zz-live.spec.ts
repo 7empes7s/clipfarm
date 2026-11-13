@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+// Runs last (zz-): it waits for the queue to empty, which would change what the other tests find in the Inbox.
 // The server runs with CLIPFARM_FAKES=1: channels whose handle starts with a-f are "live" with
 // GTA VI, the stream is a generated test pattern of two short segments, and nothing leaves the box.
 
@@ -66,9 +67,17 @@ test("launch day: the leak rule before launch, then live clips tagged LIVE in th
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     // The first LIVE clip lands in the Inbox, with its stream time and how fast it got there.
+    await expect
+      .poll(async () => ((await (await request.get("/api/clips")).json()) as { sourceId: number; live: unknown }[]).some((c) => c.sourceId === sourceId && c.live), {
+        timeout: 120_000,
+      })
+      .toBe(true);
     await page.getByRole("link", { name: /^Inbox/ }).click();
+    // Other tests' clips may be waiting too: look at this creator's.
+    const creators = page.getByRole("combobox", { name: "Creator" });
+    if (await creators.isVisible()) await creators.selectOption({ label: name });
     const tag = page.getByTestId("current-clip").getByTestId("live-tag");
-    await expect(tag).toBeVisible({ timeout: 120_000 });
+    await expect(tag).toBeVisible();
     await expect(tag).toContainText("LIVE");
     await expect(tag).toContainText(/\d+:\d\d into the stream, in the Inbox (under 1 min|\d+ min) after it happened/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
