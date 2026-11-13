@@ -47,7 +47,7 @@ export function StatsTab() {
           {updating ? "Updating…" : "Update views"}
         </button>
       </div>
-      <p className="hint">Views come from the posting service every hour, or by hand. Earnings are estimates: views × the campaign's pay, once a post passes its minimum views.</p>
+      <p className="hint">Views come from the posting service every hour, or by hand. Earnings are estimates: views × the campaign's pay, less Whop's 10% fee on Whop campaigns, once a post passes its minimum views.</p>
       {msg && (
         <p className="error" role="alert">
           {msg}

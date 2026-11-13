@@ -32,6 +32,74 @@ export const ALLOWANCE_VALID_DAYS = 90;
 /** Days an experiment record runs when no end date is given. */
 export const EXPERIMENT_DAYS = 30;
 
+/** What Whop keeps of every campaign payout, and how long a payout takes to settle once a clip is approved. */
+export const WHOP_FEE = 0.1;
+export const WHOP_HOLD_DAYS = 10;
+
+/** A campaign's rules, as they are checked before a clip posts under it. */
+export interface CampaignRules {
+  /** Hashtags and @mentions the caption must carry. */
+  requiredTags: string[];
+  requiredLinks: string[];
+  /** Words the caption must say. */
+  requiredText: string[];
+  /** Words and topics that must not be said in the clip or its title. */
+  bannedWords: string[];
+  /** Shortest and longest clip the campaign takes, in seconds. */
+  minSec: number | null;
+  maxSec: number | null;
+  /** What was left of the budget when the page was last read. */
+  budgetLeftUsd: number | null;
+}
+
+export const NO_CAMPAIGN_RULES: CampaignRules = {
+  requiredTags: [],
+  requiredLinks: [],
+  requiredText: [],
+  bannedWords: [],
+  minSec: null,
+  maxSec: null,
+  budgetLeftUsd: null,
+};
+
+/** The fields of a campaign that a page can fill. */
+export const CAMPAIGN_FIELDS = [
+  "creatorName",
+  "channelUrls",
+  "cpmRateUsd",
+  "minViews",
+  "budgetLeftUsd",
+  "allowedPlatforms",
+  "requiredTags",
+  "requiredLinks",
+  "requiredText",
+  "bannedWords",
+  "clipLength",
+  "expiresAt",
+] as const;
+export type CampaignField = (typeof CAMPAIGN_FIELDS)[number];
+
+/** What was read from a campaign page: the form's starting values. Nothing here is saved yet. */
+export interface CampaignDraft {
+  campaignUrl: string;
+  creatorName: string | null;
+  channelUrls: string[];
+  cpmRateUsd: number | null;
+  minViews: number | null;
+  allowedPlatforms: Platform[];
+  /** ISO timestamp of the end of the campaign's last day. */
+  expiresAt: string | null;
+  /** The page's do and don't lines, for the picker. */
+  briefRules: string;
+  rules: CampaignRules;
+  /** Fields the page did not give: left empty and marked "check this", never guessed. */
+  check: CampaignField[];
+  /** Set when the page says the campaign is over or out of budget: why, in plain words. */
+  ended: string | null;
+  /** The creator already in Sources this campaign would be saved to. */
+  existingSource: string | null;
+}
+
 export interface Permission {
   id: number;
   sourceId: number;
@@ -51,6 +119,10 @@ export interface Permission {
   proofCheckedAt: string | null;
   /** Set when a check found the proof gone: why, in plain words. The record is on hold until it is checked again. */
   reviewReason: string | null;
+  /** A campaign's rules; null for records without any. */
+  rules: CampaignRules | null;
+  /** When the campaign page was last read by the daily check. */
+  campaignCheckedAt: string | null;
   createdAt: string;
 }
 
@@ -91,6 +163,7 @@ export interface NewPermissionInput {
   proofQuote?: string | null;
   /** ISO date or timestamp of the day the proof was read. */
   proofCheckedAt?: string | null;
+  rules?: CampaignRules | null;
 }
 
 export interface NewSourceInput {
@@ -478,13 +551,21 @@ export interface Post {
   viewsUpdatedAt: string | null;
   viewsSource: "service" | "manual" | null;
   whopSubmittedAt: string | null;
+  /** Tapped by hand once Whop approved the submission, and once it paid. */
+  whopApprovedAt: string | null;
+  whopPaidAt: string | null;
+  /** When an approved submission's payout should settle: approval plus Whop's hold. */
+  whopPayoutAt: string | null;
   /** Posted under an experiment record (always on a burner account). */
   experiment: boolean;
   /** When each claim, removal or strike was recorded; null when there is none. */
   flags: Record<PostFlag, string | null>;
-  /** Views × the campaign's pay per 1,000, or 0 under its minimum views. */
+  /** Views × the campaign's pay per 1,000 (less Whop's 10% fee on a Whop campaign), or 0 under its minimum views. */
   estimatedEarningsUsd: number;
 }
+
+export const WHOP_STEPS = ["submitted", "approved", "paid"] as const;
+export type WhopStep = (typeof WHOP_STEPS)[number];
 
 export interface ExportPack {
   clipId: number;

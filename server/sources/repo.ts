@@ -1,8 +1,9 @@
 import { rmSync } from "node:fs";
 import type { Db } from "../db/index.js";
-import type { FaceCam, NewPermissionInput, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
-import { ALLOWANCE_VALID_DAYS, EXPERIMENT_DAYS, PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
+import type { CampaignRules, FaceCam, NewPermissionInput, NewSourceInput, Permission, PermissionKind, Platform, Source } from "../../shared/types.js";
+import { ALLOWANCE_VALID_DAYS, EXPERIMENT_DAYS, NO_CAMPAIGN_RULES, PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { campaignKey } from "./campaign/extract.js";
 import { permissionState, requireActivePermission } from "./permission.js";
 
 interface PermissionRow {
@@ -20,6 +21,8 @@ interface PermissionRow {
   proof_quote: string | null;
   proof_checked_at: string | null;
   review_reason: string | null;
+  campaign_rules: string | null;
+  campaign_checked_at: string | null;
   created_at: string;
 }
 
@@ -48,6 +51,8 @@ function toPermission(r: PermissionRow): Permission {
     proofQuote: r.proof_quote,
     proofCheckedAt: r.proof_checked_at,
     reviewReason: r.review_reason,
+    rules: r.campaign_rules ? { ...NO_CAMPAIGN_RULES, ...(JSON.parse(r.campaign_rules) as Partial<CampaignRules>) } : null,
+    campaignCheckedAt: r.campaign_checked_at,
     createdAt: r.created_at,
   };
 }
@@ -72,6 +77,28 @@ function optionalNumber(v: unknown, label: string): number | null {
     throw new ValidationError(`${label} must be a number of zero or more.`);
   }
   return v;
+}
+
+/** Checks a campaign's rules and returns clean ones, or throws a plain ValidationError. */
+export function parseCampaignRules(body: unknown): CampaignRules {
+  const r = (body ?? {}) as Record<string, unknown>;
+  const list = (v: unknown) =>
+    [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string").map((x) => x.trim().slice(0, 200)).filter(Boolean))].slice(0, 30);
+  const minSec = optionalNumber(r.minSec, "The shortest clip");
+  const maxSec = optionalNumber(r.maxSec, "The longest clip");
+  if (minSec !== null && maxSec !== null && minSec > maxSec) throw new ValidationError("The shortest clip cannot be longer than the longest clip.");
+  const requiredLinks = list(r.requiredLinks);
+  const badLink = requiredLinks.find((l) => !isHttpUrl(l));
+  if (badLink) throw new ValidationError(`"${badLink}" is not a web link.`);
+  return {
+    requiredTags: list(r.requiredTags),
+    requiredLinks,
+    requiredText: list(r.requiredText),
+    bannedWords: list(r.bannedWords).map((w) => w.toLowerCase()),
+    minSec,
+    maxSec,
+    budgetLeftUsd: optionalNumber(r.budgetLeftUsd, "The budget left"),
+  };
 }
 
 /**
@@ -133,6 +160,7 @@ export function parsePermission(body: unknown, now: Date = new Date()): NewPermi
     proofUrl: proof?.proofUrl ?? null,
     proofQuote: proof?.proofQuote ?? null,
     proofCheckedAt: proof?.proofCheckedAt ?? null,
+    rules: kind === "whop-campaign" && p.rules ? parseCampaignRules(p.rules) : null,
   };
 }
 
@@ -203,8 +231,8 @@ export class SourcesRepo {
     this.db
       .prepare(
         `INSERT INTO permissions (source_id, kind, campaign_url, brief_rules, note, cpm_rate_usd, min_views,
-           allowed_platforms, expires_at, proof_url, proof_quote, proof_checked_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           allowed_platforms, expires_at, proof_url, proof_quote, proof_checked_at, campaign_rules, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sourceId,
@@ -219,8 +247,76 @@ export class SourcesRepo {
         isAllowance ? p.proofUrl! : null,
         isAllowance ? p.proofQuote! : null,
         proofCheckedAt,
+        p.rules ? JSON.stringify(p.rules) : null,
         createdAt,
       );
+  }
+
+  /** The Whop campaign record with this campaign link, whatever its query or trailing slash. */
+  findCampaign(campaignUrl: string): Permission | null {
+    const key = campaignKey(campaignUrl);
+    const rows = this.db.prepare("SELECT * FROM permissions WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL ORDER BY id DESC").all() as PermissionRow[];
+    const row = rows.find((r) => campaignKey(r.campaign_url!) === key);
+    return row ? toPermission(row) : null;
+  }
+
+  /**
+   * Saves an imported campaign: the record with the same campaign link is brought up to date, else the
+   * campaign is added to the creator of the same name, else the creator is added with it.
+   */
+  saveCampaign(input: NewSourceInput): Source {
+    const p = input.permission;
+    if (p.kind !== "whop-campaign" || !p.campaignUrl) throw new ValidationError("Paste the Whop campaign link.");
+    const known = this.findCampaign(p.campaignUrl);
+    const name = input.creatorName.toLowerCase();
+    const sourceId = known?.sourceId ?? this.list().find((s) => s.creatorName.toLowerCase() === name)?.id;
+    if (sourceId === undefined) return this.create(input);
+    this.db.transaction(() => {
+      const channels = [...new Set([...this.get(sourceId).channelUrls, ...input.channelUrls])];
+      this.db.prepare("UPDATE sources SET channel_urls = ? WHERE id = ?").run(JSON.stringify(channels), sourceId);
+      if (!known) return this.addPermission(sourceId, p);
+      // Saved again by the manager: the record is in force again with what the form now says.
+      this.db
+        .prepare(
+          `UPDATE permissions SET campaign_url = ?, brief_rules = ?, cpm_rate_usd = ?, min_views = ?, allowed_platforms = ?,
+             expires_at = ?, campaign_rules = ?, review_reason = NULL WHERE id = ?`,
+        )
+        .run(
+          p.campaignUrl,
+          p.briefRules ?? "",
+          p.cpmRateUsd ?? null,
+          p.minViews ?? null,
+          JSON.stringify(p.allowedPlatforms),
+          p.expiresAt ?? null,
+          p.rules ? JSON.stringify(p.rules) : null,
+          known.id,
+        );
+    })();
+    return this.get(sourceId);
+  }
+
+  /** Whop campaigns that have not ended and whose page was last read on or before `before` (or never). */
+  campaignsCheckedBefore(before: Date): Permission[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM permissions WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL
+             AND (expires_at IS NULL OR expires_at > ?) AND (campaign_checked_at IS NULL OR campaign_checked_at <= ?) ORDER BY id`,
+        )
+        .all(this.now().toISOString(), before.toISOString()) as PermissionRow[]
+    ).map(toPermission);
+  }
+
+  /**
+   * The campaign page was read: `pausedReason` (it ended, its budget is out) puts the record on hold,
+   * which stops ingest and posting for its source; null puts it back in force. The budget left is kept when the page shows it.
+   */
+  recordCampaignCheck(permissionId: number, at: Date, pausedReason: string | null, budgetLeftUsd: number | null): void {
+    const p = this.permission(permissionId);
+    const rules = budgetLeftUsd === null ? p.rules : { ...(p.rules ?? NO_CAMPAIGN_RULES), budgetLeftUsd };
+    this.db
+      .prepare("UPDATE permissions SET campaign_checked_at = ?, review_reason = ?, campaign_rules = ? WHERE id = ?")
+      .run(at.toISOString(), pausedReason, rules ? JSON.stringify(rules) : null, permissionId);
   }
 
   permission(id: number): Permission {

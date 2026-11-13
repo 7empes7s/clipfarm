@@ -1,8 +1,8 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, PostFlag, RejectReason, WatchChannel } from "../shared/types.js";
-import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
+import type { Platform, PostFlag, RejectReason, WatchChannel, WhopStep } from "../shared/types.js";
+import { PLATFORMS, POST_FLAGS, REJECT_REASONS, WHOP_STEPS } from "../shared/types.js";
 import { accessGate, type AccessVerifier } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
@@ -26,6 +26,7 @@ import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import type { PostsRepo } from "./publish/repo.js";
 import type { PicksRepo } from "./picks/repo.js";
+import type { Campaigns } from "./sources/campaign/service.js";
 import type { AllowanceChecker } from "./sources/proof.js";
 import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from "./sources/repo.js";
 import { addSuggested, listSuggested, type SeedCreator } from "./sources/suggested.js";
@@ -45,6 +46,8 @@ export interface AppDeps {
   accountStats?: AccountStatsStore;
   /** Re-reads the proof of public clipping allowances ("Check again" and the weekly check). */
   allowance?: AllowanceChecker;
+  /** Reads Whop / Content Rewards campaign pages: to fill the form from a pasted link, and to check they still run. */
+  campaigns?: Campaigns;
   /** The starter list of creators who publicly allow clipping. */
   suggested?: SeedCreator[];
   /** Streamer watchlist and its live / new-VOD checks. */
@@ -98,6 +101,7 @@ export function createApp({
   publisher,
   accountStats,
   allowance,
+  campaigns,
   suggested = [],
   watchlist,
   live,
@@ -136,14 +140,30 @@ export function createApp({
     res.status(201).json({ added, suggested: listSuggested(suggested, sources.list()) });
   });
 
-  if (allowance) {
-    // "Check again": re-reads the proof page of a public allowance and stores the outcome.
+  // Paste a campaign link: an imported campaign is saved onto its creator (made, or brought up to date).
+  app.post("/api/campaigns", (req, res) => {
+    res.status(201).json(sources.saveCampaign(parseNewSource(req.body)));
+  });
+
+  if (campaigns) {
+    // Reads the campaign's public page into the form's starting values; nothing is saved.
+    app.post("/api/campaigns/read", async (req, res) => {
+      const { url, text } = (req.body ?? {}) as { url?: unknown; text?: unknown };
+      res.json(await campaigns.read(url, text));
+    });
+  }
+
+  if (allowance || campaigns) {
+    // "Check again": re-reads a public allowance's proof page, or a campaign's page, and stores the outcome.
     app.post("/api/permissions/:id/check", async (req, res) => {
       const id = idParam(req.params.id);
-      const result = await allowance.check(id);
+      const checker = ((sources.permission(id).kind === "whop-campaign" ? campaigns : allowance) ?? allowance ?? campaigns)!;
+      const result = await checker.check(id);
       res.json({ ...result, source: sources.get(sources.permission(id).sourceId) });
     });
+  }
 
+  if (allowance) {
     // "Look for a clipping allowance" in Add a creator: reads the creator's own channel pages.
     app.post("/api/allowance/find", async (req, res) => {
       const { channels } = parseWatchedCreator({ name: "-", channels: ((req.body ?? {}) as { channels?: WatchChannel[] }).channels });
@@ -335,8 +355,11 @@ export function createApp({
     res.json(posts.setManualViews(idParam(req.params.id), views));
   });
 
+  // The Whop steps, tapped by hand: sent (the default), approved, paid (on: false takes one back).
   app.post("/api/posts/:id/whop", (req, res) => {
-    res.json(posts.markWhopSubmitted(idParam(req.params.id)));
+    const { step = "submitted", on } = (req.body ?? {}) as { step?: unknown; on?: unknown };
+    if (!WHOP_STEPS.includes(step as WhopStep)) throw new ValidationError("Pick a step: submitted, approved or paid.");
+    res.json(publisher.markWhop(idParam(req.params.id), step as WhopStep, on !== false));
   });
 
   // One tap on a post: a claim, removal or strike seen on the platform (on: false takes it back).

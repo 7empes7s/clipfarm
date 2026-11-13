@@ -78,7 +78,7 @@ test("dashboard: today, a stream's progress, outputs filters, an account's growt
   await page.getByRole("link", { name: "Earnings" }).click();
   const table = page.getByTestId("earnings");
   const row = table.getByRole("row").filter({ hasText: "Demo Streamer A" }).filter({ hasText: "TikTok" });
-  await expect(row).toContainText("$91.50");
+  await expect(row).toContainText("$82.35");
   await expect(row).toContainText("1 of 1");
   await expectFits(page);
 
