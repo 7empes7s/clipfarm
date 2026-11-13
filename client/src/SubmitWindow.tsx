@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { clockIn, SNOOZE_LABELS, SNOOZES, SUBMIT_WINDOW_MIN, type Snooze, type SubmitHours, type SubmitWindowInfo } from "../../shared/submitWindow";
+import { SNOOZE_LABELS, SNOOZES, SUBMIT_WINDOW_MIN, type Snooze, type SubmitHours, type SubmitWindowInfo } from "../../shared/submitWindow";
 import { api } from "./api";
 import { whenShort } from "./submitFormat";
 
@@ -143,7 +143,7 @@ export function BusyCard() {
       <div className="card-head">
         <h3>Campaign submits</h3>
         {info.snoozeUntil ? (
-          <span className="state state-needs-review">Busy until {clockIn(new Date(info.snoozeUntil), hours.timeZone)}</span>
+          <span className="state state-needs-review">Busy until {new Date(info.snoozeUntil).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</span>
         ) : (
           <span className="state state-active">{hours.enabled ? "Ready" : "Any hour"}</span>
         )}

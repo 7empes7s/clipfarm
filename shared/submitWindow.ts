@@ -159,9 +159,3 @@ export function submitAction(ageMin: number, done: { notified: boolean; reminded
   if (ageMin >= SUBMIT_REMIND_MIN) return done.reminded ? null : "remind";
   return done.notified ? null : "notify";
 }
-
-/** "08:05": a moment on the clock of a time zone. */
-export function clockIn(at: Date, timeZone: string): string {
-  const { min } = localParts(at.getTime(), timeZone);
-  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
-}
