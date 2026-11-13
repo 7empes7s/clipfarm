@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { PlannedPost, Post, PostingInfo, PostOutcome } from "../shared/types";
-import type { SubmitWindowInfo } from "../shared/submitWindow";
+import type { PlannedPost, Post, PostingInfo, PostOutcome } from "../shared/types.js";
+import type { SubmitWindowInfo } from "../shared/submitWindow.js";
 
 // The submit window: campaign clips post only when the manager can submit, the post counts down its
 // 30 minutes, and "I'm busy" holds campaign posts. The server starts with the submit hours off
