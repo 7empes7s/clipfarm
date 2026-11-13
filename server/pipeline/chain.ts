@@ -18,7 +18,9 @@ export function pipelineOnFinished(deps: { vods: VodsRepo; picks: PicksRepo; que
     renderFailed(job, payload);
     if (job.status !== "done" || job.vodId === null) return;
     if (job.type === INGEST_JOB) {
-      deps.queue().enqueue(PICKS_JOB, { vodId: job.vodId }, { vodId: job.vodId });
+      // A run that asked for its own number of clips (clipfarm-ops run --count) keeps it for picking.
+      const { maxPicks } = (payload ?? {}) as { maxPicks?: number };
+      deps.queue().enqueue(PICKS_JOB, { vodId: job.vodId, ...(maxPicks ? { maxPicks } : {}) }, { vodId: job.vodId });
     } else if (job.type === PICKS_JOB) {
       for (const p of deps.picks.listForVod(job.vodId)) {
         if (p.status === "picked") deps.queue().enqueue(RENDER_JOB, { pickId: p.id }, { vodId: job.vodId });

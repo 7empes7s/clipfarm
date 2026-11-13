@@ -1,70 +1,18 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AccountStatsStore } from "./accounts/stats.js";
 import { clientBuildProblem, createApp } from "./app.js";
-import { ClipsRepo } from "./clips/repo.js";
-import { loadConfig, openSettings } from "./config.js";
-import { openDb } from "./db/index.js";
-import { ENGINE_SETUP_JOB } from "./engine/engine.js";
-import { engineSetupHandler } from "./engine/setup.js";
-import { DEMO_JOB, demoClipsHandler } from "./dev/demo.js";
-import { DEMO_DATA_JOB, demoDataHandler } from "./dev/demoData.js";
 import { demoClipSeeder } from "./dev/seed.js";
-import { JobQueue } from "./jobs/queue.js";
-import { PicksRepo } from "./picks/repo.js";
-import { pipelineOnFinished } from "./pipeline/chain.js";
-import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
-import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
-import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
-import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
-import { Publisher } from "./publish/publisher.js";
-import { PostsRepo } from "./publish/repo.js";
+import { ENGINE_SETUP_JOB } from "./engine/engine.js";
+import { openRuntime } from "./runtime.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
-import { SourcesRepo } from "./sources/repo.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
 import { parseSuggested } from "./sources/suggested.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
-import { VodsRepo } from "./vods/repo.js";
 
-const settings = openSettings();
-const config = loadConfig(process.env, settings);
-const db = openDb(config.dbFile);
-config.engine.bind(db);
-const sources = new SourcesRepo(db);
-const vods = new VodsRepo(db);
-const picks = new PicksRepo(db);
-const clips = new ClipsRepo(db);
-const posts = new PostsRepo(db);
-const publisher = new Publisher({ sources, clips, posts, service: config.postingService, vodTitle: (id) => vods.get(id).title });
-const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
+const { settings, config, db, sources, vods, picks, clips, posts, publisher, accountStats, queue } = openRuntime();
 const mediaDir = config.mediaDir;
-const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
-const clipRenderFinished = onRenderFinished(clips);
-const queue: JobQueue = new JobQueue(db, {
-  handlers: {
-    [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
-    [PICKS_JOB]: picksHandler({ sources, vods, picks, picker: config.picker, maxPicks: config.maxPicks }),
-    [RENDER_JOB]: renderHandler({
-      sources,
-      vods,
-      picks,
-      clips,
-      downloader: config.sectionDownloader,
-      mediaDir,
-      preset: config.renderPreset,
-    }),
-    [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
-    [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
-    [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
-    [DEMO_DATA_JOB]: demoDataHandler({ db, sources, clips, vods, accountStats, mediaDir }),
-  },
-  onFinished: (job, payload) => {
-    pipelineFinished(job, payload);
-    clipRenderFinished(job);
-  },
-});
 
 const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
@@ -105,7 +53,7 @@ const app = createApp({
   settings: { store: settings, demo: config.fakes },
   seedDemoClip,
   clientDir,
-  requireAccess: config.requireAccess,
+  access: config.access ?? undefined,
 });
 
 queue.start();

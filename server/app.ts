@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Platform, PostFlag, RejectReason, WatchChannel } from "../shared/types.js";
 import { PLATFORMS, POST_FLAGS, REJECT_REASONS } from "../shared/types.js";
-import { accessGate } from "./access.js";
+import { accessGate, type AccessVerifier } from "./access.js";
 import { parseChannelSettings } from "./accounts/repo.js";
 import type { AccountStatsStore } from "./accounts/stats.js";
 import { parseClipEdit } from "./clips/edit.js";
@@ -54,8 +54,8 @@ export interface AppDeps {
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
   clientDir?: string;
-  /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests that did not come through Cloudflare Access. */
-  requireAccess?: boolean;
+  /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests without a token signed by Cloudflare Access. */
+  access?: AccessVerifier;
 }
 
 /** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
@@ -99,10 +99,10 @@ export function createApp({
   settings,
   seedDemoClip,
   clientDir,
-  requireAccess,
+  access,
 }: AppDeps): express.Express {
   const app = express();
-  if (requireAccess) app.use(accessGate());
+  if (access) app.use(accessGate(access));
   app.use(express.json({ limit: "1mb" }));
 
   // Open to anyone (see access.ts), so about keys it says only yes or no per connection.
