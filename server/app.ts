@@ -13,6 +13,7 @@ import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { assertNoDemoData, DEMO_DATA_JOB } from "./dev/demoData.js";
 import { directPlatform, type Isolation } from "./isolation/isolation.js";
+import type { HookLab } from "./hooklab/lab.js";
 import type { GrowthLab } from "./growth/lab.js";
 import { growthRoutes } from "./growth/routes.js";
 import type { JobQueue } from "./jobs/queue.js";
@@ -36,6 +37,7 @@ import { parseFaceCam, parseNewSource, parsePermission, type SourcesRepo } from 
 import { addSuggested, listSuggested, type SeedCreator } from "./sources/suggested.js";
 import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
+import type { TrendRadar } from "./trends/radar.js";
 import type { VodsRepo } from "./vods/repo.js";
 
 export interface AppDeps {
@@ -64,6 +66,10 @@ export interface AppDeps {
   settings?: { store: Settings; demo: boolean };
   /** Isolation groups (Settings, Accounts) and the uploads clipfarm does itself. `demo`: the platforms are stand-ins. */
   isolation?: { isolation: Isolation; direct: DirectPoster; demo: boolean };
+  /** The trend radar: what GTA clips win today. */
+  trends?: TrendRadar;
+  /** A/B tests of hooks on burner accounts. */
+  hookLab?: HookLab;
   /** Test campaigns, their reports and the daily digest. */
   growth?: GrowthLab;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
@@ -116,6 +122,8 @@ export function createApp({
   engine,
   settings,
   isolation: groups,
+  trends,
+  hookLab,
   growth,
   seedDemoClip,
   clientDir,
@@ -614,6 +622,46 @@ export function createApp({
     });
   }
 
+  if (trends) {
+    const report = () => trends.report({ clips: clips.list(), sources: sources.list() });
+
+    app.get("/api/trends", (_req, res) => {
+      res.json(report());
+    });
+
+    app.post("/api/trends/refresh", async (_req, res) => {
+      try {
+        await trends.refresh();
+      } catch (err) {
+        if (err instanceof HttpError) throw err;
+        // YouTube said no or could not be reached: say so instead of "something went wrong".
+        throw new HttpError(502, (err as Error).message);
+      }
+      res.json(report());
+    });
+
+    app.put("/api/trends/weight", (req, res) => {
+      trends.setWeight((req.body ?? {}).weight);
+      res.json(report());
+    });
+  }
+
+  if (hookLab) {
+    app.get("/api/hooklab", (_req, res) => {
+      res.json(hookLab.info());
+    });
+
+    app.put("/api/hooklab/settings", (req, res) => {
+      hookLab.saveSettings(req.body);
+      res.json(hookLab.info());
+    });
+
+    // One pass now instead of at the next timer: starts tests, sends variants, settles finished ones.
+    app.post("/api/hooklab/run", async (_req, res) => {
+      await hookLab.tick();
+      res.json(hookLab.info());
+    });
+  }
   if (growth) app.use("/api/growth", growthRoutes(growth));
 
   app.post("/api/demo", (_req, res) => {

@@ -40,6 +40,7 @@ import type {
   Watchlist,
   WhopStep,
 } from "../../shared/types";
+import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/trends";
 
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 
@@ -138,6 +139,12 @@ export const api = {
   connectChannel: (id: number, platform: DirectPlatform) => call<{ url: string }>(`/api/groups/${id}/connect/${platform}`, { method: "POST" }),
   moveAccount: (accountId: string, groupId: number) =>
     call<IsolationInfo>(`/api/accounts/${encodeURIComponent(accountId)}/group`, { method: "PUT", body: JSON.stringify({ groupId }) }),
+  trends: () => call<TrendReport>("/api/trends"),
+  refreshTrends: () => call<TrendReport>("/api/trends/refresh", { method: "POST" }),
+  saveTrendWeight: (weight: number) => call<TrendReport>("/api/trends/weight", { method: "PUT", body: JSON.stringify({ weight }) }),
+  hookLab: () => call<HookLabInfo>("/api/hooklab"),
+  saveHookLab: (change: Partial<HookLabSettings>) => call<HookLabInfo>("/api/hooklab/settings", { method: "PUT", body: JSON.stringify(change) }),
+  runHookLab: () => call<HookLabInfo>("/api/hooklab/run", { method: "POST" }),
   growth: () => call<GrowthInfo>("/api/growth"),
   addCampaign: (input: GrowthCampaignInput) => call<GrowthCampaign>("/api/growth/campaigns", { method: "POST", body: JSON.stringify(input) }),
   campaignAction: (id: number, action: "start" | "pause" | "stop") => call<GrowthCampaign>(`/api/growth/campaigns/${id}/${action}`, { method: "POST" }),

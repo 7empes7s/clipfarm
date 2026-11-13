@@ -11,13 +11,31 @@ import { parseSuggested } from "./sources/suggested.js";
 import { LiveManager } from "./live/manager.js";
 import { realSystem } from "./live/system.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
-import { WatchlistRepo } from "./sources/watchlist/repo.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
-const { settings, config, db, sources, vods, picks, clips, posts, publisher, isolation, direct, accountStats, growth, queue, liveRepo, notifier } = openRuntime();
+const {
+  settings,
+  config,
+  db,
+  sources,
+  vods,
+  picks,
+  clips,
+  posts,
+  publisher,
+  isolation,
+  direct,
+  accountStats,
+  growth,
+  queue,
+  watchRepo,
+  radar,
+  hookLab,
+  liveRepo,
+  notifier,
+} = openRuntime();
 const mediaDir = config.mediaDir;
 
-const watchRepo = new WatchlistRepo(db, sources);
 watchRepo.seedOnce(seed.creators);
 const suggested = parseSuggested(allowanceSeed.creators);
 // With fakes on, the starter list's proof pages say what the list quotes (no network).
@@ -74,6 +92,8 @@ const app = createApp({
   engine: { engine: config.engine, fake: config.fakeEngine },
   settings: { store: settings, demo: config.fakes },
   isolation: { isolation, direct, demo: config.fakes },
+  trends: radar,
+  hookLab,
   growth,
   seedDemoClip,
   clientDir,
@@ -88,11 +108,17 @@ if (!config.fakeEngine && !config.engine.settings().cloud && config.engine.missi
 }
 // Post links and views, read on a timer within the service's API limits.
 // Account stats follow their own, longer interval (the guard skips them until due).
+// The same timer runs the daily trend refresh (when due) and one pass of the hook lab (when on).
+const background = () => {
+  void radar.refreshIfDue();
+  void hookLab.tick().catch((err: Error) => console.error(`[hook lab] ${err.message}`));
+};
 const refreshTimer = setInterval(() => {
   void publisher
     .refresh()
     .then(() => growth.collectPlatformStats())
     .then(() => accountStats.refresh());
+  background();
 }, config.postingRefreshMinutes * 60_000);
 refreshTimer.unref();
 // Posts clipfarm uploads itself go out when they are due; every proxy is tested again once a day.
@@ -111,6 +137,7 @@ const growthTimer = setInterval(growthRound, 10 * 60_000);
 growthTimer.unref();
 growthRound();
 poller.start(config.watchPollMinutes * 60_000);
+background();
 void live.start();
 // Looks every 6 hours for public allowances whose proof was last read a week or more ago.
 allowance.start(6 * 3600_000);
