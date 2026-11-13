@@ -74,6 +74,7 @@ test("launch day: the leak rule before launch, then live clips tagged LIVE in th
       .toBe(true);
     await page.getByRole("link", { name: /^Inbox/ }).click();
     // Other tests' clips may be waiting too: look at this creator's.
+    await expect(page.getByTestId("current-clip")).toBeVisible();
     const creators = page.getByRole("combobox", { name: "Creator" });
     if (await creators.isVisible()) await creators.selectOption({ label: name });
     const tag = page.getByTestId("current-clip").getByTestId("live-tag");
