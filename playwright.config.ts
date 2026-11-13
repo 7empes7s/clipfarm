@@ -15,7 +15,7 @@ export default defineConfig({
     {
       name: "desktop",
       testMatch:
-        /(review|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation)\.spec\.ts/,
+        /(review|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation|zzzz-submit)\.spec\.ts/,
       dependencies: ["phone"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },
@@ -32,6 +32,8 @@ export default defineConfig({
       RENDER_PRESET: "ultrafast",
       DATA_DIR: ".e2e-data/run",
       MEDIA_DIR: ".e2e-data/run/media",
+      // The run must not depend on the hour it starts at: the submit window's own spec switches them on.
+      SUBMIT_HOURS: "off",
     },
     reuseExistingServer: false,
     timeout: 120_000,

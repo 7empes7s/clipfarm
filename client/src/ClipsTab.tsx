@@ -1,6 +1,7 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Clip, Post, PostingInfo, Source, WhopStep } from "../../shared/types";
 import { noAccountReason } from "../../shared/routing";
+import { submitCountdown, submitTarget } from "./submitFormat";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS, WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
@@ -68,11 +69,14 @@ export function ClipsTab({
   clips: allClips,
   sources,
   onChange,
+  focus,
 }: {
   view: keyof typeof VIEW_TEXT;
   clips: Clip[];
   sources: Source[];
   onChange: () => Promise<void>;
+  /** "submit-12": the post a push notification opened, shown first with Submit to Whop ready. */
+  focus?: string;
 }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [info, setInfo] = useState<PostingInfo | null>(null);
@@ -103,7 +107,10 @@ export function ClipsTab({
   const closePost = useCallback(() => setPosting(null), []);
   const closeExport = useCallback(() => setExporting(null), []);
   const closeThumbs = useCallback(() => setThumbsOf(null), []);
-  const clips = filterClips(allClips, view);
+  const target = submitTarget(focus);
+  const targetClip = posts.find((p) => p.id === target)?.clipId;
+  // The clip a push opened comes first.
+  const clips = filterClips(allClips, view).sort((a, b) => Number(b.id === targetClip) - Number(a.id === targetClip));
 
   async function act(fn: () => Promise<unknown>) {
     try {
@@ -199,7 +206,7 @@ export function ClipsTab({
                   {clipPosts.length > 0 && (
                     <ul className="posts">
                       {clipPosts.map((p) => (
-                        <PostRow key={p.id} post={p} onChange={refresh} />
+                        <PostRow key={p.id} post={p} onChange={refresh} opened={p.id === target} />
                       ))}
                     </ul>
                   )}
@@ -235,7 +242,26 @@ export function ClipsTab({
   );
 }
 
-function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
+/** The 30 minutes a campaign post has to be submitted in, counting down on its card. */
+function SubmitCountdownLine({ post }: { post: Post }) {
+  const [now, setNow] = useState(() => Date.now());
+  const running = post.submit?.dueBy != null && !post.submit.missedAt && !post.whopSubmittedAt;
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const countdown = submitCountdown(post, now);
+  if (!countdown) return null;
+  return (
+    <p className={`submit-countdown submit-${countdown.state}`} role={countdown.state === "missed" ? undefined : "timer"} data-testid="submit-countdown">
+      {countdown.text}
+    </p>
+  );
+}
+
+function PostRow({ post, onChange, opened = false }: { post: Post; onChange: () => void; opened?: boolean }) {
+  const row = useRef<HTMLLIElement>(null);
   const [editing, setEditing] = useState(false);
   const [views, setViews] = useState(String(post.views ?? ""));
   const [note, setNote] = useState<string | null>(null);
@@ -273,8 +299,22 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
     }
   }
 
+  // Opened from the push: in sight, with the link already copied where the browser allows it without a tap.
+  const postUrl = post.url;
+  useEffect(() => {
+    if (!opened) return;
+    row.current?.scrollIntoView({ block: "center" });
+    if (!postUrl || post.whopSubmittedAt) return;
+    navigator.clipboard?.writeText(postUrl).then(
+      () => setNote("Link copied. Tap Submit to Whop, paste it there, then mark it sent."),
+      () => setNote("Tap Submit to Whop: it copies the link and opens the campaign."),
+    );
+    // Once per opening, not on every refresh of the post.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened, postUrl]);
+
   return (
-    <li className={`post post-${post.status}`} data-testid="post">
+    <li ref={row} className={`post post-${post.status}${opened ? " post-opened" : ""}`} data-testid="post">
       <div className="job-line">
         <span className="job-name">
           {post.accountName} · {PLATFORM_LABELS[post.platform]}
@@ -324,10 +364,11 @@ function PostRow({ post, onChange }: { post: Post; onChange: () => void }) {
       )}
       {post.status === "posted" && post.campaignUrl && (
         <div className="whop" data-testid="whop">
+          <SubmitCountdownLine post={post} />
           {!post.whopSubmittedAt && (
             <div className="meta">
               {/* One tap: the post's link is copied, and the campaign opens to paste it in. */}
-              <a href={post.campaignUrl} target="_blank" rel="noreferrer" onClick={() => void copyLink()}>
+              <a className={opened ? "submit-now" : undefined} href={post.campaignUrl} target="_blank" rel="noreferrer" onClick={() => void copyLink()}>
                 Submit to Whop
               </a>
               <button type="button" className="link" onClick={() => void copyLink()} disabled={!post.url}>

@@ -74,6 +74,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const picks = new PicksRepo(db);
   const clips = new ClipsRepo(db);
   const posts = new PostsRepo(db);
+  posts.submitDefaults = config.submitHours;
   const thumbs = new ThumbsRepo(db);
   const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
   const publisher = new Publisher({
