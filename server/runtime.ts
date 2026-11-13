@@ -15,8 +15,12 @@ import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
 import { hookVariantsHandler, onHookVariantsFinished } from "./hooklab/render.js";
 import { JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
+import { LiveManager } from "./live/manager.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
 import { LiveRepo } from "./live/repo.js";
+import { realSystem } from "./live/system.js";
+import { ProofRepo } from "./liveproof/repo.js";
+import { ProofRunner } from "./liveproof/service.js";
 import { PicksRepo } from "./picks/repo.js";
 import { pipelineOnFinished } from "./pipeline/chain.js";
 import { INGEST_JOB, ingestHandler } from "./pipeline/ingest/ingest.js";
@@ -29,6 +33,8 @@ import { PostsRepo } from "./publish/repo.js";
 import { PoliteFetcher } from "./scout/polite.js";
 import { ScoutRepo } from "./scout/repo.js";
 import { Scout } from "./scout/service.js";
+import { INTEGRATIONS, isConfigured } from "./settings/integrations.js";
+import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import { SourcesRepo } from "./sources/repo.js";
 import { TrendRadar } from "./trends/radar.js";
@@ -57,6 +63,9 @@ export interface Runtime {
   liveRepo: LiveRepo;
   notifier: Notifier;
   thumbs: ThumbsRepo;
+  /** Live mode. The server starts it; clipfarm-ops only uses it for a launch drill. */
+  live: LiveManager;
+  proof: ProofRunner;
 }
 
 /**
@@ -182,6 +191,53 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     },
     pollMs: opts.pollMs,
   });
+  const live = new LiveManager({
+    repo: liveRepo,
+    watchlist: watchRepo,
+    sources,
+    vods,
+    queue,
+    capturer: config.live.capturer,
+    system: realSystem,
+    notifier,
+    mediaDir,
+    segmentSec: config.live.segmentSec,
+    overlapSec: config.live.overlapSec,
+    keepHours: config.live.keepHours,
+    maxStreams: config.live.maxStreams,
+  });
+  const proof = new ProofRunner({
+    db,
+    repo: new ProofRepo(db),
+    sources,
+    vods,
+    picks,
+    clips,
+    queue,
+    watchlist: watchRepo,
+    live,
+    liveRepo,
+    clients: config.watchClients,
+    notifier,
+    testKeys: async () => {
+      const checks = [];
+      for (const def of INTEGRATIONS.filter((d) => isConfigured(settings, d.id))) {
+        const result = await testIntegration(def.id, settings, config.fakes);
+        // A service's refusal can repeat the key: it is taken out before anything is stored.
+        checks.push({ label: def.label, ok: result.ok, message: settings.scrub(result.message) });
+      }
+      return checks;
+    },
+    engineReports: (vodId) => config.engine.reportsFor(vodId),
+    campaignChannel: config.proof.campaignChannel,
+    maxPicks: config.maxPicks,
+    capPicks: config.proof.maxPicks,
+    maxVodHours: config.proof.maxVodHours,
+    dailyHour: config.proof.dailyHour,
+    computeUsdPerHour: config.computeUsdPerHour,
+    demo: config.fakes,
+    pollMs: opts.pollMs,
+  });
   return {
     settings,
     config,
@@ -204,5 +260,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     liveRepo,
     notifier,
     thumbs,
+    live,
+    proof,
   };
 }

@@ -35,6 +35,7 @@ import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
 import { compact, duration, shortDate, usd } from "./format";
 import { LaunchCard } from "./LaunchCard";
+import { ProofCard } from "./ProofCard";
 import { LiveVersionCard } from "./LiveVersionCard";
 import { ScoutCard } from "./ScoutCard";
 import { Sheet } from "./Sheet";
@@ -114,6 +115,7 @@ export function DashboardTab({
       {!dash && !error && (view === "today" || view === "earnings") && <Skeleton shape="tiles" />}
       {!dash && !error && (view === "progress" || view === "experiment") && <Skeleton shape="card" count={2} />}
       {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
+      {view === "today" && <ProofCard clips={clips} refreshKey={`${sources.length}:${clips.length}:${clips.filter((c) => c.status !== "pending").length}`} />}
       {dash && view === "today" && (
         <Today dash={dash} jobs={jobs} onLoaded={load}>
           <ScoutCard refreshKey={String(sources.reduce((n, s) => n + s.permissions.length, 0))} onJoined={onCampaignDraft} />

@@ -32,6 +32,7 @@ interface ClipRow {
   live_moment_at: string | null;
   live_latency_sec: number | null;
   experiment?: number;
+  proof?: number;
   created_at: string;
 }
 
@@ -97,6 +98,7 @@ function toClip(r: ClipRow): Clip {
     quality: r.quality ? (JSON.parse(r.quality) as ClipQuality) : null,
     postCount: r.post_count ?? 0,
     experiment: r.experiment === 1,
+    proof: r.proof === 1,
     videoUrl: `/api/clips/${r.id}/video?v=${r.version}`,
     masterUrl: `/api/clips/${r.id}/master`,
     live:
@@ -112,7 +114,8 @@ const IN_FORCE = "p.source_id = clips.source_id AND p.review_reason IS NULL AND 
 // experiment: the source's records in force are all experiments (see isExperimentOnly).
 const SELECT = `SELECT clips.*, (SELECT COUNT(*) FROM posts WHERE posts.clip_id = clips.id) AS post_count,
   (EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind = 'experiment')
-    AND NOT EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind != 'experiment')) AS experiment
+    AND NOT EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind != 'experiment')) AS experiment,
+  EXISTS (SELECT 1 FROM proof_runs r WHERE r.vod_id = clips.vod_id) AS proof
   FROM clips`;
 
 export class ClipsRepo {

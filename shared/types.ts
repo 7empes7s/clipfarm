@@ -395,6 +395,8 @@ export interface Clip {
   postCount: number;
   /** The creator has only an experiment record in force: the clip goes to burner accounts only. */
   experiment: boolean;
+  /** Made by the daily proof or the launch drill: tagged "Proof" in the Inbox, reviewed and posted like any clip. */
+  proof: boolean;
   /** Where the gallery plays and downloads the MP4. */
   videoUrl: string;
   /** The source section, for trimming and the face cam frame. */

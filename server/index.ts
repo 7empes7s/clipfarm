@@ -8,8 +8,6 @@ import { Campaigns } from "./sources/campaign/service.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
 import { parseSuggested } from "./sources/suggested.js";
-import { LiveManager } from "./live/manager.js";
-import { realSystem } from "./live/system.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
@@ -33,8 +31,9 @@ const {
   radar,
   hookLab,
   liveRepo,
-  notifier,
   thumbs,
+  live,
+  proof,
 } = openRuntime();
 const mediaDir = config.mediaDir;
 
@@ -46,21 +45,6 @@ if (config.proofFetcher instanceof FakeProofFetcher) {
 }
 const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
 const campaigns = new Campaigns({ sources, fetcher: config.campaignFetcher, chat: config.campaignChat });
-const live = new LiveManager({
-  repo: liveRepo,
-  watchlist: watchRepo,
-  sources,
-  vods,
-  queue,
-  capturer: config.live.capturer,
-  system: realSystem,
-  notifier,
-  mediaDir,
-  segmentSec: config.live.segmentSec,
-  overlapSec: config.live.overlapSec,
-  keepHours: config.live.keepHours,
-  maxStreams: config.live.maxStreams,
-});
 const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
 const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });
 // A key saved in Settings is tried at once, not after the next wait.
@@ -91,6 +75,7 @@ const app = createApp({
   suggested,
   watchlist: { repo: watchRepo, poller },
   live: { manager: live, repo: liveRepo },
+  proof,
   engine: { engine: config.engine, fake: config.fakeEngine },
   google: { ai: config.google, thumbs, auto: !config.fakes },
   settings: { store: settings, demo: config.fakes },
@@ -144,6 +129,8 @@ growthRound();
 poller.start(config.watchPollMinutes * 60_000);
 background();
 void live.start();
+// The daily proof (06:00 on the server's clock) and any proof or drill asked for in the app or by clipfarm-ops.
+proof.start();
 // Looks every 6 hours for public allowances whose proof was last read a week or more ago.
 allowance.start(6 * 3600_000);
 // Looks every hour for running campaigns whose page was last read a day or more ago.
@@ -165,6 +152,7 @@ function shutdown() {
   clearInterval(growthTimer);
   poller.stop();
   live.stop();
+  proof.stop();
   allowance.stop();
   campaigns.stop();
   scout.stop();

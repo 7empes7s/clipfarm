@@ -46,6 +46,7 @@ import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/tre
 
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
+import type { ProofInfo } from "../../shared/proof";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -170,6 +171,9 @@ export const api = {
     call<ScoutInfo>(`/api/scout/campaigns/${id}`, { method: "PUT", body: JSON.stringify({ status }), keepalive: true }),
   scoutAuto: (on: boolean) => call<ScoutInfo>("/api/scout/auto", { method: "PUT", body: JSON.stringify({ on }) }),
   live: () => call<LiveInfo>("/api/live"),
+  proof: () => call<ProofInfo>("/api/proof"),
+  runProof: () => call<ProofInfo>("/api/proof/run", { method: "POST" }),
+  runDrill: () => call<ProofInfo>("/api/proof/drill", { method: "POST" }),
   arm: () => call<LiveInfo>("/api/live/arm", { method: "POST" }),
   disarm: () => call<LiveInfo>("/api/live/disarm", { method: "POST" }),
   setLaunchAt: (launchAt: string) => call<LiveInfo>("/api/live/launch", { method: "PUT", body: JSON.stringify({ launchAt }) }),

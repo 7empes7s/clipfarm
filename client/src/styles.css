@@ -3564,6 +3564,182 @@ button.danger {
   background: var(--sunk);
 }
 
+/* Daily proof: each run is a ledger of numbers against their targets; green met, red missed. */
+.proof {
+  margin-top: var(--s4);
+}
+.proof-reasons {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s4);
+  color: var(--bad);
+  font-size: var(--t-sm);
+}
+.proof-none {
+  margin: var(--s3) 0 0;
+}
+.proof-run {
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.proof-run-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.proof-label {
+  margin: var(--s1) 0 0;
+  overflow-wrap: anywhere;
+}
+.proof-checks {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.proof-checks li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--s3);
+  padding: var(--s2) var(--s3);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+}
+.proof-checks .is-ok {
+  border-left-color: var(--ok);
+  background: var(--ok-bg);
+}
+.proof-checks .is-miss {
+  border-left-color: var(--bad);
+  background: var(--bad-bg);
+}
+.proof-check-value {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: var(--t-lg);
+  text-align: right;
+  grid-row: span 2;
+  align-self: center;
+}
+.proof-check-label {
+  font-weight: 600;
+}
+.proof-check-target {
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.is-ok .proof-check-target {
+  color: var(--ok);
+}
+.is-miss .proof-check-target {
+  color: var(--bad);
+}
+.proof-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s3);
+  margin: var(--s3) 0 0;
+}
+.proof-facts dt {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.proof-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.proof-clips {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.proof-clips button {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3);
+  text-align: left;
+}
+.proof-clip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proof-play {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 7px 0 7px 11px;
+  border-color: transparent transparent transparent var(--accent-strong);
+}
+.proof-week {
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.proof-week-title {
+  margin: 0 0 var(--s2);
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.proof-week ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--s2);
+  /* The target line, across all seven days. */
+  background: linear-gradient(var(--muted), var(--muted)) 0 var(--target-y) / 100% 1px no-repeat;
+}
+.proof-day {
+  display: grid;
+  grid-template-rows: 4.5rem 1.5rem;
+  align-items: end;
+  text-align: center;
+}
+.proof-bar {
+  display: block;
+  border-radius: var(--s1) var(--s1) 0 0;
+  background: var(--line);
+}
+.proof-day-passed .proof-bar {
+  background: var(--ok);
+}
+.proof-day-failed .proof-bar {
+  background: var(--bad);
+}
+.proof-day-name {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.proof-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+.proof-video {
+  display: block;
+  width: 100%;
+  max-height: 70dvh;
+  margin: var(--s3) 0;
+  border-radius: var(--radius-small);
+  background: var(--well);
+}
+/* The Proof tag on a clip made by the daily proof or the launch drill. */
+.over-chip.proof-tag {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+
 /* Live version card on the dashboard */
 .live-version {
   display: grid;

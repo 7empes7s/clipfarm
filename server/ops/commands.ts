@@ -1,11 +1,13 @@
 import { readdirSync, statfsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import type { Clip, Job, Source, WatchPlatform } from "../../shared/types.js";
-import { PERMISSION_KIND_LABELS, WATCH_PLATFORMS } from "../../shared/types.js";
-import { channelUrl, normalizeHandle } from "../../shared/watchlist.js";
+import type { ProofRun } from "../../shared/proof.js";
+import type { Clip, Job, Source } from "../../shared/types.js";
+import { PERMISSION_KIND_LABELS } from "../../shared/types.js";
+import { channelUrl } from "../../shared/watchlist.js";
 import { openSettings } from "../config.js";
 import { HttpError, ValidationError } from "../errors.js";
+import { channelKey, channelOf, withScheme } from "../liveproof/service.js";
 import type { Notifier } from "../live/notify.js";
 import { INGEST_JOB } from "../pipeline/ingest/ingest.js";
 import { RENDER_JOB } from "../pipeline/render/job.js";
@@ -14,6 +16,9 @@ import { INTEGRATIONS, isConfigured } from "../settings/integrations.js";
 import { testIntegration } from "../settings/keyTests.js";
 import { Settings } from "../settings/store.js";
 import { parseNewSource } from "../sources/repo.js";
+import allowanceSeed from "../sources/seed/public-allowance.json" with { type: "json" };
+import { addSuggested, parseSuggested } from "../sources/suggested.js";
+import watchSeed from "../sources/watchlist/seed.json" with { type: "json" };
 import { mentionsLeak } from "../sources/watchlist/match.js";
 import { PlatformError } from "../sources/watchlist/platforms/types.js";
 
@@ -44,6 +49,16 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
   clipfarm-ops run latest <source id or channel link> [--count N]
   clipfarm-ops run <video link> [--source <id or channel link>] [--count N]
       Download, transcribe, pick and render. The clips wait in the gallery; nothing is posted.
+  clipfarm-ops proof
+      The daily live proof, now: the campaign channel's latest video, then a GTA V / GTA RP video of a
+      creator who publicly allows clipping. Real pipeline, measured against "10 clips per hour of video
+      in under 30 minutes". The clips wait in the Inbox tagged Proof; nothing is posted.
+  clipfarm-ops proof status
+      The last proof, the last drill and "Launch ready: yes/no" with the reasons.
+  clipfarm-ops drill live [creator name, channel link or source id] [--minutes 15]
+      The launch drill: loads the launch-day watchlist, then runs live mode for 15 minutes on an allowed
+      creator who is live now (Kick first). Reports the time from a moment to its LIVE clip in the Inbox,
+      dropped segments and memory.
   clipfarm-ops clips [--since 2h | 3d | 2026-11-12]
   clipfarm-ops status
       Jobs, the queue and the disk.
@@ -58,25 +73,6 @@ function duration(sec: number): string {
   if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
   return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-function withScheme(link: string): string {
-  return /^https?:\/\//i.test(link) ? link : `https://${link}`;
-}
-
-/** The platform and handle of a channel link, when it is on Twitch, Kick or YouTube. */
-function channelOf(link: string): { platform: WatchPlatform; handle: string } | null {
-  for (const platform of WATCH_PLATFORMS) {
-    const handle = normalizeHandle(platform, withScheme(link));
-    if (handle) return { platform, handle };
-  }
-  return null;
-}
-
-/** One spelling per channel, so "kick.com/tjr" and "https://kick.com/TJR/" are the same source. */
-function channelKey(link: string): string {
-  const channel = channelOf(link);
-  return (channel ? channelUrl(channel) : withScheme(link)).toLowerCase().replace(/\/+$/, "");
 }
 
 function findSource(rt: Runtime, ref: string): Source {
@@ -342,6 +338,97 @@ function status(rt: Runtime, io: OpsIo): number {
   return 0;
 }
 
+function proofLines(run: ProofRun): string[] {
+  const name = run.kind === "drill" ? "Drill" : run.target === "gta" ? "GTA video" : "Campaign video";
+  const head = `${name}: ${run.status.toUpperCase()}${run.label ? `  ${run.label}` : ""}${run.status === "skipped" || run.status === "running" ? `  (${run.step})` : ""}`;
+  if (run.status === "skipped" || run.status === "waiting") return [head];
+  return [
+    head,
+    ...run.checks.map((c) => `  ${c.ok === null ? "    " : c.ok ? "ok  " : "MISS"} ${c.label}: ${c.value}${c.target ? ` (target: ${c.target})` : ""}`),
+    ...run.problems.map((p) => `  Problem: ${p.text}`),
+  ];
+}
+
+function launchLines(rt: Runtime): string[] {
+  const { launch } = rt.proof.info();
+  return [`Launch ready: ${launch.ready ? "yes" : "no"}`, ...launch.reasons.map((r) => `  - ${r}`)];
+}
+
+/** Before a proof or drill is asked for: the service does the work when it is up, else this command takes the queue. */
+async function takeProofWork(rt: Runtime, io: OpsIo): Promise<void> {
+  rt.queue.start();
+  if (rt.queue.working) {
+    io.out("The clipfarm service is not running, so this command does the work.");
+    // A run an earlier command or the service left half done comes first.
+    rt.proof.recover();
+    await rt.proof.work();
+  } else io.out("The clipfarm service does the work; this command follows it.");
+}
+
+/** Follows runs that were just asked for until they end, printing each change. */
+async function followProof(rt: Runtime, io: OpsIo, ids: number[]): Promise<ProofRun[]> {
+  if (rt.queue.working) void rt.proof.work();
+  const seen = new Map<number, string>();
+  for (;;) {
+    const runs = ids.map((id) => rt.proof.view(rt.proof.stored(id)));
+    for (const r of runs) {
+      const state = `${r.status}|${r.label}|${r.step}`;
+      if (r.status === "waiting" || seen.get(r.id) === state) continue;
+      seen.set(r.id, state);
+      io.out(`[${new Date().toISOString().slice(11, 19)}] ${r.label || (r.kind === "drill" ? "drill" : `${r.target} video`)}: ${r.step || r.status}`);
+    }
+    if (runs.every((r) => r.status !== "waiting" && r.status !== "running")) return runs;
+    if (io.signal?.aborted) throw new ValidationError("Stopped waiting. See: clipfarm-ops proof status");
+    await new Promise((r) => setTimeout(r, io.pollMs ?? 2000));
+  }
+}
+
+async function proofCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<number> {
+  if (args.length === 1 && args[0] === "status") {
+    const info = rt.proof.info();
+    if (info.runs.length === 0) io.out("No proof has run yet. Run one: clipfarm-ops proof");
+    for (const r of [...info.runs, ...(info.drill ? [info.drill] : [])]) for (const line of proofLines(r)) io.out(line);
+    io.out(info.nextAt ? `The daily proof runs next at ${info.nextAt.slice(0, 16).replace("T", " ")} UTC.` : "The daily timer is off (PROOF_HOUR).");
+    for (const line of launchLines(rt)) io.out(line);
+    return 0;
+  }
+  if (args.length > 0) throw new UsageError("Usage: clipfarm-ops proof | proof status");
+  await takeProofWork(rt, io);
+  const runs = await followProof(rt, io, rt.proof.request("ops").map((r) => r.id));
+  for (const r of runs) for (const line of proofLines(r)) io.out(line);
+  io.out("Kept private: nothing was posted. The clips wait in the Inbox, tagged Proof.");
+  for (const line of launchLines(rt)) io.out(line);
+  const failed = runs.filter((r) => r.status === "failed");
+  if (failed.length > 0) throw new ValidationError(`The proof missed its target on ${failed.length} of ${runs.length} videos.`);
+  if (runs.every((r) => r.status === "skipped")) throw new ValidationError("The proof had no video to run on.");
+  return 0;
+}
+
+async function drillCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: "string", default: "15" } } });
+  const minutes = Number(values.minutes);
+  if (positionals[0] !== "live" || positionals.length > 2 || !(minutes > 0) || minutes > 120) {
+    throw new UsageError("Usage: clipfarm-ops drill live [creator name, channel link or source id] [--minutes 15]");
+  }
+  // Launch day's watchlist: the seed list, and the starter list of creators who allow clipping in
+  // public, each with its proof on record (the weekly check keeps that proof true).
+  const seeded = rt.watchRepo.seedOnce(watchSeed.creators);
+  const suggested = parseSuggested(allowanceSeed.creators);
+  const added = addSuggested(suggested.map((c) => c.name), suggested, { sources: rt.sources, watchlist: rt.watchRepo, now: new Date() });
+  const watched = rt.watchRepo.list();
+  io.out(
+    `Launch-day watchlist: ${watched.length} creators, ${watched.filter((c) => c.permissionState === "active").length} with a permission record in force` +
+      `${seeded + added.length > 0 ? ` (${seeded} loaded from the list, ${added.length} added with a public allowance)` : ""}.`,
+  );
+  await takeProofWork(rt, io);
+  const [run] = await followProof(rt, io, [rt.proof.requestDrill("ops", { minutes, who: positionals[1] }).id]);
+  for (const line of proofLines(run!)) io.out(line);
+  for (const line of launchLines(rt)) io.out(line);
+  if (run!.status === "skipped") throw new ValidationError(run!.step);
+  if (run!.status === "failed") throw new ValidationError("The launch drill missed its target.");
+  return 0;
+}
+
 /** Runs one clipfarm-ops command and returns its exit code. Every line it prints has keys taken out. */
 export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   const [command, ...args] = argv;
@@ -353,7 +440,7 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   let scrub = (line: string) => line;
   try {
     if (command === "test-keys" && args.length === 0) return await testKeys(io);
-    if (!["source", "run", "clips", "status", "notify"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
+    if (!["source", "run", "clips", "status", "proof", "drill", "notify"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
       throw new UsageError(`Unknown command "${argv.join(" ")}".\n\n${USAGE}`);
     }
     rt = openRuntime(io.env, { pollMs: io.pollMs });
@@ -362,6 +449,8 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
     if (command === "source") return sourceCommand(rt, safe, args);
     if (command === "run") return await run(rt, safe, args);
     if (command === "clips") return listClips(rt, safe, args);
+    if (command === "proof") return await proofCommand(rt, safe, args);
+    if (command === "drill") return await drillCommand(rt, safe, args);
     if (command === "notify") {
       const phones = rt.liveRepo.pushSubscriptions().length;
       await (io.notifier ?? rt.notifier).notify({ title: scrub(args[0]!), body: scrub(args[1]!), url: "/#dashboard" });
@@ -378,7 +467,11 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   } finally {
     if (rt) {
       // A job this command was running is aborted and put back in the queue for the service.
+      rt.proof.stop();
+      rt.live.stop();
       rt.queue.stop();
+      await rt.proof.work();
+      await rt.live.settled();
       await rt.queue.idle();
       rt.db.close();
     }
