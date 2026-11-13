@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Word } from "../../../shared/types.js";
 import { FakeChatClient } from "./fake.js";
-import { LlmPicker, OpenAiCompatibleChat, parsePicks, PICKS_SCHEMA } from "./llm.js";
+import { chatFor, LlmPicker, OpenAiCompatibleChat, OpenAiResponsesChat, parsePicks, PICKS_SCHEMA } from "./llm.js";
 import type { PickInput } from "./types.js";
 
 function input(over: Partial<PickInput> = {}): PickInput {
@@ -85,6 +85,57 @@ describe("OpenAiCompatibleChat", () => {
       fetchImpl: (async () => new Response(JSON.stringify({ choices: [] }), { status: 200 })) as unknown as typeof fetch,
     });
     await expect(empty.complete({ system: "", user: "", schemaName: "s", schema: {} })).rejects.toThrow("empty answer");
+  });
+});
+
+describe("OpenAiResponsesChat", () => {
+  const answer = (text: string) => ({
+    output: [
+      { type: "reasoning", summary: [] },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text }] },
+    ],
+    usage: { input_tokens: 10000, output_tokens: 1000 },
+  });
+
+  it("posts picks to /v1/responses with a strict JSON schema, reads the output text and prices the tokens", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Response.json(answer(JSON.stringify({ picks: [goodPick] })));
+    }) as unknown as typeof fetch;
+    const chat = chatFor({ apiKey: "test-key", baseUrl: "https://api.openai.com/v1/", model: "gpt-6-luna", usdPerMTokIn: 0.1, usdPerMTokOut: 0.5, fetchImpl });
+    expect(chat).toBeInstanceOf(OpenAiResponsesChat);
+    const result = await new LlmPicker(chat).pick(input());
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://api.openai.com/v1/responses");
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe("Bearer test-key");
+    const body = JSON.parse(calls[0]!.init.body as string);
+    expect(Object.keys(body).sort()).toEqual(["input", "instructions", "model", "store", "text"]);
+    expect(body.model).toBe("gpt-6-luna");
+    expect(body.instructions).toMatch(/spoiler/);
+    expect(body.input).toContain("Streamer: Test Streamer");
+    expect(body.text).toEqual({ format: { type: "json_schema", name: "clip_picks", strict: true, schema: PICKS_SCHEMA } });
+    expect(body.store).toBe(false);
+    expect(result.picks.map((p) => p.hook)).toEqual(["He did NOT expect that"]);
+    expect(result.costUsd).toBe(0.0015); // 10,000 × $0.10 + 1,000 × $0.50, per million
+  });
+
+  it("keeps Chat Completions for an address that is not OpenAI's (OpenRouter, a local llama.cpp)", () => {
+    for (const baseUrl of ["https://openrouter.ai/api/v1", "http://127.0.0.1:8080/v1"]) {
+      expect(chatFor({ apiKey: "k", baseUrl, model: "m" })).toBeInstanceOf(OpenAiCompatibleChat);
+    }
+  });
+
+  it("says a refusal, an API error and an empty answer plainly", async () => {
+    const withAnswer = (res: () => Response) =>
+      new OpenAiResponsesChat({ apiKey: "k", baseUrl: "https://api.openai.com/v1", model: "m", fetchImpl: (async () => res()) as unknown as typeof fetch });
+    const req = { system: "", user: "", schemaName: "s", schema: {} };
+    await expect(
+      withAnswer(() => Response.json({ output: [{ type: "message", content: [{ type: "refusal", refusal: "I can't help with that" }] }] })).complete(req),
+    ).rejects.toThrow("The picking model refused: I can't help with that");
+    await expect(withAnswer(() => new Response("no such model", { status: 404 })).complete(req)).rejects.toThrow("The picking model failed (404): no such model");
+    await expect(withAnswer(() => Response.json({ output: [] })).complete(req)).rejects.toThrow("empty answer");
   });
 });
 

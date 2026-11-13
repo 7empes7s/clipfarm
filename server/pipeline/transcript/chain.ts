@@ -140,6 +140,8 @@ export interface StepResult {
   language?: string | null;
   peakRssMb?: number | null;
   costUsd?: number;
+  /** The cloud model that answered, when the step is a cloud one. */
+  model?: string;
 }
 
 /** The longest run of one word said again and again, the largest share one word has, and how often the most repeated three-word phrase came. */
@@ -273,6 +275,8 @@ export function summarize(uses: EngineUse[]): string {
 interface Tally {
   use: EngineUse;
   languages: Map<string, number>;
+  /** Cloud models that answered, e.g. "whisper-1". */
+  models: Set<string>;
 }
 
 /**
@@ -294,7 +298,7 @@ export async function runChain(segments: Segment[], language: string | null, dep
   const tally = (step: SttStep) => {
     let x = tallies.get(step.id);
     if (!x) {
-      x = { use: { step: step.id, label: step.label, count: 0, audioSec: 0, ms: 0, peakMb: null, note: "" }, languages: new Map() };
+      x = { use: { step: step.id, label: step.label, count: 0, audioSec: 0, ms: 0, peakMb: null, note: "" }, languages: new Map(), models: new Set() };
       tallies.set(step.id, x);
     }
     return x;
@@ -374,6 +378,7 @@ export async function runChain(segments: Segment[], language: string | null, dep
       // Said next to the step in the summary: "Whisper small 8% (Spanish segment)".
       const heard = kept.result.language ?? language;
       if (heard && heard !== "en") x.languages.set(heard, (x.languages.get(heard) ?? 0) + 1);
+      if (kept.result.model) x.models.add(kept.result.model);
       parts.push({ segment, words: kept.result.words });
     } finally {
       await deps.done?.(audio);
@@ -386,7 +391,7 @@ export async function runChain(segments: Segment[], language: string | null, dep
     .filter((x) => x.use.count > 0 || x.use.ms > 0)
     .map((x) => {
       const notes = [...x.languages].map(([code, n]) => `${languageName(code)} segment${n === 1 ? "" : "s"}`);
-      return { ...x.use, note: notes.join(", ") };
+      return { ...x.use, note: [...x.models, ...notes].join(", ") };
     });
   const handled = uses.filter((u) => u.count > 0);
   return {

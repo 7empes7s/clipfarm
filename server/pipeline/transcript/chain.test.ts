@@ -261,12 +261,13 @@ describe("the speech-to-text chain (fake engine runners)", () => {
     const small = fakeStep("whisper-small", () => {
       throw new Error("crashed too");
     });
-    const cloud = fakeStep("cloud", () => ({ words: say("cloud words"), costUsd: 0.006 }), { cloud: true });
+    const cloud = fakeStep("cloud", () => ({ words: say("cloud words"), costUsd: 0.006, model: "whisper-1" }), { cloud: true });
     const result = await runChain(segments(2), "en", deps([moonshine, small, cloud]));
     expect(cloud.calls.map((c) => c.segment)).toEqual([0]);
     expect(result.words.map((w) => w.word)).toEqual(["cloud", "words", "local", "words"]);
     expect(result.costUsd).toBe(0.006);
-    expect(result.report.summary).toBe("Moonshine 50%, Cloud (OpenAI) 50%");
+    // The cloud model that answered is kept with the job.
+    expect(result.report.summary).toBe("Moonshine 50%, Cloud (OpenAI) 50% (whisper-1)");
   });
 
   it("does not pay for cloud when a local step answered, however poorly", async () => {
