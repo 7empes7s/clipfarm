@@ -32,6 +32,7 @@ const {
   hookLab,
   liveRepo,
   notifier,
+  thumbs,
 } = openRuntime();
 const mediaDir = config.mediaDir;
 
@@ -89,6 +90,7 @@ const app = createApp({
   watchlist: { repo: watchRepo, poller },
   live: { manager: live, repo: liveRepo },
   engine: { engine: config.engine, fake: config.fakeEngine },
+  google: { ai: config.google, thumbs, auto: !config.fakes },
   settings: { store: settings, demo: config.fakes },
   trends: radar,
   hookLab,

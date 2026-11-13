@@ -24,6 +24,29 @@ const STEPS: Record<IntegrationId, { title: string; steps: ReactNode[] }> = {
       </>,
     ],
   },
+  google: {
+    title: "How to connect Google (Gemini)",
+    steps: [
+      <>
+        Open <Out href="https://console.cloud.google.com/">console.cloud.google.com</Out>, signed in as the account that has the
+        credit. Copy the <b>Project ID</b> from the project picker at the top.
+      </>,
+      <>
+        Go to <b>APIs and services</b>, then <b>Library</b>. Find <code>Vertex AI API</code> and tap <b>Enable</b>.
+      </>,
+      <>
+        Go to <b>IAM and admin</b>, then <b>Service accounts</b>. Tap <b>Create service account</b>. Name: <code>clipfarm</code>. Role:{" "}
+        <code>Vertex AI User</code>.
+      </>,
+      <>
+        Open the new account, then <b>Keys</b>, <b>Add key</b>, <b>Create new key</b>, <b>JSON</b>. A file is downloaded. Open it, copy
+        everything in it and paste it here as the service account JSON. (An API key from <b>Credentials</b> works too.)
+      </>,
+      <>
+        Tap <b>Test</b>. The spend and the daily limit are then on the Dashboard, under <b>Google credit</b>.
+      </>,
+    ],
+  },
   twitch: {
     title: "How to make a Twitch app",
     steps: [

@@ -872,7 +872,7 @@ export interface Watchlist {
   lastPollAt: string | null;
 }
 
-export const INTEGRATION_IDS = ["openai", "twitch", "youtube", "postiz", "upload-post"] as const;
+export const INTEGRATION_IDS = ["openai", "google", "twitch", "youtube", "postiz", "upload-post"] as const;
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 
 /** The last Test of an integration's keys. The message is plain and never holds a key. */

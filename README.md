@@ -125,6 +125,13 @@ env-only.
 | `OPENAI_TRANSCRIBE_MODEL` | `gpt-transcribe` | Cloud transcription model, also picked in Settings. A model that sends no word timings is swapped for `whisper-1` (which OpenAI retires on 2027-02-26) |
 | `LLM_USD_PER_MTOK_IN` / `_OUT` | the default model's list prices, else `0` | Model list prices per million tokens, for the cost per clip |
 | `MAX_PICKS` | `15` | Most clips kept per VOD |
+| `GOOGLE_CLOUD_PROJECT` | – | Optional: the Google Cloud project whose credit pays for Gemini (see "Gemini on the Google Cloud credit") |
+| `GOOGLE_CLOUD_LOCATION` | `global` | `global`, `europe-west4` or `us-central1` |
+| `GOOGLE_API_KEY` / `GOOGLE_SERVICE_ACCOUNT_JSON` | – | One of the two signs in: an API key, or a service account key file's JSON |
+| `GOOGLE_FLASH_MODEL` | `gemini-3.1-flash-lite` | The model that watches picks and writes hooks |
+| `GOOGLE_IMAGE_MODEL` | `gemini-2.5-flash-image` | The model that makes thumbnails |
+| `GOOGLE_CREDIT_EUR` / `GOOGLE_CREDIT_EXPIRES` | `269` / `2027-02-11` | The credit the spend guard counts against, and its last day |
+| `GOOGLE_EUR_PER_USD` | `0.92` | The rate Google's dollar list prices are turned into euros at |
 | `MEDIA_DIR` | `./media` | Where clips, thumbnails and their masters are kept (never committed) |
 | `RENDER_PRESET` | `veryfast` | x264 preset for clips |
 | `POSTIZ_URL` | – | Address you open Postiz at, e.g. `https://postiz.techinsiderbytes.com` |
@@ -523,6 +530,30 @@ a 10-minute sample to the budget (250 s, 2.5 GB). CI runs it. flite only speaks 
 other-language run takes your own sample: `ENGINE_OTHER_LANGUAGE_WAV=/path/to/speech.wav npm run
 test:engine` checks that it skips Moonshine and goes to Whisper small. `npm run test:engine:writer` does
 the same for the hook writer (1.1 GB download, needs about 2.9 GB of free memory; not in CI).
+
+## Gemini on the Google Cloud credit (optional)
+
+The local engine stays the default. Once **Google (Gemini)** is connected in Settings (a project ID
+and an API key or a service account JSON; Test makes one tiny call), Vertex AI adds three things,
+all paid from the Google Cloud credit:
+
+- **Video-aware picks.** For the 12 best local picks of a video, the picks job downloads only that
+  moment, shrinks it with ffmpeg to a proxy (360p at most, 1 frame a second, 40 s at most) and
+  sends it to Gemini Flash. The answer must match a fixed schema: visual intensity 0-10, a moment
+  type from a fixed list (`shared/google.ts`), whether the clip opens on the payoff, the best cut
+  within 3 s of the local one, and spoiler / leak / cutscene flags. It is blended into the pick's
+  score by a weight (30% unless changed) and the pick says so: "+visual: police chase, 8/10". The
+  video can add a flag, never clear one. Live-mode segments are not watched (speed comes first).
+- **Hooks and titles.** Gemini Flash is the writer after the local one and before OpenAI.
+- **Thumbnails.** An approved clip gets two options from a frame of the clip and its hook, each as
+  a 1080×1920 cover and a 1280×720 YouTube thumbnail. Pick one under **Thumbnail** on the clip.
+
+**Spend guard.** Every call's estimated cost (token counts × list prices) is logged and added up.
+The Dashboard's **Google credit** card shows the total against the credit and its last day, with
+the switches, the daily limit (€3) and the weight. Google is not called once the day's limit, 90%
+of the credit or the credit's last day is reached. Whenever Google is off, refused, failing or
+answers outside the schema, the job carries on with the local result: picks keep their local
+order, hooks come from the next writer, the thumbnail is a frame of the clip.
 
 ## Manual check with a real link (not run in CI)
 

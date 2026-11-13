@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships: all but the last entry, which adds the campaign scout's table. */
-const ALL_OF_MAIN = MIGRATIONS.length - 1;
+/** Everything main ships: all but the scout's and the Google tables' entries, which this PR adds on top. */
+const ALL_OF_MAIN = MIGRATIONS.length - 2;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -37,8 +37,11 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
 
+    // Every later step runs too (the trend radar/hook lab and Google tables came after the growth lab's).
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
-    expect(tables(db)).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations"]));
+    expect(tables(db)).toEqual(
+      expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations", "google_calls", "clip_thumbs"]),
+    );
     const postColumns = db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all();
     expect(postColumns).toEqual(expect.arrayContaining(["metrics", "whop_approved_at", "whop_paid_at"]));
     db.close();
