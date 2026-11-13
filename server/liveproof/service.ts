@@ -4,6 +4,7 @@ import { WATCH_PLATFORMS } from "../../shared/types.js";
 import type { ProofAskedBy, ProofInfo, ProofMetrics, ProofProblem, ProofRun } from "../../shared/proof.js";
 import { channelUrl, normalizeHandle } from "../../shared/watchlist.js";
 import type { ClipsRepo } from "../clips/repo.js";
+import type { Db } from "../db/index.js";
 import { HttpError, ValidationError } from "../errors.js";
 import type { JobQueue } from "../jobs/queue.js";
 import type { LiveManager } from "../live/manager.js";
@@ -59,6 +60,7 @@ export function channelKey(link: string): string {
 }
 
 export interface ProofDeps {
+  db: Db;
   repo: ProofRepo;
   sources: SourcesRepo;
   vods: VodsRepo;
@@ -106,6 +108,8 @@ function readMemUsedMb(): number | null {
 
 /** A stop that is not a failure: there was nothing to run on. */
 class Skip extends Error {}
+/** The process is shutting down: the run is left as it is, for recover() after the next start. */
+class Stopped extends Error {}
 
 /**
  * The daily live proof and the launch drill. Runs are asked for by anyone (the timer, the
@@ -143,10 +147,15 @@ export class ProofRunner {
     if (this.deps.repo.open().length > 0) throw new HttpError(409, "A proof is already running. Wait for it to finish.");
   }
 
-  /** Runs left open by a restart are closed as failed. Only the process that works the queue calls this. */
+  /**
+   * Runs a restart cut off (an update going live, a crash). A video's jobs went back in the queue,
+   * so its proof carries on and the lost time counts; a drill's recording is gone, so it failed.
+   * Only the process that works the queue calls this.
+   */
   recover(): void {
     for (const run of this.deps.repo.open().filter((r) => r.status === "running")) {
-      this.finish(run.id, "failed", [{ kind: "failed", text: "The server restarted during the proof." }], "Stopped by a restart");
+      if (run.kind === "vod") this.deps.repo.requeue(run.id);
+      else this.finish(run.id, "failed", [{ kind: "failed", text: "The server restarted during the drill." }], "Stopped by a restart");
     }
   }
 
@@ -193,6 +202,7 @@ export class ProofRunner {
         if (next.kind === "drill") await this.runDrill(next);
         else await this.runVod(next);
       } catch (err) {
+        if (err instanceof Stopped) return;
         if (err instanceof Skip) this.deps.repo.finish(next.id, "skipped", err.message, [], this.now());
         else this.finish(next.id, "failed", [{ kind: "failed", text: err instanceof Error ? err.message : String(err) }], "Failed");
       }
@@ -307,14 +317,25 @@ export class ProofRunner {
 
   private async runVod(run: StoredRun): Promise<void> {
     const { repo, queue } = this.deps;
-    repo.update(run.id, { step: "Looking for the video" });
-    const { source, vod: remote } = run.target === "campaign" ? await this.campaignTarget() : await this.gtaTarget();
-    // Server-side gate: nothing is ingested without a permission record in force.
-    this.deps.sources.assertCanUse(source.id);
-    const vod = this.deps.vods.create(source.id, remote.url);
-    const label = `${source.creatorName}: ${remote.title || "latest video"}`;
-    repo.update(run.id, { label, url: remote.url, vodId: vod.id, step: "Waiting for its turn" });
-    queue.enqueue(INGEST_JOB, { vodId: vod.id, maxPicks: Math.min(proofMaxPicks(remote.durationSec, this.deps.maxPicks), this.deps.capPicks ?? Infinity) }, { vodId: vod.id });
+    let vod: { id: number };
+    let remoteSec: number | null = null;
+    if (run.vodId !== null) {
+      // Carrying on after a restart: the video's jobs are back in the queue.
+      vod = { id: run.vodId };
+    } else {
+      repo.update(run.id, { step: "Looking for the video" });
+      const { source, vod: remote } = run.target === "campaign" ? await this.campaignTarget() : await this.gtaTarget();
+      // Server-side gate: nothing is ingested without a permission record in force.
+      this.deps.sources.assertCanUse(source.id);
+      vod = this.deps.vods.create(source.id, remote.url);
+      remoteSec = remote.durationSec;
+      const label = `${source.creatorName}: ${remote.title || "latest video"}`;
+      // One step: a restart between the two would leave a run that points at no job.
+      this.deps.db.transaction(() => {
+        repo.update(run.id, { label, url: remote.url, vodId: vod.id, step: "Waiting for its turn" });
+        queue.enqueue(INGEST_JOB, { vodId: vod.id, maxPicks: Math.min(proofMaxPicks(remoteSec, this.deps.maxPicks), this.deps.capPicks ?? Infinity) }, { vodId: vod.id });
+      })();
+    }
 
     const started = new Date(repo.get(run.id).startedAt!).getTime();
     const current = () => repo.get(run.id);
@@ -322,7 +343,7 @@ export class ProofRunner {
     let quiet = 0;
     // Two quiet looks in a row: the next step is queued in the same instant the one before it ends.
     while (quiet < 2) {
-      if (this.stopped) throw new Skip("Stopped before it finished.");
+      if (this.stopped) throw new Stopped();
       const used = this.memUsedMb();
       if (used !== null) ramPeakMb = Math.max(ramPeakMb ?? 0, used);
       const jobs = this.jobsOf(vod.id);
@@ -333,7 +354,7 @@ export class ProofRunner {
         repo.update(run.id, { step, metrics: this.vodMetrics(current(), vod.id, ramPeakMb, false) });
       }
       // Four times the target, and never under two hours: after that it is a failure, not a wait.
-      const known = this.deps.vods.get(vod.id).durationSec ?? remote.durationSec;
+      const known = this.deps.vods.get(vod.id).durationSec ?? remoteSec;
       const limitMin = Math.max(120, 4 * vodTargets(known ?? 3600).budgetMin);
       if (active && this.now().getTime() - started > limitMin * 60_000) {
         const metrics = this.vodMetrics(current(), vod.id, ramPeakMb, false);
@@ -444,7 +465,7 @@ export class ProofRunner {
     };
     try {
       while (this.now().getTime() - started < minutes * 60_000 && liveRepo.findCapture(capture.id)?.status === "recording") {
-        if (this.stopped) throw new Skip("Stopped before it finished.");
+        if (this.stopped) throw new Stopped();
         // The server's own timer rolls the segments; a drill run by clipfarm-ops alone does it here.
         if (!live.started) live.roll();
         sample();
@@ -464,7 +485,7 @@ export class ProofRunner {
     const drainFrom = this.now().getTime();
     let quiet = 0;
     while (quiet < 2 && this.now().getTime() - drainFrom < DRILL_DRAIN_MIN * 60_000) {
-      if (this.stopped) throw new Skip("Stopped before it finished.");
+      if (this.stopped) throw new Stopped();
       sample();
       quiet = this.jobsOf(capture.vodId).some((j) => j.status === "queued" || j.status === "running") ? 0 : quiet + 1;
       repo.update(run.id, { step: "Cutting the LIVE clips", metrics: metrics() });

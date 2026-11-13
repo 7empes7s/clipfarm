@@ -9,6 +9,7 @@ import type {
   ClipEditInput,
   EngineSettings,
   EngineStatus,
+  LiveVersion,
   FaceCam,
   ExportPack,
   Job,
@@ -111,6 +112,7 @@ export const api = {
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}`, { method: "PUT", body: JSON.stringify(settings) }),
   setFollowers: (accountId: string, followers: number) =>
     call<AccountsInfo>(`/api/accounts/${encodeURIComponent(accountId)}/followers`, { method: "POST", body: JSON.stringify({ followers }) }),
+  liveVersion: () => call<LiveVersion | null>("/api/live-version"),
   engine: () => call<EngineStatus>("/api/engine"),
   /** Fetches what the engine misses; with a step, only that step's files. */
   setupEngine: (step?: string) => call<EngineStatus>("/api/engine/setup", { method: "POST", body: JSON.stringify(step ? { step } : {}) }),

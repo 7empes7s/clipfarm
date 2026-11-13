@@ -3739,4 +3739,21 @@ button.danger {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 700;
+
+/* Live version card on the dashboard */
+.live-version {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.live-version > * {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.live-version-rows {
+  display: grid;
+  gap: var(--s1);
+  padding: 0;
+  list-style: none;
 }

@@ -8,6 +8,7 @@ import { channelUrl } from "../../shared/watchlist.js";
 import { openSettings } from "../config.js";
 import { HttpError, ValidationError } from "../errors.js";
 import { channelKey, channelOf, withScheme } from "../liveproof/service.js";
+import type { Notifier } from "../live/notify.js";
 import { INGEST_JOB } from "../pipeline/ingest/ingest.js";
 import { RENDER_JOB } from "../pipeline/render/job.js";
 import { openRuntime, type Runtime } from "../runtime.js";
@@ -29,6 +30,8 @@ export interface OpsIo {
   pollMs?: number;
   /** Aborted on Ctrl+C or SIGTERM: `run` stops waiting and puts its job back in the queue. */
   signal?: AbortSignal;
+  /** Tests: where `notify` sends, instead of the push services. */
+  notifier?: Notifier;
 }
 
 const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
@@ -58,7 +61,9 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
       dropped segments and memory.
   clipfarm-ops clips [--since 2h | 3d | 2026-11-12]
   clipfarm-ops status
-      Jobs, the queue and the disk.`;
+      Jobs, the queue and the disk.
+  clipfarm-ops notify <title> <text>
+      Sends a push notification to every phone that turned notifications on (auto-deploy uses it).`;
 
 /** A mistake in how the command was typed (exit code 2). */
 class UsageError extends Error {}
@@ -349,14 +354,20 @@ function launchLines(rt: Runtime): string[] {
   return [`Launch ready: ${launch.ready ? "yes" : "no"}`, ...launch.reasons.map((r) => `  - ${r}`)];
 }
 
-/** Follows runs that were just asked for until they end, printing each change; the service does the work when it is up. */
-async function followProof(rt: Runtime, io: OpsIo, ids: number[]): Promise<ProofRun[]> {
+/** Before a proof or drill is asked for: the service does the work when it is up, else this command takes the queue. */
+async function takeProofWork(rt: Runtime, io: OpsIo): Promise<void> {
   rt.queue.start();
   if (rt.queue.working) {
     io.out("The clipfarm service is not running, so this command does the work.");
+    // A run an earlier command or the service left half done comes first.
     rt.proof.recover();
-    void rt.proof.work();
+    await rt.proof.work();
   } else io.out("The clipfarm service does the work; this command follows it.");
+}
+
+/** Follows runs that were just asked for until they end, printing each change. */
+async function followProof(rt: Runtime, io: OpsIo, ids: number[]): Promise<ProofRun[]> {
+  if (rt.queue.working) void rt.proof.work();
   const seen = new Map<number, string>();
   for (;;) {
     const runs = ids.map((id) => rt.proof.view(rt.proof.stored(id)));
@@ -382,6 +393,7 @@ async function proofCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<num
     return 0;
   }
   if (args.length > 0) throw new UsageError("Usage: clipfarm-ops proof | proof status");
+  await takeProofWork(rt, io);
   const runs = await followProof(rt, io, rt.proof.request("ops").map((r) => r.id));
   for (const r of runs) for (const line of proofLines(r)) io.out(line);
   io.out("Kept private: nothing was posted. The clips wait in the Inbox, tagged Proof.");
@@ -408,6 +420,7 @@ async function drillCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<num
     `Launch-day watchlist: ${watched.length} creators, ${watched.filter((c) => c.permissionState === "active").length} with a permission record in force` +
       `${seeded + added.length > 0 ? ` (${seeded} loaded from the list, ${added.length} added with a public allowance)` : ""}.`,
   );
+  await takeProofWork(rt, io);
   const [run] = await followProof(rt, io, [rt.proof.requestDrill("ops", { minutes, who: positionals[1] }).id]);
   for (const line of proofLines(run!)) io.out(line);
   for (const line of launchLines(rt)) io.out(line);
@@ -427,7 +440,7 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   let scrub = (line: string) => line;
   try {
     if (command === "test-keys" && args.length === 0) return await testKeys(io);
-    if (!["source", "run", "clips", "status", "proof", "drill"].includes(command) || (command === "status" && args.length > 0)) {
+    if (!["source", "run", "clips", "status", "proof", "drill", "notify"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
       throw new UsageError(`Unknown command "${argv.join(" ")}".\n\n${USAGE}`);
     }
     rt = openRuntime(io.env, { pollMs: io.pollMs });
@@ -438,6 +451,12 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
     if (command === "clips") return listClips(rt, safe, args);
     if (command === "proof") return await proofCommand(rt, safe, args);
     if (command === "drill") return await drillCommand(rt, safe, args);
+    if (command === "notify") {
+      const phones = rt.liveRepo.pushSubscriptions().length;
+      await (io.notifier ?? rt.notifier).notify({ title: scrub(args[0]!), body: scrub(args[1]!), url: "/#dashboard" });
+      safe.out(phones ? `Sent to ${phones} ${phones === 1 ? "phone or browser" : "phones or browsers"}.` : "Nobody turned notifications on in the app, so nothing was sent.");
+      return 0;
+    }
     return status(rt, safe);
   } catch (err) {
     // Plain reasons (ours, and the platforms') are shown as they are; node's own argument errors too.

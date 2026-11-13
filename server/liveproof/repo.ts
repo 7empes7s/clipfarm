@@ -94,7 +94,15 @@ export class ProofRepo {
 
   /** Takes a waiting run; false when another worker took it first. */
   claim(id: number, at: Date): boolean {
-    return this.db.prepare("UPDATE proof_runs SET status = 'running', started_at = ? WHERE id = ? AND status = 'waiting'").run(at.toISOString(), id).changes === 1;
+    return (
+      this.db.prepare("UPDATE proof_runs SET status = 'running', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'waiting'").run(at.toISOString(), id)
+        .changes === 1
+    );
+  }
+
+  /** Puts a run a restart cut off back in line; it keeps its start time, so the wait counts. */
+  requeue(id: number): void {
+    this.db.prepare("UPDATE proof_runs SET status = 'waiting' WHERE id = ? AND status = 'running'").run(id);
   }
 
   update(id: number, change: { label?: string; url?: string | null; vodId?: number | null; step?: string; metrics?: ProofMetrics }): void {

@@ -24,6 +24,7 @@ logs, backups and restore.
 | 11 | Point clipfarm at the local Postiz | IT, key from the manager |
 | 12 | Test the live site end to end | Manager makes the token, then runs it (or IT does) |
 | IT ops | Test keys, add a source, turn a video into clips, list clips: no browser | IT |
+| Auto-deploy | One command, once. After this, nothing is deployed by hand | IT |
 
 Do step 7 before step 8: the sign-in exists before the address does, so the gallery is never
 open to the internet, not even for a minute.
@@ -38,7 +39,8 @@ open to the internet, not even for a minute.
 | Ops command | `/usr/local/sbin/clipfarm-ops` (copy of `ops.sh`; runs as the `clipfarm` user through `systemd-run`, see "IT ops") |
 | Data | `/var/lib/clipfarm/`: `clipfarm.db` (SQLite) and `media/` (final clips) |
 | Web app | `127.0.0.1:5310` only, published through Caddy (`:80`) and the Cloudflare tunnel |
-| systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer` |
+| systemd | `clipfarm.service`, `clipfarm-backup.service` + `.timer`, `clipfarm-media-cleanup.service` + `.timer`, `clipfarm-autodeploy.service` + `.timer`, `clipfarm-ytdlp-update.service` + `.timer` |
+| Auto-deploy | `/usr/local/lib/clipfarm/ops/` (root-owned copy of `ops/`), `/var/lib/clipfarm-autodeploy/` (what was tried), `/var/lib/clipfarm/deploy-status.json` (the Dashboard's "Live version" card), `/etc/clipfarm/pending-keys/` (drop Postiz key files here) |
 | Backups | `/opt/backups/YYYY-MM-DD/clipfarm.db.gz`, newest 3 kept, database only |
 
 Memory: the service is capped at 3072 MiB (`MemoryMax`), which covers the server plus the one
@@ -98,7 +100,8 @@ Run the four checks again: each prints a version. `command -v node` must print `
 If it prints another path, use that path in `ExecStart=` of both `.service` files after
 installing them (steps 4 and 10).
 
-When downloads start failing months from now, update yt-dlp first: `yt-dlp -U`.
+yt-dlp is kept up to date by `clipfarm-ytdlp-update.timer` once auto-deploy is installed
+("Auto-deploy" below). Without it, when downloads start failing: `yt-dlp -U`.
 
 ## 3. User, folders and code (IT)
 
@@ -584,7 +587,8 @@ posted: they wait in the Inbox tagged **Proof**, for the manager to approve and 
 (video length, minutes to the first clip and to all clips, clips, quality check, engine, cost,
 memory peak) are stored and shown on the Dashboard's **Daily proof** card with the last 7 days.
 When a proof fails, is too slow or gives too few clips, the manager's phone gets a notification
-naming the step.
+naming the step. An update going live in the middle (auto-deploy) does not fail it: the proof
+carries on with the same video after the restart, and the lost minutes count.
 
 Run one now, or see the last one (the usual line, last words changed):
 
@@ -636,7 +640,55 @@ Settings in `/etc/clipfarm/clipfarm.env` (restart the service after a change): `
 passed over while a shorter new one is there), `PROOF_MAX_PICKS` (empty: as many clips as the
 target needs).
 
+## Auto-deploy (IT: one command, once)
+
+**After this, nothing is deployed by hand.** Every merge to `main` goes live by itself once its
+GitHub checks are green; Postiz is installed and kept up to date from the same code; yt-dlp
+updates itself once a day. The manager sees the result on the Dashboard ("Live version") and
+gets a push notification when an update fails or is rolled back.
+
+Run it once, as root (steps 1-5 of this runbook must be done; it needs the GitHub token file
+`/etc/keel/gh.env` that KEEL's deploy already uses):
+
+```bash
+runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull --ff-only && bash /opt/clipfarm-live/repo/ops/clipfarm/install-autodeploy.sh && systemctl start clipfarm-autodeploy.service
+```
+
+The last lines must be `clipfarm install-autodeploy: auto-deploy is on: ...` and, a few minutes
+later, `clipfarm autodeploy: <commit> is live.` (the first run deploys the newest `main` and
+installs Postiz, which takes 2-5 minutes more). Check:
+
+```bash
+systemctl list-timers 'clipfarm-*' --no-pager      # clipfarm-autodeploy (every 5 min) and clipfarm-ytdlp-update (daily) are listed
+jq '{sha, result, postiz: .postiz.state}' /var/lib/clipfarm/deploy-status.json
+```
+
+What runs from now on, with no one at the keyboard:
+
+| When | What |
+|---|---|
+| Every 5 minutes | `autodeploy.sh`: fetches `main`. A new commit is deployed only when **all** its GitHub checks are green (red: skipped; still running: next time). If clipfarm is working on a job it waits for it, at most 20 minutes. Then `deploy.sh <commit>`: build, switch, restart, health check, and back to the release before it when it does not answer. |
+| After each deploy | The scripts in `/usr/local/sbin`, the copy of `ops/` and the unit files are installed again from the new commit (`clipfarm.service` is restarted when its unit changed). `clipfarm-ops test-keys` and `clipfarm:check` run, and the result is written for the Dashboard. |
+| Same run | Postiz: `ops/postiz/install.sh` runs when `ops/postiz/` changed, when Postiz is not installed or does not answer, when a key file waits in `/etc/clipfarm/pending-keys/`, and every half hour while clipfarm has no Postiz API key (so the key arrives by itself after the manager makes the first Postiz account). After a failed install it tries again once an hour, and says why on the Dashboard. |
+| Once a day (04:10) | `ytdlp-update.sh`: the newest yt-dlp release, checked against its SHA-256. The old program is kept as `yt-dlp.previous` and put back if the new one cannot download a short test video or breaks `clipfarm-ops test-keys`. |
+
+**Postiz platform keys** (YouTube, TikTok, Instagram, X: `ops/postiz/RUNBOOK.md` step 4): put
+them as `KEY=VALUE` lines in any file under `/etc/clipfarm/pending-keys/` (root only). Within 5
+minutes they are merged into `/opt/postiz/.env`, Postiz restarts, and the file is removed.
+
+A commit that failed (build error or rollback) is not tried again; the next merge is. To try the
+same commit again: `rm /var/lib/clipfarm-autodeploy/last-sha`. What happened and why:
+`journalctl -u clipfarm-autodeploy -n 100 --no-pager`. To pause auto-deploy:
+`systemctl disable --now clipfarm-autodeploy.timer` (and `enable --now` to resume).
+
+The GitHub token is only handed to `gh` in its environment: it is never printed, logged or
+written to the status file. The status file holds names and states only (`OpenAI: Working`),
+never a key or a service's answer.
+
 ## Update (IT)
+
+With auto-deploy on (above) there is nothing to do here: this section and "Roll back" are for a
+box without it, or for deploying one chosen commit by hand.
 
 ```bash
 systemctl start clipfarm-backup.service              # fresh backup first

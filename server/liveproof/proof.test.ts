@@ -228,6 +228,7 @@ function setup() {
   const repo = new ProofRepo(db);
   let memMb = 4000;
   const runner = new ProofRunner({
+    db,
     repo,
     sources,
     vods,
@@ -434,7 +435,7 @@ describe("a proof run", () => {
     await s.close();
   });
 
-  it("the daily timer starts one proof a day at its hour, and a restart closes a run it cut off", async () => {
+  it("the daily timer starts one proof a day at its hour", async () => {
     const s = setup();
     const hour = new Date(START).getHours();
     const timed = new ProofRunner({ ...(s.runner as unknown as { deps: ConstructorParameters<typeof ProofRunner>[0] }).deps, dailyHour: hour });
@@ -448,10 +449,40 @@ describe("a proof run", () => {
     ]);
     expect(timed.info().nextAt).toBe(new Date(new Date(START).setHours(hour + 24, 0, 0, 0)).toISOString());
 
-    const cut = s.repo.add("vod", "campaign", "app", new Date(START));
+    await s.close();
+  });
+
+  it("carries on with the same video after a restart (an update going live), and the lost time counts", async () => {
+    const s = setup();
+    const v = vod("tjr", "TJR goes off", "Slots", 3600);
+    s.kick.channels.set("tjr", { vods: [v], live: null });
+    s.scripts.set(v.url, { minutes: 12, clips: 11 });
+    // The restart came after the video was queued: the run is left "running", its job waits in the queue.
+    s.queue.stop();
+    await s.queue.idle();
+    const cut = s.repo.add("vod", "campaign", "timer", new Date(START));
     s.repo.claim(cut.id, new Date(START));
+    s.db.prepare("INSERT INTO vods (id, source_id, url, status, created_at) VALUES (1, ?, ?, 'queued', ?)").run(s.tjr.id, v.url, new Date(START).toISOString());
+    s.repo.update(cut.id, { label: "TJR: TJR goes off", url: v.url, vodId: 1 });
+    s.queue.enqueue(INGEST_JOB, { vodId: 1 }, { vodId: 1 });
+    s.advance(8 * 60_000);
+
+    // The service is back.
+    s.queue.start();
+    s.runner.start(3600_000);
+    await s.runner.work();
+    const run = s.runner.info().runs[0]!;
+    expect(run).toMatchObject({ status: "passed", label: "TJR: TJR goes off", vodId: 1 });
+    // 8 minutes down, 12 minutes of work: 20 minutes from the proof's start.
+    expect(run.metrics).toMatchObject({ clips: 11, allClipsMin: 20 });
+    expect(s.db.prepare("SELECT COUNT(*) AS n FROM vods").get()).toEqual({ n: 1 });
+    expect(s.notifier.sent).toEqual([]);
+
+    // A drill cannot carry on: its recording is gone.
+    const drill = s.repo.add("drill", "drill", "app", new Date(START));
+    s.repo.claim(drill.id, new Date(START));
     s.runner.recover();
-    expect(s.repo.get(cut.id)).toMatchObject({ status: "failed", problems: [{ kind: "failed", text: "The server restarted during the proof." }] });
+    expect(s.repo.get(drill.id)).toMatchObject({ status: "failed", problems: [{ kind: "failed", text: "The server restarted during the drill." }] });
     await s.close();
   });
 });

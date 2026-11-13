@@ -207,6 +207,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     maxStreams: config.live.maxStreams,
   });
   const proof = new ProofRunner({
+    db,
     repo: new ProofRepo(db),
     sources,
     vods,
