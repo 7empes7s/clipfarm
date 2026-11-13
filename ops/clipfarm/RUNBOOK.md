@@ -361,20 +361,16 @@ the job ends, and the whole folder is emptied when the service stops.
 Postiz runs on the same box (`ops/postiz/RUNBOOK.md`). clipfarm talks to it on the local port,
 which skips Cloudflare and its 100 MB upload limit.
 
-1. Manager: open <https://postiz.techinsiderbytes.com> → **Settings** → **Public API** → copy
-   the API key and give it to IT.
-2. IT:
+1. Manager: sign up on <https://postiz.techinsiderbytes.com> (the first account is the admin).
+2. IT: run the Postiz installer (`ops/postiz/RUNBOOK.md`, step 1). It reads the API key from
+   Postiz, checks it, writes `POSTIZ_URL` and `POSTIZ_API_KEY` into `/etc/clipfarm/clipfarm.env`
+   and restarts clipfarm. Nobody copies or sees the key. The summary ends with:
 
-```bash
-nano /etc/clipfarm/clipfarm.env      # POSTIZ_URL=http://127.0.0.1:5300 (already there), POSTIZ_API_KEY=<the key>
-systemctl restart clipfarm
-journalctl -u clipfarm -n 3 --no-pager      # the start line ends with "posting: postiz)"
-cd /opt/clipfarm-live/current
-env $(grep -E '^POSTIZ_(URL|API_KEY)=' /etc/clipfarm/clipfarm.env) npm run postiz:check
+```
+  API key for clipfarm: works, saved in /etc/clipfarm/clipfarm.env (clipfarm restarted)
 ```
 
-You should see `OK: Postiz at http://127.0.0.1:5300 answered with N connected accounts.` and one
-line per channel. `NOT OK: ...` says what is wrong (key refused, Postiz not running).
+   A line `NOT OK: ...` says what is wrong (key refused, Postiz not running).
 
 3. Manager: open clipfarm → **Clips**: it says "Posting through Postiz" and lists the accounts.
 

@@ -5,7 +5,9 @@ clipfarm posts approved clips through its public API (issue #7). This runbook in
 Mulinux at `https://postiz.techinsiderbytes.com`, keeps it backed up, and covers updates,
 stopping, removal and restore.
 
-Run every command as root on Mulinux, in order. Each step says what you should see.
+One script installs it: `ops/postiz/install.sh`. IT runs it with one command (step 1); the
+manager only signs up, connects the channels and, for each platform, makes a developer app.
+Nobody types or reads a secret: the script makes them and never prints one.
 
 **What gets installed**
 
@@ -23,102 +25,55 @@ Redis 96, Temporal 384, Temporal's Postgres 160). Idle use is usually well below
 
 ---
 
-## 1. Check the box first
+## 1. Install (IT: one command)
 
 ```bash
-free -m          # "available" on the Mem: line should be 2500 or more
-df -h /          # "Avail" should be 10G or more
-ss -ltnp 'sport = :5300'                      # must print only the header line (port free)
-docker compose version                        # must print a version (v2 or newer)
-grep -n 'postiz' /etc/caddy/Caddyfile || echo "no postiz block yet"   # expect "no postiz block yet"
-systemctl is-active docker caddy cloudflared  # expect three lines: active
+systemd-run --pipe --wait --collect --quiet /bin/bash -c 'test -d /opt/postiz/repo/.git || git clone --depth 1 https://github.com/7empes7s/clipfarm.git /opt/postiz/repo; git -C /opt/postiz/repo pull --ff-only && /opt/postiz/repo/ops/postiz/install.sh'
 ```
 
-If RAM is short, don't start Postiz: say so to the manager. If port 5300 is taken, pick another
-free port (check it the same way) and use it everywhere this runbook says 5300: `POSTIZ_PORT`
-in `.env` (step 3) and the Caddy block (step 6).
+It is safe to run again at any time: a second run changes nothing that is already right. In order, it:
 
-## 2. Get the files and create /opt/postiz
+1. Checks the box: docker runs, port 5300 is free (or already Postiz), 2500 MB of memory and
+   10 GB of disk are free. If not, it stops with the reason and starts nothing.
+2. Creates `/opt/postiz` with the compose file and the backup script.
+3. Writes `/opt/postiz/.env` (root only, mode 600) from `.env.example` with fresh random values for
+   `JWT_SECRET`, `POSTIZ_DB_PASSWORD` and `TEMPORAL_DB_PASSWORD`. An existing `.env` keeps every
+   value; only missing keys are added.
+4. Installs `postiz.service`, the backup service and timer, and puts the Postiz block in
+   `/etc/caddy/Caddyfile` in place of the "being installed" placeholder (the old file is kept
+   next to it as `Caddyfile.bak-postiz-<time>`; if Caddy refuses the new file, the old one is put back).
+5. Pulls the images, starts Postiz and waits until it answers (2-5 minutes the first time).
+6. Once an account exists (step 3): checks Postiz's API key, saves it in
+   `/etc/clipfarm/clipfarm.env` for clipfarm, and closes sign-ups.
 
-```bash
-install -d -m 700 /opt/postiz
-git clone --depth 1 https://github.com/7empes7s/clipfarm.git /opt/postiz/repo
-cd /opt/postiz
-install -m 644 repo/ops/postiz/docker-compose.yml /opt/postiz/docker-compose.yml
-install -m 755 repo/ops/postiz/backup.sh /opt/postiz/backup.sh
-install -d -m 700 config uploads postgres redis temporal-postgres
-ls /opt/postiz
+You should see, at the end:
+
+```
+Postiz is installed.
+  postiz.service: active
+  postiz-backup.timer: active
+  http://127.0.0.1:5300/: answers (307)
+  https://postiz.techinsiderbytes.com/: answers (307)
+  Platform keys set: none
+  API key for clipfarm: not made yet: open the site, sign up (the first account is the admin), then run this again
+  Sign-ups: open until the first account exists
+Next: connect channels in Postiz (...)
 ```
 
-You should see: `backup.sh config docker-compose.yml postgres redis repo temporal-postgres uploads`.
+A line starting with `postiz-install:` and a non-zero exit says what is wrong, in plain words
+(not enough memory, port taken, Postiz did not answer, the public address does not answer).
+Fix that and run the same command again.
 
-## 3. Create .env and fill the secrets
+If port 5300 is taken by something else: set `POSTIZ_PORT=<free port>` in `/opt/postiz/.env`
+(create the file with just that line) and run the command again; the script uses that port for
+the containers and the Caddy block.
 
-```bash
-cd /opt/postiz
-install -m 600 repo/ops/postiz/.env.example .env
-for key in JWT_SECRET POSTIZ_DB_PASSWORD TEMPORAL_DB_PASSWORD; do
-  sed -i "s/^${key}=\$/${key}=$(openssl rand -hex 32)/" .env
-done
-grep -E '^(JWT_SECRET|POSTIZ_DB_PASSWORD|TEMPORAL_DB_PASSWORD)=' .env | cut -c1-30
-docker compose config --quiet && echo "compose OK"
-```
+`/opt/postiz/.env` is not in the backups, and the database only opens with the passwords in
+it. To move Postiz to a new box, copy that file together with a backup ("Restore from a backup").
 
-You should see the three keys each followed by hex characters, then `compose OK`.
-If you see `set JWT_SECRET in .env` (or another name), that value is still empty: fill it.
+## 2. Cloudflare tunnel: add the hostname (only on a new box)
 
-Leave the platform keys empty for now (step 10). Save a copy of `/opt/postiz/.env` in the
-team password manager: the backup does not include it.
-
-## 4. Pull the images and start
-
-```bash
-cd /opt/postiz
-docker compose pull
-docker compose up -d
-```
-
-The first start takes 2-5 minutes (Temporal sets up its database, Postiz runs migrations).
-
-## 5. Health check
-
-```bash
-cd /opt/postiz
-watch -n 10 docker compose ps        # wait until all 5 say "(healthy)", then Ctrl+C
-curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5300/   # expect 200 or 307
-docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' | grep -E 'NAME|postiz|temporal'
-free -m
-```
-
-Each container's memory should be below its limit. If one is not healthy after 5 minutes:
-`docker compose logs --tail 100 <name>` (for example `postiz` or `temporal`) shows why.
-
-Now hand the containers to systemd so they come back after a reboot:
-
-```bash
-install -m 644 /opt/postiz/repo/ops/postiz/postiz.service /etc/systemd/system/postiz.service
-systemctl daemon-reload
-systemctl enable --now postiz
-systemctl is-active postiz      # expect: active
-```
-
-(`postiz.service` runs `docker compose up` attached to the running containers; it does not restart them.)
-
-## 6. Caddy: route the hostname to Postiz
-
-```bash
-cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$(date +%F)
-printf '\n' >> /etc/caddy/Caddyfile
-cat /opt/postiz/repo/ops/postiz/Caddyfile.postiz >> /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile   # expect "Valid configuration"
-systemctl reload caddy
-curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: postiz.techinsiderbytes.com' http://127.0.0.1/   # expect 200 or 307
-```
-
-If `caddy validate` fails, put the backup back (`cp /etc/caddy/Caddyfile.bak-$(date +%F) /etc/caddy/Caddyfile`)
-and look at how the existing `keel.techinsiderbytes.com` block is written; write the Postiz block the same way.
-
-## 7. Cloudflare tunnel: add the hostname
+On Mulinux the hostname already exists. On a new box, do this once, then run step 1 again.
 
 In a browser:
 
@@ -143,50 +98,27 @@ Back in the shell (allow a minute for DNS):
 curl -sS -o /dev/null -w '%{http_code}\n' https://postiz.techinsiderbytes.com/   # expect 200 or 307
 ```
 
-## 8. Backups
+## 3. Create the admin account (manager), then run the installer again (IT)
 
-```bash
-systemctl list-timers mimule-backup.timer   # note the NEXT time of the daily backup
-install -m 644 /opt/postiz/repo/ops/postiz/postiz-backup.service /etc/systemd/system/
-install -m 644 /opt/postiz/repo/ops/postiz/postiz-backup.timer /etc/systemd/system/
-```
-
-`postiz-backup.timer` runs at 04:30. If `mimule-backup` runs later than 04:00, edit
-`OnCalendar=` in `/etc/systemd/system/postiz-backup.timer` to 30 minutes after it, so both land
-in the same day folder. Then:
-
-```bash
-systemctl daemon-reload
-systemctl enable --now postiz-backup.timer
-systemctl start postiz-backup.service        # take one backup now
-journalctl -u postiz-backup.service -n 5 --no-pager   # expect "postiz backup: /opt/backups/<today>/postiz.sql.gz (...)"
-ls -l /opt/backups/$(date +%F)/postiz.sql.gz
-```
-
-The script keeps the 3 newest `postiz.sql.gz` files and never touches other files in the
-backup folders. It backs up the database only: `/opt/postiz/uploads` (media that was posted)
-and `.env` are not in it.
-
-## 9. Create the admin account, then close sign-ups
-
-1. Open <https://postiz.techinsiderbytes.com> → **Sign up**. Use the team email, a strong
+1. Manager: open <https://postiz.techinsiderbytes.com> → **Sign up**. Use the team email, a strong
    password, and company name `clipfarm`. You land in the Postiz calendar.
-2. Close sign-ups:
+2. IT: run the command of step 1 again. Now that an account exists, it:
+   - closes sign-ups (`DISABLE_REGISTRATION=true`) and restarts Postiz;
+   - reads the workspace's API key from Postiz's database, checks it against Postiz
+     (`OK: Postiz at http://127.0.0.1:5300 answered with N connected accounts.`), writes
+     `POSTIZ_URL` and `POSTIZ_API_KEY` into `/etc/clipfarm/clipfarm.env` and restarts clipfarm.
+     The key is never printed. The summary says `API key for clipfarm: works, saved in ...`.
+3. Manager: clipfarm → **Settings** → **Postiz** → **Test** says it works. In a private window,
+   **Sign up** on the Postiz site with another email must be refused.
 
-```bash
-cd /opt/postiz
-sed -i 's/^DISABLE_REGISTRATION=false$/DISABLE_REGISTRATION=true/' .env
-grep '^DISABLE_REGISTRATION' .env     # expect DISABLE_REGISTRATION=true
-systemctl restart postiz
-```
+If the key is ever regenerated in Postiz (**Settings** → **Public API**), run step 1 again: it
+hands the new key to clipfarm.
 
-3. After 1-2 minutes open the site in a private window and try **Sign up** with another email:
-   it must be refused. Log in with the admin account: it must work.
+## 4. Connect YouTube, TikTok, Instagram and X
 
-## 10. Connect YouTube, TikTok, Instagram and X
-
-For each platform: create a developer app, paste the callback URL below, put the app's keys in
-`/opt/postiz/.env`, restart, then in Postiz click **Add Channel** → the platform → log in → allow.
+For each platform: create a developer app, paste the callback URL below, hand the app's keys to
+the installer in a file ("Apply and connect" below), then in Postiz click **Add Channel** → the
+platform → log in → allow.
 
 Callback URLs (paste exactly, no trailing slash):
 
@@ -261,29 +193,33 @@ put its App ID / App secret (Settings → Basic) in `FACEBOOK_APP_ID` / `FACEBOO
 
 ### Apply and connect
 
-```bash
-cd /opt/postiz
-nano .env                       # paste the keys you got above; save
-systemctl restart postiz
-watch -n 10 docker compose ps   # wait for postiz "(healthy)", Ctrl+C
+Put the keys in a file on the box, one `KEY=VALUE` per line with the names from the table, for
+example `/root/postiz-keys.env`:
+
 ```
+YOUTUBE_CLIENT_ID=...
+YOUTUBE_CLIENT_SECRET=...
+```
+
+IT runs the installer with it (repeat `--keys-from` for more files):
+
+```bash
+systemd-run --pipe --wait --collect --quiet /bin/bash -c 'git -C /opt/postiz/repo pull --ff-only && /opt/postiz/repo/ops/postiz/install.sh --keys-from /root/postiz-keys.env'
+```
+
+The keys are merged into `/opt/postiz/.env`, the file is then emptied (add `--keep-source` to
+keep it), Postiz restarts, and the summary lists the names that are set
+(`Platform keys set: YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET`), never a value. Only the names
+in the table are accepted: any other name is refused (`refused, not platform keys: ...`) and
+nothing is changed.
 
 In Postiz: **Add Channel** → pick the platform → log in with the clipfarm account → **Allow**.
 The channel appears in the left column. Use the same page name everywhere ("GTA VI Moments").
 
-## 11. Connect clipfarm (API key)
+## Connect clipfarm: check by hand
 
-1. Postiz → **Settings** → **Public API** → copy the API key.
-2. Where clipfarm runs, put these two lines in clipfarm's `.env` (never commit it):
-
-```bash
-POSTIZ_URL=https://postiz.techinsiderbytes.com
-POSTIZ_API_KEY=<the key you copied>
-```
-
-   If clipfarm runs on Mulinux too, `POSTIZ_URL=http://127.0.0.1:5300` also works and skips
-   Cloudflare's 100 MB upload limit.
-3. From the clipfarm folder:
+The installer connects clipfarm and runs this check with the real key (step 3). To run it again
+by hand, where clipfarm's `.env` has `POSTIZ_URL` and `POSTIZ_API_KEY`:
 
 ```bash
 npm run postiz:check
@@ -294,6 +230,23 @@ You should see `OK: Postiz at ... answered with N connected accounts.` and one l
 A channel marked `disabled` must be reconnected in Postiz.
 
 ---
+
+## Backups
+
+The installer turns on `postiz-backup.timer`: every day at 04:30 it writes
+`/opt/backups/YYYY-MM-DD/postiz.sql.gz`. If `mimule-backup` runs later than 04:00
+(`systemctl list-timers mimule-backup.timer`), edit `OnCalendar=` in
+`/etc/systemd/system/postiz-backup.timer` to 30 minutes after it and run
+`systemctl daemon-reload`; the installer keeps your time on later runs.
+
+```bash
+systemctl start postiz-backup.service        # take one backup now
+journalctl -u postiz-backup.service -n 5 --no-pager   # expect "postiz backup: /opt/backups/<today>/postiz.sql.gz (...)"
+```
+
+The script keeps the 3 newest `postiz.sql.gz` files and never touches other files in the
+backup folders. It backs up the database only: `/opt/postiz/uploads` (media that was posted)
+and `.env` are not in it.
 
 ## Day to day
 
@@ -310,22 +263,18 @@ docker stats --no-stream | grep -E 'postiz|temporal'
 2. In clipfarm, open a PR that changes `image: ghcr.io/gitroomhq/postiz-app:v2.25.3` in
    `ops/postiz/docker-compose.yml` to the new tag (other images the same way; Temporal one
    minor version at a time). Wait for it to merge.
-3. On Mulinux:
+3. On Mulinux, take a fresh backup, then run the installer (step 1): it copies the new compose
+   file, restarts Postiz (which pulls the new image) and waits until it answers.
 
 ```bash
-systemctl start postiz-backup.service                 # fresh backup first
-cd /opt/postiz
-git -C repo pull --ff-only
-install -m 644 repo/ops/postiz/docker-compose.yml docker-compose.yml
-docker compose config --quiet && docker compose pull
-systemctl restart postiz
-watch -n 10 docker compose ps                         # all "(healthy)", Ctrl+C
+systemctl start postiz-backup.service
+systemd-run --pipe --wait --collect --quiet /bin/bash -c 'git -C /opt/postiz/repo pull --ff-only && /opt/postiz/repo/ops/postiz/install.sh'
 ```
 
 4. Run `npm run postiz:check` in clipfarm: expect `OK`.
 
 Roll back: put the old tag back in `/opt/postiz/docker-compose.yml`, `systemctl restart postiz`.
-If the new version changed the database, also restore the backup taken in step 3 (below).
+If the new version changed the database, also restore the backup taken in step 3 of this list (below).
 
 ## Stop and start
 
@@ -353,8 +302,8 @@ systemctl start postiz
 `npm run postiz:check`. Posts that were scheduled but not yet sent at the time of the backup:
 open each one in the calendar and confirm its time (re-save it if it shows as failed).
 
-On a new box: do steps 1-6 (with your saved `.env` instead of generating secrets in step 3),
-then the restore above, then step 7 if the hostname changed.
+On a new box: put your saved `.env` in `/opt/postiz/.env` first (the installer keeps it), do
+step 2 if the hostname changed, run step 1, then the restore above.
 
 ## Remove Postiz completely
 
@@ -370,5 +319,5 @@ cd /opt/postiz && docker compose down --rmi all
 
 Then: delete the `http://postiz.techinsiderbytes.com { ... }` block from `/etc/caddy/Caddyfile`,
 `caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && systemctl reload caddy`;
-in the Zero Trust dashboard (step 7) delete the `postiz` public hostname and, under the domain's
+in the Zero Trust dashboard (step 2) delete the `postiz` public hostname and, under the domain's
 DNS records, the `postiz` CNAME; finally `rm -rf /opt/postiz`.
