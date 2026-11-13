@@ -238,6 +238,20 @@ const MIGRATIONS: string[] = [
   ALTER TABLE posting_accounts ADD COLUMN paused_reason TEXT;
   `,
   `
+  -- Which process works the job queue right now (the server, or clipfarm-ops when it is down).
+  CREATE TABLE queue_worker (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    beat_at TEXT NOT NULL
+  );
+  `,
+  `
+  ALTER TABLE permissions ADD COLUMN proof_url TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_quote TEXT;
+  ALTER TABLE permissions ADD COLUMN proof_checked_at TEXT;
+  ALTER TABLE permissions ADD COLUMN review_reason TEXT;
+  `,
+  `
   -- Live mode: jobs with a higher priority run first; streams recorded in rolling segments.
   ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX jobs_next ON jobs(status, priority DESC, id);

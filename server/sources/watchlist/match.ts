@@ -72,6 +72,7 @@ export type IngestDecision = { queue: true } | { queue: false; reason: string };
  * a creator without an active record is watched, never ingested.
  */
 export function decideIngest(c: IngestCheck): IngestDecision {
+  if (c.permission === "needs-review") return { queue: false, reason: "Clipping allowance needs review: check it again in Sources" };
   if (c.permission !== "active") {
     return { queue: false, reason: c.permission === "expired" ? "Permission expired: renew it in their program" : NEEDS_PERMISSION };
   }

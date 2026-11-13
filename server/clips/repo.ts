@@ -95,8 +95,8 @@ function toClip(r: ClipRow): Clip {
   };
 }
 
-// "In force" for a permission: no end date, or one after @now (ISO timestamps compare as text).
-const IN_FORCE = "p.source_id = clips.source_id AND (p.expires_at IS NULL OR p.expires_at > @now)";
+// "In force" for a permission: not on hold, and no end date or one after @now (ISO timestamps compare as text).
+const IN_FORCE = "p.source_id = clips.source_id AND p.review_reason IS NULL AND (p.expires_at IS NULL OR p.expires_at > @now)";
 // experiment: the source's records in force are all experiments (see isExperimentOnly).
 const SELECT = `SELECT clips.*, (SELECT COUNT(*) FROM posts WHERE posts.clip_id = clips.id) AS post_count,
   (EXISTS (SELECT 1 FROM permissions p WHERE ${IN_FORCE} AND p.kind = 'experiment')

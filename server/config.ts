@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { type AccessVerifier, cloudflareAccessVerifier } from "./access.js";
 import { Engine } from "./engine/engine.js";
 import type { AudioDownloader } from "./pipeline/ingest/downloader.js";
 import { FakeDownloader } from "./pipeline/ingest/fakeDownloader.js";
@@ -18,6 +19,7 @@ import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
 import { FakeLiveCapturer, type LiveCapturer, PlatformLiveCapturer, YtDlpLiveCapturer } from "./live/capturer.js";
 import { DEFAULT_LAUNCH_AT } from "./live/plan.js";
+import { FakeProofFetcher, HttpProofFetcher, type ProofFetcher } from "./sources/proof.js";
 import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
 import { KickClient } from "./sources/watchlist/platforms/kick.js";
 import { TwitchClient } from "./sources/watchlist/platforms/twitch.js";
@@ -29,8 +31,10 @@ export interface Config {
   port: number;
   /** Address to listen on; unset means every interface (dev). The live box uses 127.0.0.1. */
   host: string | undefined;
-  /** Refuse requests without Cloudflare Access's header (the live box has no other login). */
+  /** Refuse requests without a token signed by Cloudflare Access (the live box has no other login). */
   requireAccess: boolean;
+  /** Checks those tokens; null when the gate is off. */
+  access: AccessVerifier | null;
   dbFile: string;
   downloader: AudioDownloader;
   /** clipfarm's own engine: local speech-to-text and picks by default, cloud AI as an option. */
@@ -69,6 +73,8 @@ export interface Config {
     /** The app's web address, named to the push services as the sender of notifications. */
     pushSubject: string;
   };
+  /** Reads the proof pages of public clipping allowances. */
+  proofFetcher: ProofFetcher;
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -176,6 +182,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
   const fakes = env.CLIPFARM_FAKES === "1";
   const dataDir = resolve(env.DATA_DIR ?? "data");
   const fakeDownloads = fakes || env.DOWNLOADER === "fake";
+  const requireAccess = env.CLIPFARM_REQUIRE_ACCESS === "1";
   const engine = new Engine({
     modelsDir: join(dataDir, "models"),
     whisperBin: env.WHISPER_BIN || undefined,
@@ -190,7 +197,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     fakes,
     port: Number(env.PORT ?? 3000),
     host: env.HOST || undefined,
-    requireAccess: env.CLIPFARM_REQUIRE_ACCESS === "1",
+    requireAccess,
+    access: requireAccess
+      ? cloudflareAccessVerifier({
+          teamDomain: env.CF_ACCESS_TEAM_DOMAIN || undefined,
+          aud: env.CF_ACCESS_AUD || undefined,
+          // The live site, so a box whose env file predates these settings still checks sign-ins.
+          publicUrl: env.CLIPFARM_PUBLIC_URL || "https://clip.techinsiderbytes.com",
+        })
+      : null,
     dbFile: join(dataDir, "clipfarm.db"),
     downloader: fakeDownloads
       ? new FakeDownloader(Number(env.FAKE_VOD_SEC || 10))
@@ -230,6 +245,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     },
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
+    proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
   };
 }
 

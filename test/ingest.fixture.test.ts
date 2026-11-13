@@ -11,7 +11,7 @@ import { FakeTranscriber } from "../server/pipeline/transcript/fake.js";
 import type { Transcriber } from "../server/pipeline/transcript/types.js";
 import { SourcesRepo } from "../server/sources/repo.js";
 import { VodsRepo } from "../server/vods/repo.js";
-import { campaignInput } from "./helpers.js";
+import { allowanceInput, campaignInput } from "./helpers.js";
 
 let tmpRoot: string;
 beforeEach(async () => {
@@ -82,6 +82,49 @@ describe("ingest (real ffmpeg on a generated 10 s sample)", () => {
     expect(queue.get(job.id)).toMatchObject({ status: "failed", attempts: 1 });
     expect(queue.get(job.id).error).toMatch(/expired on 2026-11-10/);
     expect(vods.get(vod.id).status).toBe("failed");
+    expect(await readdir(tmpRoot)).toEqual([]);
+  });
+
+  it("runs for a source whose only record is a public allowance with proof", async () => {
+    const { sources, vods, queue } = setup(new FakeTranscriber(), () => new Date("2026-11-12T00:00:00Z"));
+    const source = sources.create(allowanceInput());
+    const vod = vods.create(source.id, "https://kick.com/openstreamer/videos/1");
+    const job = queue.enqueue(INGEST_JOB, { vodId: vod.id }, { vodId: vod.id });
+    await queue.idle();
+
+    expect(queue.get(job.id)).toMatchObject({ status: "done", error: null });
+    expect(vods.get(vod.id).status).toBe("ready");
+    expect(await readdir(tmpRoot)).toEqual([]);
+  });
+
+  it("refuses to run once a public allowance needs review, or ran out without a new check", async () => {
+    let now = new Date("2026-11-12T00:00:00Z");
+    const { sources, vods, queue } = setup(new FakeTranscriber(), () => now);
+    queue.stop();
+    const source = sources.create(allowanceInput());
+    const held = vods.create(source.id, "https://kick.com/openstreamer/videos/1");
+    const heldJob = queue.enqueue(INGEST_JOB, { vodId: held.id }, { vodId: held.id });
+    // The weekly check found the page without their words after the link was added.
+    sources.flagForReview(source.permissions[0]!.id, 'The page no longer says "You can clip my streams and post them anywhere".');
+    queue.start();
+    await queue.idle();
+
+    expect(queue.get(heldJob.id)).toMatchObject({ status: "failed", attempts: 1 });
+    expect(queue.get(heldJob.id).error).toMatch(/^The clipping allowance for Open Streamer needs review: The page no longer says/);
+    expect(vods.get(held.id).status).toBe("failed");
+
+    queue.stop();
+    const other = sources.create({ ...allowanceInput(), creatorName: "Quiet Streamer" });
+    const late = vods.create(other.id, "https://kick.com/quiet/videos/1");
+    const lateJob = queue.enqueue(INGEST_JOB, { vodId: late.id }, { vodId: late.id });
+    // Read on 2026-11-10, so it runs out on 2027-02-08.
+    now = new Date("2027-02-09T00:00:00Z");
+    queue.start();
+    await queue.idle();
+
+    expect(queue.get(lateJob.id)).toMatchObject({ status: "failed", attempts: 1 });
+    expect(queue.get(lateJob.id).error).toMatch(/expired on 2027-02-08/);
+    expect(vods.get(late.id).status).toBe("failed");
     expect(await readdir(tmpRoot)).toEqual([]);
   });
 });

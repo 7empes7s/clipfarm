@@ -382,8 +382,8 @@ function ClipDetails({ clip, source }: { clip: Clip; source?: Source }) {
           <div className="wide">
             <dt>Campaign</dt>
             <dd>
-              {perm.campaignUrl ? (
-                <a href={perm.campaignUrl} target="_blank" rel="noreferrer">
+              {(perm.campaignUrl ?? perm.proofUrl) ? (
+                <a href={(perm.campaignUrl ?? perm.proofUrl)!} target="_blank" rel="noreferrer">
                   {PERMISSION_KIND_LABELS[perm.kind]}
                 </a>
               ) : (
