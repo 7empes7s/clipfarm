@@ -161,6 +161,12 @@ Cloudflare Access sign-in: systemd unit, `deploy.sh` (build a commit, switch, he
 back), daily database backup and media cleanup. `npm run clipfarm:check`, on the box, says
 whether the service, its port, Caddy and the sign-in are in place; it only reads.
 
+Three pages are open to anyone, without the sign-in: `/home` (what the app is), `/privacy` and
+`/terms`. Google reads them before it lets the app ask for YouTube access. The server writes
+them itself (`server/publicPages.ts`, contact address from `SUPPORT_EMAIL`), and
+`npm run clipfarm:public-pages` opens exactly those paths in Cloudflare Access (RUNBOOK, "Public
+pages"). Their text must stay true to what the code does with Google data.
+
 `clipfarm-ops` (`npm run ops -- <command>` on a built checkout) runs clipfarm without a browser,
 for IT: `test-keys`, `source add <channel link> --campaign <link>`, `run latest <channel link>`
 or `run <video link>` (download → transcribe → pick → render; nothing is posted), `clips
