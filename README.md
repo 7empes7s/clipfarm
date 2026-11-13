@@ -48,6 +48,21 @@ app shell, so it opens without a network; numbers load once it is back.
   posts, views, claims, removals, strikes and the time to the first claim. The posting service
   reports these where it can; otherwise tap Claim, Removed or Strike on a post. A strike switches
   the burner off and says why, until you switch it on again in its settings.
+- **Trends** ("What's working today"): the fastest GTA VI Shorts of the last 48 hours on YouTube,
+  ranked by views an hour, grouped by moment type (police chase, crash, first reaction…) and hook
+  pattern, with example titles and links (no video is downloaded), the fastest-rising streamers,
+  and your approved clips that fit. It reads once a day and on **Refresh**, within 1,500 YouTube
+  quota units a day (shown; a refresh costs about 202). Titles are tagged by the AI model when an
+  OpenAI key is set, otherwise by keywords, always against a fixed list. New picks of a trending
+  moment type get a few points (set on the same screen, 0 is off) and say why ("+trend: police
+  chase"); the winning hook patterns are offered to the hook writer.
+- **Hook lab**: off by default. Switched on, each approved clip that is not posted yet gets 2-3
+  hook variants (another hook and title on the same cut), each posted to its own **burner**
+  account (it needs two burners on one platform that the clip's permission routes to). After the
+  window (6 hours by default) the variant with the most views an hour goes to the main accounts;
+  nothing goes to a main account before that, and an experiment creator's clips never do. A
+  variant that was claimed, removed or struck cannot win. The scoreboard shows which hook
+  patterns win for you.
 - **Outputs**: every clip with its status, where it was posted, links and views; filters by
   creator, campaign, platform and date; tap ▶ to play.
 - **Accounts** (Posting accounts): several accounts per platform, each linked once in the posting
@@ -94,7 +109,7 @@ env-only.
 | `CLIPFARM_REQUIRE_ACCESS` | off | `1` on the live box: a request is refused unless its `Cf-Access-Jwt-Assertion` header is a token signed by Cloudflare Access for this app (clipfarm has no login of its own) |
 | `CLIPFARM_PUBLIC_URL`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD` | the live site; found from it | Which Cloudflare team and Access application sign those tokens. Left empty, both are read from the login link the public address sends visitors to |
 | `DATA_DIR` | `./data` | Folder for the SQLite database and the local engine's programs and models (`models/`) |
-| `OPENAI_API_KEY` | – | Optional. Only for "Use cloud AI for speed" on the Dashboard; without it everything runs locally |
+| `OPENAI_API_KEY` | – | Optional. For "Use cloud AI for speed" on the Dashboard, tagging the trend radar's titles and writing hook variants; without it everything runs locally |
 | `TRANSCRIBER` | local engine | `fake` skips real transcription |
 | `WHISPER_BIN` / `LLAMA_SERVER_BIN` | downloaded | Your own whisper.cpp `whisper-cli` / llama.cpp `llama-server` (needed where there is no ready-made Linux build, e.g. macOS) |
 | `PYTHON_BIN` | `python3` | Python 3 for the Moonshine step (standard library only; without it the chain starts at Whisper small) |
@@ -125,7 +140,7 @@ env-only.
 | `POSTING_SERVICE` | auto | `postiz`, `upload-post` or `none`; only needed when both are set |
 | `POSTING_REFRESH_MINUTES` | `60` | How often post links and views are read (5 or more) |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | – | A Twitch app (dev.twitch.tv/console) for the watchlist's Helix calls (app access token) |
-| `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist |
+| `YOUTUBE_API_KEY` | – | YouTube Data API key for the watchlist and the trend radar |
 | `WATCHLIST_POLL_MINUTES` | `15` | How often the watchlist checks for live streams and new VODs (5 or more) |
 | `LIVE_SEGMENT_SEC` | `600` | Live mode: a new segment of the stream starts this often |
 | `LIVE_OVERLAP_SEC` | `60` | Each segment runs this much longer, so a moment across a boundary is whole in one (keep it at the longest clip) |

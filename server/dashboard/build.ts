@@ -44,6 +44,7 @@ const JOB_LABELS: Record<string, string> = {
   "live-segment": "Live segment",
   "render-clip": "New version",
   thumbnails: "Thumbnails",
+  "hook-variants": "Hook variants",
   "demo-clips": "Demo clips",
   "demo-data": "Demo data",
   "engine-setup": "Engine setup",

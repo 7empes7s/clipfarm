@@ -4,6 +4,7 @@ import type { Reranker } from "../../google/rerank.js";
 import type { JobHandler } from "../../jobs/queue.js";
 import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
+import { applyTrendBoost, type TrendBoost, trendHints } from "../../trends/boost.js";
 import type { VodsRepo } from "../../vods/repo.js";
 import { pickerBrief } from "../../publish/compliance.js";
 import { bannedTerms, reviewPicks } from "./review.js";
@@ -20,6 +21,8 @@ export interface PicksDeps {
   maxPicks: number;
   /** Gemini watches the best picks and blends what it sees into their scores; left out, picks rank as the picker left them. */
   rerank?: Reranker;
+  /** What is trending today (the trend radar); left out or null, picks rank on their own score. */
+  trends?: () => TrendBoost | null;
   /** The defaults learned from test campaigns (preferred length, favoured words); left out, picks rank as proposed. */
   preferences?: () => GrowthDefaults;
 }
@@ -35,6 +38,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
     const permission = deps.sources.assertCanUse(vod.sourceId);
     const source = deps.sources.get(vod.sourceId);
 
+    const trends = deps.trends?.() ?? null;
     progress(0.1, "Finding highlights");
     const started = Date.now();
     const result = await deps.picker.pick(
@@ -48,6 +52,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
         maxPicks,
+        trendHints: trendHints(trends),
         run: { vodId },
       },
       signal,
@@ -71,7 +76,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
 
     progress(0.9, "Checking picks");
     const reviewed = reviewPicks(
-      deps.preferences ? applyPreferences(proposed, deps.preferences()) : proposed,
+      applyTrendBoost(deps.preferences ? applyPreferences(proposed, deps.preferences()) : proposed, vod.words, trends),
       toSentences(vod.words),
       vod.words,
       [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],

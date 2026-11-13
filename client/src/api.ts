@@ -38,6 +38,7 @@ import type {
   WhopStep,
 } from "../../shared/types";
 import type { ClipThumbs, GoogleSettings, GoogleStatus } from "../../shared/google";
+import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/trends";
 
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 
@@ -129,6 +130,12 @@ export const api = {
   testSettings: (id: IntegrationId) =>
     call<{ ok: boolean; message: string; settings: SettingsInfo }>(`/api/settings/${id}/test`, { method: "POST" }),
   setup: () => call<SetupChecklist>("/api/setup"),
+  trends: () => call<TrendReport>("/api/trends"),
+  refreshTrends: () => call<TrendReport>("/api/trends/refresh", { method: "POST" }),
+  saveTrendWeight: (weight: number) => call<TrendReport>("/api/trends/weight", { method: "PUT", body: JSON.stringify({ weight }) }),
+  hookLab: () => call<HookLabInfo>("/api/hooklab"),
+  saveHookLab: (change: Partial<HookLabSettings>) => call<HookLabInfo>("/api/hooklab/settings", { method: "PUT", body: JSON.stringify(change) }),
+  runHookLab: () => call<HookLabInfo>("/api/hooklab/run", { method: "POST" }),
   growth: () => call<GrowthInfo>("/api/growth"),
   addCampaign: (input: GrowthCampaignInput) => call<GrowthCampaign>("/api/growth/campaigns", { method: "POST", body: JSON.stringify(input) }),
   campaignAction: (id: number, action: "start" | "pause" | "stop") => call<GrowthCampaign>(`/api/growth/campaigns/${id}/${action}`, { method: "POST" }),
