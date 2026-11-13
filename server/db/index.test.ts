@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships: all but the last two entries, which add the isolation groups and the campaign scout's table. */
-const ALL_OF_MAIN = MIGRATIONS.length - 2;
+/** Everything main ships: all but the last entry, which adds the isolation groups. */
+const ALL_OF_MAIN = MIGRATIONS.length - 1;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -38,7 +38,7 @@ describe("migrate", () => {
     expect(() => migrate(db)).not.toThrow();
 
     // Step 16 is the growth lab, step 17 the trend radar and hook lab, step 18 the Google tables,
-    // step 19 the isolation groups, step 20 the campaign scout's table.
+    // step 19 the campaign scout's table, step 20 the isolation groups.
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     expect(tables(db)).toEqual(
       expect.arrayContaining([
@@ -65,7 +65,7 @@ describe("migrate", () => {
     db.pragma(`user_version = ${ALL_OF_MAIN}`);
     // The shipped migrations keep their places: the job queue's worker row, the permission proof columns, Live mode,
     // Clip polish, Campaign import, the engine runs, the growth lab, the trend radar, the hook lab and the Google tables
-    // all come before the isolation groups and the scout's table.
+    // and the scout's table all come before the isolation groups.
     expect(tables(db)).toContain("queue_worker");
     expect(tables(db)).toContain("live_captures");
     expect(tables(db)).toContain("engine_runs");
@@ -75,11 +75,11 @@ describe("migrate", () => {
     expect(permissionCols).toContain("proof_url");
     expect(permissionCols).toContain("campaign_rules");
     expect(tables(db)).toEqual(expect.arrayContaining(["trend_videos", "hook_tests", "hook_variants", "google_calls", "clip_thumbs"]));
+    expect(tables(db)).toContain("scouted_campaigns");
     expect(tables(db)).not.toContain("isolation_groups");
-    expect(tables(db)).not.toContain("scouted_campaigns");
 
     expect(() => migrate(db)).not.toThrow();
-    expect(tables(db)).toEqual(expect.arrayContaining(["isolation_groups", "youtube_quota", "scouted_campaigns"]));
+    expect(tables(db)).toEqual(expect.arrayContaining(["isolation_groups", "youtube_quota"]));
     // A waiting post keeps the video of its hook variant.
     expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file"]));
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);

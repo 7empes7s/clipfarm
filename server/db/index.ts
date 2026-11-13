@@ -441,6 +441,19 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX clip_thumbs_clip ON clip_thumbs(clip_id);
   `,
   `
+  -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
+  CREATE TABLE scouted_campaigns (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    url TEXT NOT NULL,
+    facts TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    notified INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TEXT NOT NULL,
+    read_at TEXT NOT NULL
+  );
+  `,
+  `
   -- Account isolation: groups of accounts that share developer apps and a way out to the internet.
   -- Keys and proxy addresses are in the secrets file, not here. A NULL group_id is the built-in
   -- group of the account's role (1 Main, 2 Burners).
@@ -467,19 +480,6 @@ export const MIGRATIONS: string[] = [
     day TEXT NOT NULL,
     units INTEGER NOT NULL,
     PRIMARY KEY (group_id, day)
-  );
-  `,
-  `
-  -- Campaigns the scout read from public pages; "key" is the campaign link without query, hash or "www.".
-  CREATE TABLE scouted_campaigns (
-    id INTEGER PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
-    url TEXT NOT NULL,
-    facts TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'new',
-    notified INTEGER NOT NULL DEFAULT 0,
-    first_seen_at TEXT NOT NULL,
-    read_at TEXT NOT NULL
   );
   `,
 ];
