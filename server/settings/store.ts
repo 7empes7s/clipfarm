@@ -19,6 +19,21 @@ interface SecretsFile {
 /** Values shorter than this are not worth hiding (and hiding them would blank out ordinary words). */
 const MIN_SCRUB_LENGTH = 6;
 
+/** A key, and for a key file (JSON) the private key inside it as well, as it is written and as it is read. */
+function secretParts(value: string | undefined): string[] {
+  if (!value || value.length < MIN_SCRUB_LENGTH) return [];
+  const parts = [value];
+  if (value.startsWith("{")) {
+    try {
+      const inner = (JSON.parse(value) as { private_key?: unknown }).private_key;
+      if (typeof inner === "string" && inner.length >= MIN_SCRUB_LENGTH) parts.push(inner, JSON.stringify(inner).slice(1, -1));
+    } catch {
+      /* not a key file: the whole value is the key */
+    }
+  }
+  return parts;
+}
+
 /**
  * The one place keys are read from. A key pasted in Settings is kept in `DATA_DIR/secrets.json`
  * (mode 600, written atomically) and wins over the server's env, which stays as the fallback.
@@ -127,7 +142,7 @@ export class Settings {
     for (const [name, secret] of SETTING_NAMES) {
       if (!secret) continue;
       for (const value of new Set([this.data.values[name]?.value, this.baseEnv[name]])) {
-        if (value && value.length >= MIN_SCRUB_LENGTH) out = out.split(value).join("***");
+        for (const part of secretParts(value)) out = out.split(part).join("***");
       }
     }
     return out;

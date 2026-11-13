@@ -28,6 +28,7 @@ import {
   WATCH_PLATFORM_LABELS,
 } from "../../shared/types";
 import { EngineCard } from "./EngineCard";
+import { GoogleCard } from "./GoogleCard";
 import { api } from "./api";
 import { BarChart, LineChart, Meter } from "./charts";
 import { ExperimentBadge, ExperimentView } from "./Experiment";
@@ -182,6 +183,8 @@ function Today({ dash, jobs, onLoaded }: { dash: Dashboard; jobs: Job[]; onLoade
       )}
 
       <EngineCard jobs={jobs} />
+
+      <GoogleCard refreshKey={String(jobs.filter((j) => j.status === "done").length)} />
 
       <LiveNow />
 

@@ -64,6 +64,7 @@ describe("clipfarm-ops test-keys", () => {
     const { code, out, err, all } = await ops(["test-keys"], live);
     expect(out).toEqual([
       "OpenAI: Failed OpenAI says: Incorrect API key provided: ***.",
+      "Google (Gemini): Not set",
       "Twitch: Working",
       "YouTube: Not set",
       "Postiz: Not set",

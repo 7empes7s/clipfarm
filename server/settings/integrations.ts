@@ -1,6 +1,7 @@
 import type { IntegrationId, IntegrationStatus, SettingsInfo } from "../../shared/types.js";
 import { INTEGRATION_IDS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { DEFAULT_FLASH_MODEL, DEFAULT_IMAGE_MODEL, GOOGLE_LOCATIONS, parseServiceAccount } from "../google/client.js";
 import { DEFAULT_PICK_MODEL } from "../pipeline/picks/llm.js";
 import { DEFAULT_TRANSCRIBE_MODEL, OPENAI_BASE_URL } from "../pipeline/transcript/openai.js";
 import { openAiNotes, openAiSetup, pickModelOptions, transcribeModelOptions } from "./openai.js";
@@ -14,6 +15,10 @@ interface FieldDef {
   placeholder: string;
   /** An address: must start with http:// or https://. */
   url?: boolean;
+  /** The only values it takes. */
+  options?: readonly string[];
+  /** A Google service account key file, pasted whole: checked, and kept on one line. */
+  serviceAccount?: boolean;
   /** What is used while nothing is set. */
   fallback?: string;
 }
@@ -23,6 +28,8 @@ interface IntegrationDef {
   label: string;
   purpose: string;
   fields: FieldDef[];
+  /** Besides the required fields, one of these must be set (two ways to sign in). */
+  oneOf?: string[];
 }
 
 const key = (name: string, label: string, placeholder = "Paste it here", required = true): FieldDef => ({
@@ -59,6 +66,21 @@ export const INTEGRATIONS: IntegrationDef[] = [
       plain("LLM_BASE_URL", "Picking model address (optional)", OPENAI_BASE_URL, false, true, OPENAI_BASE_URL),
       key("LLM_API_KEY", "Picking model key (optional, when it is not OpenAI)", "Leave empty to use the OpenAI key", false),
     ],
+  },
+  {
+    id: "google",
+    label: "Google (Gemini)",
+    purpose:
+      "Optional, paid from the Google Cloud credit. Gemini watches the best picks to score what a transcript cannot show, writes hooks when the local writer cannot, and makes thumbnail options for approved clips. Its spend and limits are on the Dashboard.",
+    fields: [
+      plain("GOOGLE_CLOUD_PROJECT", "Project ID", "leonida-clips", true),
+      { ...plain("GOOGLE_CLOUD_LOCATION", "Location (optional)", GOOGLE_LOCATIONS.join(", "), false), options: GOOGLE_LOCATIONS },
+      key("GOOGLE_API_KEY", "API key (or use the service account below)", "Paste it here", false),
+      { ...key("GOOGLE_SERVICE_ACCOUNT_JSON", "Service account JSON (instead of an API key)", "Paste the whole key file", false), serviceAccount: true },
+      plain("GOOGLE_FLASH_MODEL", "Video and text model (optional)", DEFAULT_FLASH_MODEL, false),
+      plain("GOOGLE_IMAGE_MODEL", "Thumbnail model (optional)", DEFAULT_IMAGE_MODEL, false),
+    ],
+    oneOf: ["GOOGLE_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON"],
   },
   {
     id: "twitch",
@@ -105,7 +127,9 @@ export function integration(id: unknown): IntegrationDef {
 }
 
 export function isConfigured(settings: Settings, id: IntegrationId): boolean {
-  return integration(id).fields.every((f) => !f.required || settings.get(f.name) !== undefined);
+  const def = integration(id);
+  if (def.oneOf && !def.oneOf.some((name) => settings.get(name) !== undefined)) return false;
+  return def.fields.every((f) => !f.required || settings.get(f.name) !== undefined);
 }
 
 /** For /api/health, which is open: yes or no per connection, nothing else. */
@@ -146,7 +170,8 @@ export function settingsInfo(settings: Settings, opts: { demo: boolean; posting:
           placeholder: f.placeholder,
           set: value !== undefined,
           source: value === undefined ? null : settings.source(f.name),
-          ending: f.secret && value && value.length >= MIN_LENGTH_FOR_ENDING ? value.slice(-4) : null,
+          // A key file ends in a bracket, which tells nothing apart.
+          ending: f.secret && !f.serviceAccount && value && value.length >= MIN_LENGTH_FOR_ENDING ? value.slice(-4) : null,
           value: f.secret ? null : (value ?? null),
           savedAt: settings.savedAt(f.name),
           fallback: f.fallback ?? null,
@@ -177,6 +202,14 @@ export function parseSettingsInput(def: IntegrationDef, body: unknown): Record<s
       continue;
     }
     // The message never repeats what was pasted.
+    if (field.serviceAccount) {
+      if (value.length > 10_000 || !parseServiceAccount(value)) {
+        throw new ValidationError(`${field.label}: that is not a service account key file. Copy the whole file again.`);
+      }
+      // One line, as the settings file keeps every other key.
+      out[name] = JSON.stringify(JSON.parse(value));
+      continue;
+    }
     if (value.length > 500) throw new ValidationError(`${field.label}: that is too long to be right. Copy it again.`);
     if (/[\s\p{Cc}]/u.test(value)) throw new ValidationError(`${field.label}: it has a space or line break in it. Copy it again.`);
     if (field.url) {
@@ -188,6 +221,7 @@ export function parseSettingsInput(def: IntegrationDef, body: unknown): Record<s
       }
       if (!ok) throw new ValidationError(`${field.label}: it must start with https:// or http://.`);
     }
+    if (field.options && !field.options.includes(value)) throw new ValidationError(`${field.label}: it must be one of ${field.options.join(", ")}.`);
     out[name] = value;
   }
   if (Object.keys(out).length === 0) throw new ValidationError("Paste a value first.");
