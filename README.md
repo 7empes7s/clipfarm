@@ -307,7 +307,10 @@ npm run e2e:live   # the whole flow, link → clips → review → post, against
 
 `npm run e2e:live` runs one flow at 390 px and on desktop and ends with a pass/fail table per
 step, including how long the link took to become clips (goal: under 30 minutes). Without
-`BASE_URL` it builds and starts its own preview with the fakes; `BASE_URL=http://localhost:3000
+`BASE_URL` it builds and starts its own preview with the fakes, on a free port and in its own
+folder (`.e2e-data/live-<run id>`, removed when the run ends), so runs side by side do not clash;
+with `E2E_PORT` it uses that port, or stops at the start naming the process that holds it.
+`BASE_URL=http://localhost:3000
 npm run e2e:live` tests a preview you started (`CLIPFARM_FAKES=1 FAKE_VOD_SEC=40`). It adds a test
 campaign named "E2E test …" and removes it, with its clips and files, at the end. Posting stops
 at the server's dry run (`POST /api/clips/:id/posts/dry-run`: every check, nothing sent or
