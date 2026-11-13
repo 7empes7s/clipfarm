@@ -3623,3 +3623,8 @@ button.danger {
   width: 100%;
   min-width: 0;
 }
+/* A switch inside a form sits beside its words, like every other switch. */
+.form label.switch {
+  display: flex;
+  gap: var(--s3);
+}

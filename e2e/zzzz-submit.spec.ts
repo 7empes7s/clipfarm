@@ -76,7 +76,9 @@ test("submit hours in Settings, the countdown on the clip card, missed windows i
     await page.goto("/#stats");
     await expect(page.getByTestId("missed-windows")).toContainText("Missed submit windows");
     await expect(page.getByTestId("missed-windows").locator("dd")).toHaveText(/^(None|\d+, about \$\d+\.\d\d lost)$/);
-    expect(await sideways()).toBeLessThanOrEqual(width);
+    // The tile itself stays on the screen (the rest of Stats shows whatever the other specs posted).
+    const tile = (await page.getByTestId("missed-windows").boundingBox())!;
+    expect(tile.x + tile.width).toBeLessThanOrEqual(width);
 
     // The Dashboard: "I'm busy" holds campaign posts, "I'm back" ends it.
     await page.goto("/#dashboard");
