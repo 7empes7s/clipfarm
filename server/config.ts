@@ -19,6 +19,7 @@ import type { PostingService } from "./publish/types.js";
 import { UploadPostService } from "./publish/uploadPost.js";
 import { FakeLiveCapturer, type LiveCapturer, PlatformLiveCapturer, YtDlpLiveCapturer } from "./live/capturer.js";
 import { DEFAULT_LAUNCH_AT } from "./live/plan.js";
+import { FakeCampaignFetcher } from "./sources/campaign/fake.js";
 import { FakeProofFetcher, HttpProofFetcher, type ProofFetcher } from "./sources/proof.js";
 import { FakePlatformClient } from "./sources/watchlist/platforms/fake.js";
 import { KickClient } from "./sources/watchlist/platforms/kick.js";
@@ -80,6 +81,10 @@ export interface Config {
   };
   /** Reads the proof pages of public clipping allowances. */
   proofFetcher: ProofFetcher;
+  /** Reads Whop / Content Rewards campaign pages. */
+  campaignFetcher: ProofFetcher;
+  /** The cloud model that helps read a campaign page, only while "Use cloud AI for speed" is on and a key is set. */
+  campaignChat: () => ChatClient | null;
   /** Keys pasted in Settings, on top of the env. */
   settings: Settings;
   /** Demo mode: every outside service is a stand-in. */
@@ -131,6 +136,15 @@ function liveCloudTranscriber(settings: Settings): () => Transcriber | null {
   return () => {
     const t = cur();
     return t && { name: t.name, transcribe: (audio, opts) => guarded(settings, () => t.transcribe(audio, opts)) };
+  };
+}
+
+function liveCampaignChat(settings: Settings, engine: Engine): () => ChatClient | null {
+  const cur = live(settings, LLM_SETTINGS, cloudChat);
+  return () => {
+    const chat = cur();
+    if (!chat || !engine.settings().cloud) return null;
+    return { name: chat.name, complete: (req, signal) => guarded(settings, () => chat.complete(req, signal)) };
   };
 }
 
@@ -270,6 +284,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     // A YouTube check costs 2 quota units: 15 min keeps 25+ channels well under the free 10,000 a day.
     watchPollMinutes: Math.max(5, Number(env.WATCHLIST_POLL_MINUTES) || 15),
     proofFetcher: fakes ? new FakeProofFetcher() : new HttpProofFetcher(),
+    campaignFetcher: fakes ? new FakeCampaignFetcher() : new HttpProofFetcher(),
+    campaignChat: fakes ? () => null : liveCampaignChat(settings, engine),
   };
 }
 

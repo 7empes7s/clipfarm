@@ -1,4 +1,4 @@
-import type { Platform } from "../../shared/types.js";
+import type { CampaignRules, Platform } from "../../shared/types.js";
 
 /** Longest caption each platform takes (YouTube's description, TikTok/Instagram captions, an X post). */
 export const CAPTION_LIMITS: Record<Platform, number> = {
@@ -14,6 +14,8 @@ export interface CaptionInput {
   channelUrl: string | null;
   /** The campaign brief: any hashtags and links in it are required in the caption. */
   briefRules: string;
+  /** The campaign's own rules: its required tags, links and words go in the caption too. */
+  rules?: CampaignRules | null;
   platform: Platform;
 }
 
@@ -32,10 +34,13 @@ export function briefRequirements(briefRules: string): { links: string[]; hashta
  * Title, then credit to the creator, then the brief's required links and hashtags. When the
  * platform's limit is tight (X), only the title is shortened; required parts always stay.
  */
-export function buildCaption({ title, creatorName, channelUrl, briefRules, platform }: CaptionInput): string {
-  const { links, hashtags } = briefRequirements(briefRules);
+export function buildCaption({ title, creatorName, channelUrl, briefRules, rules, platform }: CaptionInput): string {
+  const brief = briefRequirements(briefRules);
+  const links = unique([...brief.links, ...(rules?.requiredLinks ?? [])]);
+  const hashtags = unique([...brief.hashtags, ...(rules?.requiredTags ?? [])]);
   const required = [
     channelUrl ? `Credit: ${creatorName} ${channelUrl}` : `Credit: ${creatorName}`,
+    ...(rules?.requiredText ?? []),
     ...links.filter((l) => l !== channelUrl),
     ...(hashtags.length ? [hashtags.join(" ")] : []),
   ].join("\n");

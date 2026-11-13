@@ -307,6 +307,13 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE clips ADD COLUMN quality TEXT;
   `,
   `
+  -- Campaign import: a campaign's rules (JSON), when its page was last read, and Whop's approval and payout taps.
+  ALTER TABLE permissions ADD COLUMN campaign_rules TEXT;
+  ALTER TABLE permissions ADD COLUMN campaign_checked_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_approved_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_paid_at TEXT;
+  `,
+  `
   -- Trend radar: today's fastest short videos (titles and numbers only, never media).
   CREATE TABLE trend_videos (
     video_id TEXT PRIMARY KEY,

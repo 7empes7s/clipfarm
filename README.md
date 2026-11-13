@@ -197,10 +197,41 @@ fits the clip start ticked; burners are picked by hand. TikTok and YouTube keep 
 Instagram needs a Business or Creator account.
 
 Tracking: every post stores clip, platform, account, link, time, permission record and campaign.
-Views come from the service on a timer, or by hand. "Mark sent to Whop" records the submission
-(Whop has no clipper API). Stats shows posts, views and estimated earnings (views × pay per 1,000,
-counted once a post reaches the campaign's minimum views) per campaign and platform, plus cost per
-approved clip.
+Views come from the service on a timer, or by hand. Whop has no clipper API, so a posted campaign
+clip shows **Submit to Whop** (copies the post link and opens the campaign) and three taps:
+sent, approved, paid. Stats shows posts, views and estimated earnings (views × pay per 1,000,
+less Whop's 10% fee on Whop campaigns, counted once a post reaches the campaign's minimum views)
+per campaign and platform, plus cost per approved clip. Whop settles a payout about 10 days after
+it approves a clip; the post shows that date.
+
+## Campaign import (Whop / Content Rewards)
+
+In Sources, **Paste a campaign link** (whop.com or contentrewards.com). The server reads the public
+page through the fetch layer and opens the campaign form filled in: creator, channels, pay per
+1,000 views, minimum views, budget left, platforms, required tags, links and caption words, banned
+words, clip length and end date. What the page does not say stays empty and is marked **check
+this**: nothing is guessed. If the page cannot be fetched, paste its text into the box that
+appears. **Add campaign** creates the creator with a `whop-campaign` permission that ends with the
+campaign, or brings the record with the same link (or the creator of the same name) up to date.
+
+- **Reading the page** (`server/sources/campaign/extract.ts`): the page's own labels and sentences
+  first. While "Use cloud AI for speed" is on and an LLM key is set, the chat model may fill what
+  is still empty; its answer is checked against a schema and against the page (a number, tag,
+  name or date the page does not show is dropped).
+- **Rules in the pipeline**: picks get the brief plus the campaign's clip length and banned words,
+  and a pick that breaks them is left out with the reason. Captions carry the required tags, links
+  and words. Before a post, an export or "sent to Whop", the **compliance check**
+  (`server/publish/compliance.ts`) looks at the caption, platform, clip length and the title and
+  transcript for banned words; a clip that fails is not posted under the campaign and the reason
+  is shown on the account in the picker.
+- **Daily re-check**: each running campaign's page is read once a day (and on **Check again**). If
+  it has ended, its end date has passed, its budget is used up or the page is gone, the campaign
+  is **paused** with the reason: no new streams or posts until it is checked again or replaced.
+  A page that cannot be read changes nothing. Only the page's own words pause a campaign, never
+  the model's reading.
+
+In demo mode (`CLIPFARM_FAKES=1`) campaign pages are made up on the server: any link is a running
+demo campaign; a link containing `bare`, `blocked`, `gone` or `ended` shows those cases.
 
 ## Creators who publicly allow clipping
 

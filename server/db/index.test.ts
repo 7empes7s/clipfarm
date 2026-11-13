@@ -15,11 +15,13 @@ describe("migrate", () => {
     for (const sql of MIGRATIONS.slice(0, SHIPPED_ON_MAIN)) db.exec(sql);
     db.pragma(`user_version = ${SHIPPED_ON_MAIN}`);
     // The shipped migrations keep their places: the job queue's worker row, the permission proof
-    // columns, Live mode and Clip polish all come before the trend radar and hook lab tables.
+    // columns, Live mode, Clip polish and Campaign import all come before the trend radar and hook lab tables.
     expect(tables(db)).toContain("queue_worker");
     expect(tables(db)).toContain("live_captures");
     expect((db.prepare("PRAGMA table_info(clips)").all() as { name: string }[]).map((c) => c.name)).toContain("quality");
-    expect((db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name)).toContain("proof_url");
+    const permissionCols = (db.prepare("PRAGMA table_info(permissions)").all() as { name: string }[]).map((c) => c.name);
+    expect(permissionCols).toContain("proof_url");
+    expect(permissionCols).toContain("campaign_rules");
     expect(tables(db)).not.toContain("trend_videos");
 
     expect(() => migrate(db)).not.toThrow();

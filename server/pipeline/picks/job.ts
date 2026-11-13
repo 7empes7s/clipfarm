@@ -3,6 +3,7 @@ import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import { applyTrendBoost, type TrendBoost, trendHints } from "../../trends/boost.js";
 import type { VodsRepo } from "../../vods/repo.js";
+import { pickerBrief } from "../../publish/compliance.js";
 import { bannedTerms, reviewPicks } from "./review.js";
 import { toSentences } from "./sentences.js";
 import type { Picker } from "./types.js";
@@ -41,7 +42,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         words: vod.words,
         signals: { loudness: deps.vods.loudness(vodId), chat: null },
         creatorName: source.creatorName,
-        briefRules: permission.briefRules,
+        briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
         maxPicks,
         trendHints: trendHints(trends),
@@ -55,8 +56,9 @@ export function picksHandler(deps: PicksDeps): JobHandler {
       applyTrendBoost(result.picks, vod.words, trends),
       toSentences(vod.words),
       vod.words,
-      bannedTerms(permission.briefRules, source.bannedContent),
+      [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],
       maxPicks,
+      permission.rules ?? undefined,
     );
     const kept = reviewed.filter((p) => !p.dropReason).length;
     // Cost per clip (O5): the VOD's transcript and picking spend shared over the clips kept.
