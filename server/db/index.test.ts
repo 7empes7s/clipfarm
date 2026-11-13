@@ -30,9 +30,10 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
 
-    expect(db.pragma("user_version", { simple: true })).toBe(16);
+    // Every later step runs too (the Google tables came after the growth lab's).
+    expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").pluck().all();
-    expect(tables).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations"]));
+    expect(tables).toEqual(expect.arrayContaining(["growth_campaigns", "growth_posts", "post_stats", "growth_recommendations", "google_calls", "clip_thumbs"]));
     const postColumns = db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all();
     expect(postColumns).toEqual(expect.arrayContaining(["metrics", "whop_approved_at", "whop_paid_at"]));
     db.close();
