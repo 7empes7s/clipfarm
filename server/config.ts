@@ -89,9 +89,9 @@ export interface Config {
   platformStats: PlatformStatsSource[];
   /** What an hour of this server costs (USD), for a clip's compute cost. */
   computeUsdPerHour: number;
-  /** Live mode: records streams while they are live, in rolling segments. */
   /** Twitch/Kick chat replay for chat-spike picks (a fake in demo mode). */
   chatSource: ChatSource;
+  /** Live mode: records streams while they are live, in rolling segments. */
   live: {
     capturer: LiveCapturer;
     /** Listens to a live stream's chat while it records. */
