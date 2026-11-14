@@ -17,6 +17,10 @@ import { DEMO_WEBHOOK_SECRET, WEBHOOK_SECRET_NAME } from "./service/routes.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 import streamerSeed from "./catalog/seed/streamers.json" with { type: "json" };
 import { parseSeedStreamers, RegistryRepo } from "./catalog/registry.js";
+import { Operations, readResources } from "./ops/operations.js";
+import { fakeDown, fakeProbes, postizProbes } from "./ops/probes.js";
+import { INTEGRATIONS, isConfigured } from "./settings/integrations.js";
+import { testIntegration } from "./settings/keyTests.js";
 
 const {
   settings,
@@ -51,6 +55,7 @@ const {
   outputs,
   clientService,
   stripe,
+  opsState,
 } = openRuntime();
 const mediaDir = config.mediaDir;
 
@@ -90,6 +95,41 @@ settings.onChange(() => {
   poller.retryNow();
   // The posting service may have just changed: read its accounts now, not at the next restart.
   publisher.syncAccounts().catch(() => undefined);
+});
+
+// Operations: the keys it shows (their last test), and the services it checks. Demo mode calls nothing outside;
+// CLIPFARM_FAKE_DOWN names the stand-ins to show as failing there.
+const OPS_KEYS = ["openai", "google", "youtube", "postiz", "upload-post"] as const;
+const demoDown = config.fakes ? fakeDown(process.env) : new Set<string>();
+const deployStatusFile = join(dirname(config.dbFile), "deploy-status.json");
+const operations = new Operations({
+  state: opsState,
+  queue,
+  vods,
+  clips,
+  sources,
+  posts,
+  publisher,
+  watchlist: { repo: watchRepo, checkNow: (id) => poller.pollCreator(id) },
+  proof,
+  health: () => business.health(),
+  keys: () =>
+    INTEGRATIONS.filter((d) => (OPS_KEYS as readonly string[]).includes(d.id)).map((d) => ({
+      id: d.id,
+      label: d.id === "google" ? "Gemini" : d.label,
+      configured: isConfigured(settings, d.id),
+      result: settings.testResult(d.id),
+    })),
+  testKeys: async () => {
+    for (const id of OPS_KEYS) {
+      if (!isConfigured(settings, id)) continue;
+      if (demoDown.has(id)) settings.setTestResult(id, { ok: false, message: "Refused (demo).", at: new Date().toISOString() });
+      else await testIntegration(id, settings, config.fakes);
+    }
+  },
+  probes: config.fakes ? fakeProbes(demoDown) : publisher.service.name === "postiz" ? postizProbes(() => ({ url: settings.get("POSTIZ_URL"), apiKey: settings.get("POSTIZ_API_KEY") })) : [],
+  resources: () => readResources(dirname(config.dbFile)),
+  deployStatusFile,
 });
 
 // Built layout: dist/server/index.js next to dist/client/. In dev (tsx), Vite serves the client.
@@ -132,10 +172,11 @@ const app = createApp({
   aiChat: config.aiChat,
   seedDemoClip,
   clientDir,
-  deployStatusFile: join(dirname(config.dbFile), "deploy-status.json"),
+  deployStatusFile,
   supportEmail: config.supportEmail,
   access: config.access ?? undefined,
   workspaces,
+  operations,
   creator: { service: creator, uploads, outputs },
   clientService: {
     service: clientService,
@@ -162,7 +203,8 @@ if (!config.fakeEngine && !config.engine.settings().cloud && config.engine.missi
 // The same timer runs the daily trend refresh (when due) and one pass of the hook lab (when on).
 const background = () => {
   void radar.refreshIfDue();
-  void hookLab.tick().catch((err: Error) => console.error(`[hook lab] ${err.message}`));
+  // "Pause all publishing" in Operations: the hook lab posts variants, so it waits too.
+  if (!opsState.isOn("publishing_paused")) void hookLab.tick().catch((err: Error) => console.error(`[hook lab] ${err.message}`));
 };
 const refreshTimer = setInterval(() => {
   void publisher
@@ -175,7 +217,7 @@ refreshTimer.unref();
 // Posts clipfarm uploads itself go out when they are due; every proxy is tested again once a day.
 // The same round runs the submit window: held campaign posts go out, "submit within 30 min" is pushed
 // when a post is live and again at 20 minutes, and the window is marked missed at 30.
-const submitWatch = new SubmitWatch({ posts, publisher, notifier, sendDirect: () => direct.runDue() });
+const submitWatch = new SubmitWatch({ posts, publisher, notifier, sendDirect: () => direct.runDue(), paused: () => opsState.isOn("publishing_paused") });
 const directTimer = setInterval(() => void submitWatch.tick().catch((err: unknown) => console.error(`[submit window] ${(err as Error).message}`)), 60_000);
 directTimer.unref();
 // Autopilot rules that are on: matching clips go to their accounts at the next best slot (or, in dry run, are only noted).
@@ -188,8 +230,8 @@ const proxyTimer = setInterval(() => void isolation.recheckStale(), 3600_000);
 proxyTimer.unref();
 // Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.
 const growthRound = () => {
-  void growth
-    .tick()
+  // Test campaigns schedule posts: while publishing is paused in Operations, only the digest goes out.
+  void (opsState.isOn("publishing_paused") ? Promise.resolve() : growth.tick())
     .then(() => growth.sendDigest())
     .catch((err: unknown) => console.error(`[growth] ${(err as Error).message}`));
 };

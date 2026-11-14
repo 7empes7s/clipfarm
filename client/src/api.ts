@@ -54,6 +54,7 @@ import type { ClipVersion, StudioEditInput, StudioInfo } from "../../shared/type
 import type { AutopilotInfo, AutopilotRule, AutopilotStep, CalendarInfo, ClipVersions } from "../../shared/publishing";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
 import type { AdminClients } from "../../shared/service";
+import type { OpsInfo } from "../../shared/ops";
 
 const WS_KEY = "clipfarm.workspace";
 
@@ -91,6 +92,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
   return body;
 }
+
+/** An Operations control: a POST that answers with the whole Operations page. */
+const opsPost = (path: string, body: unknown = {}) => call<OpsInfo>(`/api/ops${path}`, { method: "POST", body: JSON.stringify(body) });
 
 export const api = {
   clients: () => call<AdminClients>("/api/admin/clients"),
@@ -286,4 +290,18 @@ export const api = {
   unsubscribePush: (endpoint: string) => call<LiveInfo>("/api/live/push", { method: "DELETE", body: JSON.stringify({ endpoint }) }),
   setAutoIngest: (id: number, on: boolean) =>
     call<WatchedCreator>(`/api/watchlist/${id}/auto-ingest`, { method: "PUT", body: JSON.stringify({ on }) }),
+  // Operations: every control answers with the whole page again.
+  ops: (fresh = false) => call<OpsInfo>(`/api/ops${fresh ? "?fresh=1" : ""}`),
+  opsTestKeys: () => opsPost("/keys/test"),
+  opsRetryJob: (id: number) => opsPost(`/jobs/${id}/retry`),
+  opsCancelJob: (id: number) => opsPost(`/jobs/${id}/cancel`, { confirm: true }),
+  opsJobTop: (id: number) => opsPost(`/jobs/${id}/top`),
+  opsWorker: (paused: boolean) => opsPost("/worker", { paused }),
+  opsRetryPost: (id: number) => opsPost(`/posts/${id}/retry`),
+  opsReschedule: (id: number, at: string) => opsPost(`/posts/${id}/reschedule`, { at }),
+  opsSkipPost: (id: number) => opsPost(`/posts/${id}/skip`, { confirm: true }),
+  opsPublishing: (paused: boolean) => opsPost("/publishing", { paused, confirm: paused }),
+  opsSubmit: (id: number) => opsPost(`/posts/${id}/submit`),
+  opsCheckSource: (id: number) => opsPost(`/sources/${id}/check`),
+  opsPauseSource: (id: number, paused: boolean) => opsPost(`/sources/${id}/pause`, { paused }),
 };

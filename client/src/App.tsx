@@ -17,6 +17,7 @@ import { Studio } from "./Studio";
 import { SuggestedSheet } from "./SuggestedSheet";
 import { WatchlistTab } from "./WatchlistTab";
 import { CreatorTab } from "./CreatorTab";
+import { OperationsTab } from "./OperationsTab";
 import { WorkspaceSwitcher } from "./Workspaces";
 import { api, currentWorkspace, setWorkspace } from "./api";
 import { Clips } from "./Clips";
@@ -63,6 +64,7 @@ const TABS = [
   { id: "campaigns", label: "Campaigns" },
   { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
+  { id: "ops", label: "Operations" },
 ] as const satisfies readonly { id: IconName; label: string }[];
 /** "rejected" is reached from the inbox, "settings" from the ⋯ in the header, "studio" from a clip: none is in the tab bar. */
 type Tab = (typeof TABS)[number]["id"] | "rejected" | "settings" | "studio";
@@ -206,7 +208,7 @@ export function App() {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <Icon name={t.id} />
               {t.label}
-              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && t.id !== "calendar" && t.id !== "creator" && <span className="count">{counts[t.id]}</span>}
+              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && t.id !== "calendar" && t.id !== "creator" && t.id !== "ops" && <span className="count">{counts[t.id]}</span>}
             </a>
           ))}
         </nav>
@@ -228,6 +230,7 @@ export function App() {
       {tab === "calendar" && <CalendarTab sub={sub} sources={sources} />}
       {tab === "campaigns" && <CampaignsTab sources={sources} sub={sub} />}
       {tab === "settings" && <SettingsTab focus={sub} />}
+      {tab === "ops" && <OperationsTab />}
       {tab === "studio" && (
         <Studio
           key={sub}

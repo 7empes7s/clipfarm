@@ -75,9 +75,10 @@ export class WatchlistPoller {
     });
   }
 
-  /** Checks every creator. Polls never overlap: a second call waits for the first. */
+  /** Checks every creator that is not paused. Polls never overlap: a second call waits for the first. */
   pollAll(): Promise<void> {
-    return this.serial(() => this.poll(this.deps.repo.list()));
+    // A creator paused in Operations is left out; "Check now" (pollCreator) still checks it.
+    return this.serial(() => this.poll(this.deps.repo.list().filter((c) => !c.paused)));
   }
 
   pollCreator(id: number): Promise<void> {

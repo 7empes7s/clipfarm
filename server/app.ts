@@ -11,6 +11,8 @@ import { parseClipEdit } from "./clips/edit.js";
 import type { ClipsRepo } from "./clips/repo.js";
 import { buildDashboard } from "./dashboard/build.js";
 import { readLiveVersion } from "./ops/liveVersion.js";
+import type { Operations } from "./ops/operations.js";
+import { opsRoutes } from "./ops/routes.js";
 import { publicPages } from "./publicPages.js";
 import { DEMO_JOB } from "./dev/demo.js";
 import { type Engine, ENGINE_SETUP_JOB } from "./engine/engine.js";
@@ -126,6 +128,8 @@ export interface AppDeps {
   creator?: { service: Creator; uploads: UploadsRepo; outputs: OutputsRepo };
   /** Clipping as a service: its public pages, the client portal, Stripe's webhook and the admin's client list. Needs workspaces and creator. */
   clientService?: Pick<PortalDeps, "service" | "stripe" | "mailer" | "google" | "webhookSecret" | "publicUrl" | "demo" | "now">;
+  /** The Operations page: status, and the controls that run the queue, publishing, submits and sources. */
+  operations?: Operations;
 }
 
 /** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
@@ -189,6 +193,7 @@ export function createApp({
   workspaces,
   creator,
   clientService,
+  operations,
 }: AppDeps): express.Express {
   const app = express();
   if (access) app.use(accessGate(access));
@@ -1005,6 +1010,7 @@ export function createApp({
   if (business) app.use("/api/business", businessRoutes(business));
   if (scout) app.use("/api/scout", scoutRoutes(scout));
   if (registry) app.use("/api/catalog", catalogRoutes({ registry, posts }));
+  if (operations) app.use("/api/ops", opsRoutes(operations));
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));

@@ -10,6 +10,8 @@ export interface SubmitWatchDeps {
   notifier: Notifier;
   /** Sends the uploads clipfarm does itself that are due, so their push goes out in the same round. */
   sendDirect?: () => Promise<unknown>;
+  /** Operations' "Pause all publishing": nothing waiting is sent; the submit reminders still go out. */
+  paused?: () => boolean;
   now?: () => Date;
 }
 
@@ -31,8 +33,10 @@ export class SubmitWatch {
     this.running = true;
     try {
       const { posts, publisher, notifier, sendDirect } = this.deps;
-      await publisher.sendDueHeld();
-      await sendDirect?.();
+      if (!this.deps.paused?.()) {
+        await publisher.sendDueHeld();
+        await sendDirect?.();
+      }
       await publisher.confirmSubmits();
       for (const { post, notified, reminded } of posts.awaitingSubmit()) {
         const ageMin = (this.now().getTime() - new Date(post.submit!.liveAt!).getTime()) / 60_000;

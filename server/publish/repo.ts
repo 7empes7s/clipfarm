@@ -462,13 +462,36 @@ export class PostsRepo {
       this.db
         .prepare(
           `${SELECT.replace("SELECT p.*,", "SELECT p.*, (p.status = 'scheduled' AND p.external_id IS NULL AND (p.held = 1 OR p.service = 'direct')) AS movable,")}
-           WHERE p.scheduled_at >= ? AND p.scheduled_at < ? AND p.retried_by IS NULL ORDER BY p.scheduled_at, p.id`,
+           WHERE p.scheduled_at >= ? AND p.scheduled_at < ? AND p.retried_by IS NULL AND p.skipped_at IS NULL ORDER BY p.scheduled_at, p.id`,
         )
         .all(from.toISOString(), to.toISOString()) as (PostRow & { movable: number })[]
     ).map((r) => ({ post: toPost(r), movable: r.movable === 1 }));
   }
 
   /** The post a failed post was tried again as, or null. */
+  /**
+   * Operations' publishing list: posts that still wait to go out, and failed posts of the last
+   * `failedDays` days that were neither tried again nor skipped. Soonest first.
+   */
+  waitingAndFailed(failedDays = 14): { post: Post; movable: boolean }[] {
+    const since = new Date(this.now().getTime() - failedDays * 86_400_000).toISOString();
+    return (
+      this.db
+        .prepare(
+          `${SELECT.replace("SELECT p.*,", "SELECT p.*, (p.status = 'scheduled' AND p.external_id IS NULL AND (p.held = 1 OR p.service = 'direct')) AS movable,")}
+           WHERE p.retried_by IS NULL AND p.skipped_at IS NULL AND (p.status = 'scheduled' OR (p.status = 'failed' AND p.scheduled_at >= ?))
+           ORDER BY p.scheduled_at, p.id`,
+        )
+        .all(since) as (PostRow & { movable: number })[]
+    ).map((r) => ({ post: toPost(r), movable: r.movable === 1 }));
+  }
+
+  /** "Skip": the post never goes out (a waiting one) or leaves the failed list (a failed one); the reason stays on it. */
+  skip(id: number, reason: string): Post {
+    this.db.prepare("UPDATE posts SET status = 'failed', held = 0, error = ?, skipped_at = ? WHERE id = ?").run(reason, this.now().toISOString(), id);
+    return this.get(id);
+  }
+
   retriedBy(id: number): number | null {
     return (this.db.prepare("SELECT retried_by FROM posts WHERE id = ?").pluck().get(id) as number | null | undefined) ?? null;
   }

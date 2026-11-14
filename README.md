@@ -89,6 +89,30 @@ fixed words, fake picker takes the loudest moments). Use a 40 s fake VOD so a 15
 npm run build && CLIPFARM_FAKES=1 FAKE_VOD_SEC=40 PORT=3000 npm run preview
 ```
 
+## Operations (`#ops`)
+
+Run and fix clipfarm from the phone, without the office:
+
+- **Status at a glance**: the live version and when it was deployed, the last rollback, clipfarm,
+  the job worker, Postiz and its backend up or down, disk and memory left, the provider keys
+  (OpenAI, Gemini, YouTube, Postiz, Upload-Post: their last test; **Test keys now** tests them
+  again), the YouTube quota left per app, and today's live proof. Red when anything is down.
+- **Pipeline**: running, waiting and failed jobs with their step, age and error; Retry (only while
+  the creator's permission record is in force), Move to top, Cancel; Pause or resume the worker
+  (the running job finishes, nothing new starts).
+- **Publishing**: waiting and failed posts per account; Retry (through every posting check),
+  Reschedule, Skip; **Pause all publishing** (autopilot rules stay but do not fire, waiting posts
+  and the hook lab and test campaigns hold; posting by hand still works, and posts already queued in
+  the posting service still go out).
+- **Campaigns**: each campaign's submit window, missed submits, payout steps and earnings, with
+  **Submit now** on a live post whose window is open (checks the permission record and the brief).
+- **Sources**: watched streamers with **Check now** and **Pause** (left out of the regular checks).
+- **Activity**: every tap above with who (the Cloudflare Access email on the live box) and when.
+  Cancel, Skip and Pause all publishing ask first.
+
+In demo mode `CLIPFARM_FAKE_DOWN=postiz-backend,openai` shows those stand-ins as failing, to see the
+red state without breaking anything.
+
 ## Settings (env vars)
 
 Export them in your shell or put them in a `.env` you load yourself (never commit it; see

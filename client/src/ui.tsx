@@ -39,6 +39,7 @@ const ICONS = {
   campaigns: "M4 19V10M10 19V5M16 19v-8M4 10l6-5 6 6 4-4",
   calendar: "M5 6h14v14H5zM5 10h14M9 4v4M15 4v4",
   creator: "M3.5 7h11v10h-11zM14.5 10.5l6-3.5v10l-6-3.5",
+  ops: "M12 3.5l7.5 4.25v8.5L12 20.5l-7.5-4.25v-8.5zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
 } as const;
 export type IconName = keyof typeof ICONS;
 

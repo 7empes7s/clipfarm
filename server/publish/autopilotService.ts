@@ -14,6 +14,8 @@ export interface AutopilotDeps {
   publisher: Publisher;
   clips: ClipsRepo;
   sources: SourcesRepo;
+  /** Operations' "Pause all publishing": the rules stay as they are but do not fire. */
+  paused?: () => boolean;
   now?: () => Date;
 }
 
@@ -83,7 +85,7 @@ export class Autopilot {
 
   /** One pass of every rule that is on (run every few minutes). */
   async tick(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.deps.paused?.()) return;
     this.running = true;
     try {
       for (const rule of this.deps.repo.list().filter((r) => r.enabled)) {

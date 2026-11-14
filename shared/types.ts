@@ -1067,6 +1067,8 @@ export interface WatchedCreator {
   sourceId: number | null;
   permissionState: PermissionState;
   autoIngest: boolean;
+  /** Paused in Operations: the regular checks leave it out. */
+  paused?: boolean;
   live: LiveNow | null;
   lastVod: DetectedVod | null;
   /** The workspace it belongs to (1, "Me", when left out). */

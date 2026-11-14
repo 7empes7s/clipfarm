@@ -27,6 +27,7 @@ interface CreatorRow {
   note: string;
   source_id: number | null;
   auto_ingest: number;
+  paused: number;
   live: string | null;
   workspace_id: number;
   created_at: string;
@@ -198,6 +199,12 @@ export class WatchlistRepo {
     this.db.prepare("UPDATE watchlist SET auto_ingest = ? WHERE id = ?").run(on ? 1 : 0, id);
   }
 
+  /** Operations' Pause: the regular checks leave this creator out until it is resumed ("Check now" still works). */
+  setPaused(id: number, paused: boolean): void {
+    this.row(id);
+    this.db.prepare("UPDATE watchlist SET paused = ? WHERE id = ?").run(paused ? 1 : 0, id);
+  }
+
   setLive(id: number, live: LiveNow | null): void {
     this.db.prepare("UPDATE watchlist SET live = ? WHERE id = ?").run(live ? JSON.stringify(live) : null, id);
   }
@@ -271,6 +278,7 @@ export class WatchlistRepo {
       sourceId: source?.id ?? null,
       permissionState: source?.permissionState ?? "none",
       autoIngest: r.auto_ingest === 1,
+      paused: r.paused === 1,
       live: r.live ? (JSON.parse(r.live) as LiveNow) : null,
       lastVod: last ? toDetected(last) : null,
       workspaceId: r.workspace_id ?? 1,
