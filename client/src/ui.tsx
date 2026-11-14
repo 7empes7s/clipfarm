@@ -37,6 +37,7 @@ const ICONS = {
   link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1",
   clock: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 8v4.5l3 1.5",
   campaigns: "M4 19V10M10 19V5M16 19v-8M4 10l6-5 6 6 4-4",
+  calendar: "M5 6h14v14H5zM5 10h14M9 4v4M15 4v4",
 } as const;
 export type IconName = keyof typeof ICONS;
 

@@ -4,6 +4,7 @@ import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
 import { CampaignImport } from "./CampaignImport";
+import { CalendarTab } from "./CalendarTab";
 import { CampaignsTab } from "./CampaignsTab";
 import { ClipsTab } from "./ClipsTab";
 import { DASH_VIEWS, DashboardTab, type DashView } from "./DashboardTab";
@@ -50,6 +51,7 @@ const TABS = [
   { id: "inbox", label: "Inbox" },
   { id: "approved", label: "Approved" },
   { id: "posted", label: "Posted" },
+  { id: "calendar", label: "Calendar" },
   { id: "sources", label: "Sources" },
   { id: "watchlist", label: "Watchlist" },
   { id: "campaigns", label: "Campaigns" },
@@ -180,7 +182,7 @@ export function App() {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <Icon name={t.id} />
               {t.label}
-              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && <span className="count">{counts[t.id]}</span>}
+              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && t.id !== "calendar" && <span className="count">{counts[t.id]}</span>}
             </a>
           ))}
         </nav>
@@ -199,6 +201,7 @@ export function App() {
       {(tab === "approved" || tab === "posted" || tab === "rejected") &&
         (waiting ? <Skeleton shape="card" count={2} /> : <ClipsTab key={tab} view={tab} clips={clips} sources={sources} onChange={refresh} focus={sub} />)}
       {tab === "stats" && <StatsTab />}
+      {tab === "calendar" && <CalendarTab sub={sub} sources={sources} />}
       {tab === "campaigns" && <CampaignsTab sources={sources} sub={sub} />}
       {tab === "settings" && <SettingsTab focus={sub} />}
       {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
