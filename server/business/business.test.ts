@@ -235,7 +235,7 @@ describe("dashboard ranges, groups and exports", () => {
     const board = (await request(t.app).get("/api/business?range=30d")).body;
     expect(board.days).toHaveLength(30);
     expect(board.groups.platform[0]).toMatchObject({ label: "TikTok", posts: 3 });
-    expect(board.groups.workspace[0]).toMatchObject({ label: "Main" });
+    expect(board.groups.workspace[0]).toMatchObject({ label: "Me" });
     expect(board.bestClips[0]).toMatchObject({ clipId: a.id, views: 11_100 });
     expect(board.bestHooks[0]).toMatchObject({ hook: "He did NOT see that" });
   });

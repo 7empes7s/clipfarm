@@ -291,6 +291,28 @@ Redirect URIs to paste in the apps (and to let through Cloudflare Access, see
 The proxy: one residential or ISP ("static residential") proxy with a fixed address, from any
 provider, is enough for the burner group. The checklist on the dashboard says what is still open.
 
+## Creator mode and workspaces
+
+Your own long videos, or a client's, become ready-to-post clips (**Creator** tab):
+
+- **Add a video**: upload a file (sent in 8 MB pieces; if the connection drops, pick the same file
+  again and it carries on) or paste a link: a YouTube, Twitch or Kick video, a channel (YouTube
+  `@name`, Twitch, Kick), a podcast RSS feed, or a Google Drive / Dropbox file. A channel is put on
+  the watchlist with every new video clipped; a feed's newest episode is clipped now and later
+  episodes with each watchlist check. Either way the clips wait in the Inbox.
+- **Own content permission**: each show gets an "own content" record with who owns the videos and
+  the dated tick "I own these videos, or have the owner's OK". Without the tick nothing posts
+  (`clipfarm-ops source add … --kind own-content --owner "<name>" --attest` does the same).
+- **Other formats**: after the 9:16 shorts, each own video also gets square (1:1) and wide (16:9) cuts
+  of its 3 best moments, a 3-8 minute best-of when there is enough, and audiograms (waveform and
+  captions) for sound-only videos, each with a suggested title, description, chapters and thumbnail.
+  These suggestions are written without AI. A campaign that bans AI ("No AI content", or the switch
+  in its form) turns clipfarm's AI hooks and thumbnails off for its clips.
+- **Workspaces**: the header's switcher picks Me or a client. Each workspace has its own shows,
+  clips, watched channels, brand (handle, caption colour, closing line) and posting accounts (move an
+  account in its settings); a clip only ever posts to its own workspace's accounts. There is no
+  billing yet.
+
 ## Campaign import (Whop / Content Rewards)
 
 In Sources, **Paste a campaign link** (whop.com or contentrewards.com). The server reads the public

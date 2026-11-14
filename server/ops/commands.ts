@@ -45,6 +45,7 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
                           [--min-views <n>] [--expires <date>]
       Adds a creator with its permission record. --kind: whop-campaign, direct-permission, own-content,
       or experiment (burner accounts only; needs --note "<what is tested>" instead of --campaign).
+      own-content posts only with --owner "<who owns the videos>" --attest (the dated "I own these videos").
   clipfarm-ops source list
   clipfarm-ops source remove <id>
   clipfarm-ops run latest <source id or channel link> [--count N]
@@ -143,6 +144,8 @@ export function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
       rules: { type: "string" },
       banned: { type: "string" },
       note: { type: "string" },
+      owner: { type: "string" },
+      attest: { type: "boolean", default: false },
       platforms: { type: "string", default: "tiktok,youtube,instagram" },
       rate: { type: "string" },
       "min-views": { type: "string" },
@@ -188,6 +191,8 @@ export function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
         minViews: number(values["min-views"]),
         allowedPlatforms: values.platforms.split(",").map((p) => p.trim()),
         expiresAt: values.expires,
+        ownerName: values.owner,
+        attested: values.attest,
       },
     }),
   );

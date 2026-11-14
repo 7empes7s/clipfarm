@@ -48,12 +48,39 @@ import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/tre
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 import type { ProofInfo } from "../../shared/proof";
+import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
+
+const WS_KEY = "clipfarm.workspace";
+
+function storedWorkspace(): number {
+  try {
+    return Number(localStorage.getItem(WS_KEY)) || 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** The workspace (me, or a client) every call is about; the header's switcher changes it. */
+let workspace = storedWorkspace();
+
+export function currentWorkspace(): number {
+  return workspace;
+}
+
+export function setWorkspace(id: number): void {
+  workspace = id;
+  try {
+    localStorage.setItem(WS_KEY, String(id));
+  } catch {
+    /* private mode: the choice lasts until the page is closed */
+  }
+}
 import type { BusinessBoard, HealthBoard, RangeId } from "../../shared/business";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+    headers: { "X-Workspace": String(workspace), ...(init?.body ? { "Content-Type": "application/json" } : {}) },
   });
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
@@ -61,6 +88,26 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  workspaces: () => call<WorkspaceSummary[]>("/api/workspaces"),
+  addWorkspace: (name: string) => call<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
+  saveWorkspace: (id: number, name: string, brand: Brand) =>
+    call<Workspace>(`/api/workspaces/${id}`, { method: "PUT", body: JSON.stringify({ name, brand }) }),
+  accountWorkspace: (accountId: string, workspaceId: number) =>
+    call<unknown>(`/api/accounts/${encodeURIComponent(accountId)}/workspace`, { method: "PUT", body: JSON.stringify({ workspaceId }) }),
+  creator: () => call<CreatorInfo>("/api/creator"),
+  addCreatorVideo: (input: { sourceId: number | null; name: string; ownerName: string; attested: boolean; link: string | null; uploadId: number | null }) =>
+    call<{ source: Source; vods: Vod[]; watching: WatchedCreator | null; feedTitle: string | null }>("/api/creator", { method: "POST", body: JSON.stringify(input) }),
+  startUpload: (fileName: string, sizeBytes: number) => call<Upload>("/api/uploads", { method: "POST", body: JSON.stringify({ fileName, sizeBytes }) }),
+  upload: (id: number) => call<Upload>(`/api/uploads/${id}`),
+  /** Sends one piece of a file; a 409 means "carry on from where the server says". */
+  uploadPiece: async (id: number, offset: number, piece: Blob): Promise<Response> =>
+    fetch(`/api/uploads/${id}?offset=${offset}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream", "X-Workspace": String(workspace) },
+      body: piece,
+    }),
+  attest: (permissionId: number, ownerName: string) =>
+    call<Source>(`/api/permissions/${permissionId}/attest`, { method: "POST", body: JSON.stringify({ ownerName }) }),
   sources: () => call<Source[]>("/api/sources"),
   addSource: (input: NewSourceInput) => call<Source>("/api/sources", { method: "POST", body: JSON.stringify(input) }),
   readCampaign: (url: string, text?: string) =>

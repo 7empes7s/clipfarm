@@ -24,6 +24,8 @@ export interface BusinessDeps {
   growth: GrowthLab;
   eurPerUsd: number;
   computeUsdPerHour: number;
+  /** Workspace names by id ("Me" and each client). */
+  workspaceNames?: () => Map<number, string>;
   /** True in demo mode: every number is made up, and the page says so. */
   demo: boolean;
   now?: () => Date;
@@ -67,6 +69,7 @@ export class BusinessService {
       computeUsdPerHour: this.deps.computeUsdPerHour,
       digest: growth.digest(),
       demo: this.deps.demo,
+      workspaceNames: this.deps.workspaceNames?.(),
     });
   }
 

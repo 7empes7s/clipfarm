@@ -30,7 +30,7 @@ const fact = (o: Partial<PostFacts>): PostFacts => ({
   campaignKey: "1",
   campaign: "TJR · contentrewards.com",
   sourceName: "TJR",
-  workspace: "Main",
+  workspace: "Me",
   postedAt: "2026-11-13T10:00:00.000Z",
   views: null,
   likes: null,

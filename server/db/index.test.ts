@@ -85,6 +85,13 @@ describe("migrate", () => {
     expect(() => migrate(db)).not.toThrow();
     // A waiting post keeps the video of its hook variant.
     expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at"]));
+    // Creator mode: workspaces ("Me" first), uploads, outputs, and the owner's dated tick on own-content records.
+    expect(tables(db)).toEqual(expect.arrayContaining(["workspaces", "uploads", "outputs"]));
+    expect(db.prepare("SELECT name FROM workspaces WHERE id = 1").pluck().get()).toBe("Me");
+    expect(db.prepare("SELECT name FROM pragma_table_info('permissions')").pluck().all()).toEqual(expect.arrayContaining(["owner_name", "attested_at"]));
+    for (const t of ["sources", "posting_accounts", "watchlist"]) {
+      expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
+    }
     // Campaign payouts (the CSV import) come after the submit window.
     expect(tables(db)).toContain("campaign_payouts");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);

@@ -88,11 +88,14 @@ export interface BoardInput {
   computeUsdPerHour: number;
   digest: { title: string; lines: string[] };
   demo: boolean;
+  /** Workspace names by id ("Me" and each client); a missing one shows as "Me". */
+  workspaceNames?: Map<number, string>;
 }
 
 /** One posted post with its numbers. Experiment posts (burner tests) earn nothing and stay out. */
-export function postFacts(input: Pick<BoardInput, "clips" | "posts" | "sources" | "metrics" | "payouts">): PostFacts[] {
+export function postFacts(input: Pick<BoardInput, "clips" | "posts" | "sources" | "metrics" | "payouts" | "workspaceNames">): PostFacts[] {
   const clips = new Map(input.clips.map((c) => [c.id, c]));
+  const workspaceOf = new Map(input.sources.map((s) => [s.id, input.workspaceNames?.get(s.workspaceId) ?? "Me"]));
   const paid = new Map(input.payouts.filter((p) => p.postId !== null && p.status === "paid").map((p) => [p.postId!, p.payoutUsd]));
   return input.posts
     .filter((p) => p.status === "posted" && !p.experiment)
@@ -111,7 +114,7 @@ export function postFacts(input: Pick<BoardInput, "clips" | "posts" | "sources" 
         campaignKey: campaign.key,
         campaign: campaign.label,
         sourceName: p.creatorName,
-        workspace: p.groupName ?? "Main",
+        workspace: workspaceOf.get(p.sourceId) ?? "Me",
         postedAt: when(p),
         views: p.views,
         likes: m?.likes ?? null,
