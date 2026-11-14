@@ -423,7 +423,7 @@ export class ClipsRepo {
       n: v.n,
       label: v.label,
       durationSec: v.duration_sec,
-      videoUrl: `/api/clips/${id}/versions/${v.id}/video`,
+      videoUrl: `/api/clips/${id}/renders/${v.id}/video`,
       current: v.file_path === r.file_path,
       createdAt: v.created_at,
     }));

@@ -11,6 +11,8 @@ import { engineSetupHandler } from "./engine/setup.js";
 import { proxyMaker, videoReranker } from "./google/rerank.js";
 import { THUMBS_JOB, thumbsHandler, ThumbsRepo } from "./google/thumbs.js";
 import { Isolation } from "./isolation/isolation.js";
+import { BusinessRepo } from "./business/repo.js";
+import { BusinessService } from "./business/service.js";
 import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
 import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
@@ -30,7 +32,10 @@ import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
 import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { DirectPoster } from "./publish/direct/direct.js";
+import { AutopilotRepo } from "./publish/autopilotRepo.js";
+import { Autopilot } from "./publish/autopilotService.js";
 import { Publisher } from "./publish/publisher.js";
+import { VersionsRepo } from "./publish/versionsRepo.js";
 import { PostsRepo } from "./publish/repo.js";
 import { PoliteFetcher } from "./scout/polite.js";
 import { ScoutRepo } from "./scout/repo.js";
@@ -63,10 +68,12 @@ export interface Runtime {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  autopilot: Autopilot;
   isolation: Isolation;
   direct: DirectPoster;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
+  business: BusinessService;
   scout: Scout;
   queue: JobQueue;
   watchRepo: WatchlistRepo;
@@ -110,11 +117,15 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     service: config.postingService,
     isolation,
     submitWindow: true,
+    holdLater: true,
+    versions: new VersionsRepo(db),
+    covers: (clipId) => thumbs.listForClip(clipId).map((t) => ({ id: t.id, label: t.label, url: `/api/thumbnails/${t.id}/cover` })),
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
   });
   const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
   publisher.useDirect(direct);
+  const autopilot = new Autopilot({ repo: new AutopilotRepo(db), publisher, clips, sources });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const workspaces = new WorkspacesRepo(db);
@@ -165,6 +176,22 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     platformStats: config.platformStats,
     notifier,
     computeUsdPerHour: config.computeUsdPerHour,
+    digestLines: () => business.digestLines(),
+  });
+  const business: BusinessService = new BusinessService({
+    repo: new BusinessRepo(db),
+    clips,
+    posts,
+    sources,
+    // The queue is made further down (its jobs need the growth lab).
+    jobs: () => queue.list(500),
+    publisher,
+    isolation,
+    growth,
+    eurPerUsd: config.google.eurPerUsd,
+    computeUsdPerHour: config.computeUsdPerHour,
+    demo: config.fakes,
+    workspaceNames: () => new Map(workspaces.list().map((w) => [w.id, w.name])),
   });
   const scout: Scout = new Scout({
     repo: new ScoutRepo(db),
@@ -278,6 +305,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     pollMs: opts.pollMs,
   });
   return {
+    autopilot,
     settings,
     config,
     db,
@@ -292,6 +320,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     direct,
     accountStats,
     growth,
+    business,
     scout,
     queue,
     watchRepo,

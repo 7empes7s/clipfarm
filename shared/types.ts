@@ -9,7 +9,7 @@ import type { AiGate, BrandTemplate, ClipLook, TimeRange } from "./studio.js";
 export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content", "public-allowance", "experiment"] as const;
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
-export const PLATFORMS = ["tiktok", "youtube", "instagram", "x"] as const;
+export const PLATFORMS = ["tiktok", "youtube", "instagram", "x", "facebook", "threads", "linkedin", "bluesky"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
@@ -17,6 +17,10 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   youtube: "YouTube Shorts",
   instagram: "Instagram Reels",
   x: "X",
+  facebook: "Facebook Reels",
+  threads: "Threads",
+  linkedin: "LinkedIn",
+  bluesky: "Bluesky",
 };
 
 export const PERMISSION_KIND_LABELS: Record<PermissionKind, string> = {
@@ -707,6 +711,9 @@ export interface Post {
   /** Tapped by hand once Whop approved the submission, and once it paid. */
   whopApprovedAt: string | null;
   whopPaidAt: string | null;
+  /** Tapped by hand when the campaign turned the submission down, with its reason. */
+  whopRejectedAt: string | null;
+  whopRejectReason: string | null;
   /** When an approved submission's payout should settle: approval plus Whop's hold. */
   whopPayoutAt: string | null;
   /** Posted under an experiment record (always on a burner account). */
@@ -756,6 +763,8 @@ export interface PlannedPost {
   permissionId: number;
   caption: string;
   scheduledAt: string;
+  /** Why it would wait past the wanted time (a platform's limit, the submit hours), in plain words. */
+  note?: string | null;
 }
 
 export interface StatsRow {

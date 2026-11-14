@@ -1,13 +1,14 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Clip, Post, PostingInfo, Source, WhopStep } from "../../shared/types";
 import { noAccountReason } from "../../shared/routing";
-import { submitCountdown, submitTarget } from "./submitFormat";
+import { clipTarget, submitCountdown, submitTarget } from "./submitFormat";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS, WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
+import { VersionsSheet } from "./VersionsSheet";
 import { ThumbSheet } from "./ThumbSheet";
 import { QualityChips } from "./QualityChips";
 import { shortDate, usd } from "./format";
@@ -106,9 +107,12 @@ export function ClipsTab({
 
   const closePost = useCallback(() => setPosting(null), []);
   const closeExport = useCallback(() => setExporting(null), []);
+  const [versionsOf, setVersionsOf] = useState<Clip | null>(null);
+  const closeVersions = useCallback(() => setVersionsOf(null), []);
   const closeThumbs = useCallback(() => setThumbsOf(null), []);
   const target = submitTarget(focus);
-  const targetClip = posts.find((p) => p.id === target)?.clipId;
+  // "#posted/clip-12" (a tap on the dashboard) opens clip 12 first.
+  const targetClip = posts.find((p) => p.id === target)?.clipId ?? clipTarget(focus);
   // The clip a push opened comes first.
   const clips = filterClips(allClips, view).sort((a, b) => Number(b.id === targetClip) - Number(a.id === targetClip));
 
@@ -195,6 +199,9 @@ export function ClipsTab({
                         <button type="button" onClick={() => setThumbsOf(clip)}>
                           Thumbnail
                         </button>
+                        <button type="button" onClick={() => setVersionsOf(clip)}>
+                          Versions
+                        </button>
                       </>
                     )}
                     {clip.postCount === 0 && (
@@ -236,6 +243,7 @@ export function ClipsTab({
         />
       )}
       {thumbsOf && <ThumbSheet clip={thumbsOf} onClose={closeThumbs} />}
+      {versionsOf && <VersionsSheet clipId={versionsOf.id} title={versionsOf.title} onClose={closeVersions} />}
       {exporting && (
         <ExportSheet
           clip={exporting}

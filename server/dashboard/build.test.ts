@@ -64,6 +64,8 @@ const post = (o: Partial<Post> & Pick<Post, "permissionId">): Post => ({
   whopSubmittedAt: null,
   whopApprovedAt: null,
   whopPaidAt: null,
+  whopRejectedAt: null,
+  whopRejectReason: null,
   whopPayoutAt: null,
   experiment: false,
   flags: { claim: null, removal: null, strike: null },

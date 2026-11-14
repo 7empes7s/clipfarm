@@ -50,6 +50,7 @@ import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 import type { ProofInfo } from "../../shared/proof";
 import type { BrandTemplate, BrandTemplateInput } from "../../shared/studio";
 import type { ClipVersion, StudioEditInput, StudioInfo } from "../../shared/types";
+import type { AutopilotInfo, AutopilotRule, AutopilotStep, CalendarInfo, ClipVersions } from "../../shared/publishing";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
 
 const WS_KEY = "clipfarm.workspace";
@@ -77,6 +78,7 @@ export function setWorkspace(id: number): void {
     /* private mode: the choice lasts until the page is closed */
   }
 }
+import type { BusinessBoard, HealthBoard, RangeId } from "../../shared/business";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -142,9 +144,9 @@ export const api = {
     call<{ clip: Clip; job: Job }>(`/api/clips/${id}/studio`, { method: "POST", body: JSON.stringify(edit) }),
   splitClip: (id: number, edit: StudioEditInput, atSec: number) =>
     call<{ clips: Clip[] }>(`/api/clips/${id}/split`, { method: "POST", body: JSON.stringify({ ...edit, atSec }) }),
-  restoreVersion: (id: number, versionId: number) => call<Clip>(`/api/clips/${id}/versions/${versionId}/restore`, { method: "POST" }),
+  restoreVersion: (id: number, versionId: number) => call<Clip>(`/api/clips/${id}/renders/${versionId}/restore`, { method: "POST" }),
   revertClip: (id: number) => call<Clip>(`/api/clips/${id}/revert`, { method: "POST" }),
-  clipVersions: (id: number) => call<ClipVersion[]>(`/api/clips/${id}/versions`),
+  clipVersions: (id: number) => call<ClipVersion[]>(`/api/clips/${id}/renders`),
   hookIdeas: (id: number, ai: boolean) =>
     call<{ hook: string; title: string }[]>(`/api/clips/${id}/hook-ideas`, { method: "POST", body: JSON.stringify({ ai }) }),
   templates: () => call<BrandTemplate[]>("/api/templates"),
@@ -169,6 +171,22 @@ export const api = {
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),
   markWhop: (id: number, step: WhopStep, on: boolean) =>
     call<Post>(`/api/posts/${id}/whop`, { method: "POST", body: JSON.stringify({ step, on }) }),
+  rejectWhop: (id: number, reason: string | null) => call<Post>(`/api/posts/${id}/whop-reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  calendar: (from: Date, to: Date) => call<CalendarInfo>(`/api/calendar?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`),
+  saveCalendarSettings: (tiktokAudited: boolean) =>
+    call<{ tiktokAudited: boolean }>("/api/calendar/settings", { method: "PUT", body: JSON.stringify({ tiktokAudited }) }),
+  reschedule: (id: number, at: Date) =>
+    call<{ post: Post; reasons: string[] }>(`/api/posts/${id}/reschedule`, { method: "POST", body: JSON.stringify({ at: at.toISOString() }) }),
+  retryPost: (id: number) => call<PostOutcome>(`/api/posts/${id}/retry`, { method: "POST" }),
+  versions: (clipId: number) => call<ClipVersions>(`/api/clips/${clipId}/versions`),
+  saveVersion: (clipId: number, platform: Platform, v: { title: string; caption: string; hashtags: string; coverId: number | null }) =>
+    call<ClipVersions>(`/api/clips/${clipId}/versions/${platform}`, { method: "PUT", body: JSON.stringify(v) }),
+  resetVersion: (clipId: number, platform: Platform) => call<ClipVersions>(`/api/clips/${clipId}/versions/${platform}`, { method: "DELETE" }),
+  autopilot: () => call<AutopilotInfo>("/api/autopilot"),
+  saveRule: (id: number | null, rule: Omit<AutopilotRule, "id">) =>
+    call<AutopilotRule>(id === null ? "/api/autopilot/rules" : `/api/autopilot/rules/${id}`, { method: id === null ? "POST" : "PUT", body: JSON.stringify(rule) }),
+  deleteRule: (id: number) => call<unknown>(`/api/autopilot/rules/${id}`, { method: "DELETE" }),
+  dryRunRule: (id: number) => call<AutopilotStep[]>(`/api/autopilot/rules/${id}/dry-run`, { method: "POST" }),
   flagPost: (id: number, flag: PostFlag, on: boolean) =>
     call<Post>(`/api/posts/${id}/flags`, { method: "POST", body: JSON.stringify({ flag, on }) }),
   stats: () => call<Stats>("/api/stats"),
@@ -223,6 +241,15 @@ export const api = {
   saveHookLab: (change: Partial<HookLabSettings>) => call<HookLabInfo>("/api/hooklab/settings", { method: "PUT", body: JSON.stringify(change) }),
   runHookLab: () => call<HookLabInfo>("/api/hooklab/run", { method: "POST" }),
   growth: () => call<GrowthInfo>("/api/growth"),
+  business: (range: RangeId) => call<BusinessBoard>(`/api/business?range=${range}`),
+  businessHealth: () => call<HealthBoard>("/api/business/health"),
+  /** A campaign's CSV export, sent as it is. */
+  importPayouts: async (csv: string) => {
+    const res = await fetch("/api/business/payouts", { method: "POST", headers: { "Content-Type": "text/csv" }, body: csv });
+    const body = (await res.json().catch(() => ({}))) as { imported: number; matched: number; skipped: number; unmatched: string[]; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
+    return body;
+  },
   addCampaign: (input: GrowthCampaignInput) => call<GrowthCampaign>("/api/growth/campaigns", { method: "POST", body: JSON.stringify(input) }),
   campaignAction: (id: number, action: "start" | "pause" | "stop") => call<GrowthCampaign>(`/api/growth/campaigns/${id}/${action}`, { method: "POST" }),
   removeCampaign: (id: number) => call<unknown>(`/api/growth/campaigns/${id}`, { method: "DELETE" }),

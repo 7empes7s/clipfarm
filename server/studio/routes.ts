@@ -79,17 +79,17 @@ export function studioRoutes(deps: StudioDeps): Router {
     res.status(202).json({ clips: made.map((c) => clips.get(c.id)) });
   });
 
-  r.get("/clips/:id/versions", (req, res) => {
+  r.get("/clips/:id/renders", (req, res) => {
     res.json(clips.versions(idParam(req.params.id)));
   });
 
-  r.get("/clips/:id/versions/:vid/video", (req, res, next) => {
+  r.get("/clips/:id/renders/:vid/video", (req, res, next) => {
     const file = clips.versionFile(idParam(req.params.id), idParam(req.params.vid));
     if (!existsSync(file)) throw new NotFoundError("The video file of this version is missing on the server.");
     res.sendFile(file, { dotfiles: "allow" }, (err) => err && !res.headersSent && next(err));
   });
 
-  r.post("/clips/:id/versions/:vid/restore", (req, res) => {
+  r.post("/clips/:id/renders/:vid/restore", (req, res) => {
     res.json(clips.restoreVersion(idParam(req.params.id), idParam(req.params.vid)));
   });
 

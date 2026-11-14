@@ -108,7 +108,7 @@ describe("Studio export", () => {
     clips.setRendered(clip.id, v2, 30, null);
     // Every export is kept on disk.
     expect([original, v1, v2].every(existsSync)).toBe(true);
-    const versions = (await request(app).get(`/api/clips/${clip.id}/versions`)).body;
+    const versions = (await request(app).get(`/api/clips/${clip.id}/renders`)).body;
     expect(versions.map((v: { n: number; current: boolean }) => [v.n, v.current])).toEqual([[2, true], [1, false], [0, false]]);
 
     const res = await request(app).post(`/api/clips/${clip.id}/revert`).expect(200);
@@ -116,7 +116,7 @@ describe("Studio export", () => {
     expect(clips.filePath(clip.id)).toBe(original);
     // Back to version 1: its cut and hook come back with its file.
     const one = versions.find((v: { n: number }) => v.n === 1);
-    const back = await request(app).post(`/api/clips/${clip.id}/versions/${one.id}/restore`).expect(200);
+    const back = await request(app).post(`/api/clips/${clip.id}/renders/${one.id}/restore`).expect(200);
     expect(back.body).toMatchObject({ hook: "NO WAY", cuts: [{ startSec: 10, endSec: 10.4 }], durationSec: 29.6 });
     expect(clips.filePath(clip.id)).toBe(v1);
   });

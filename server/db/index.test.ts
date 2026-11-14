@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships, proof runs included; the submit window's columns, Creator mode and the Studio's tables come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 3;
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables, the campaign payouts and the Studio's tables come after those. */
+const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -84,7 +84,10 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
     // A waiting post keeps the video of its hook variant.
-    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at"]));
+    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(
+      expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at", "whop_rejected_at", "retried_by"]),
+    );
+    expect(tables(db)).toEqual(expect.arrayContaining(["post_versions", "autopilot_rules", "autopilot_log"]));
     // Creator mode: workspaces ("Me" first), uploads, outputs, and the owner's dated tick on own-content records.
     expect(tables(db)).toEqual(expect.arrayContaining(["workspaces", "uploads", "outputs"]));
     expect(db.prepare("SELECT name FROM workspaces WHERE id = 1").pluck().get()).toBe("Me");
@@ -92,6 +95,8 @@ describe("migrate", () => {
     for (const t of ["sources", "posting_accounts", "watchlist"]) {
       expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
     }
+    // Campaign payouts (the CSV import) come after the submit window.
+    expect(tables(db)).toContain("campaign_payouts");
     // The Studio: an edit list and look per clip, kept versions and brand templates.
     expect(db.prepare("SELECT name FROM pragma_table_info('clips')").pluck().all()).toEqual(expect.arrayContaining(["cuts", "look"]));
     expect(tables(db)).toEqual(expect.arrayContaining(["clip_versions", "brand_templates"]));
