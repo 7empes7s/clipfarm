@@ -142,6 +142,13 @@ describe("buildCaption", () => {
     );
   });
 
+  it("adds the brand template's hashtags after the required ones, without repeats; on X they give way to the title", () => {
+    const caption = buildCaption({ ...base, platform: "tiktok", brandTags: ["#gta6", "#ad"] });
+    expect(caption.split("\n").at(-1)).toBe("#ad #BigStreamerClips #gta6");
+    const long = "x".repeat(250);
+    expect(buildCaption({ ...base, title: long, platform: "x", brandTags: ["#gta6"] })).not.toContain("#gta6");
+  });
+
   it("does not repeat a link that is the channel link, and strips trailing punctuation", () => {
     const caption = buildCaption({ ...base, briefRules: "Link https://www.twitch.tv/bigstreamer.", platform: "youtube" });
     expect(caption).toBe("He actually landed the jump\n\nCredit: Big Streamer https://www.twitch.tv/bigstreamer");

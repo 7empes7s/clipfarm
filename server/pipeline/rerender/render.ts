@@ -10,15 +10,40 @@ import { checkQuality } from "../polish/quality.js";
 import { preparePolish } from "../polish/run.js";
 import { wordsInWindow } from "../../clips/edit.js";
 import { reactionPeak } from "../polish/plan.js";
-import { planRender } from "./plan.js";
+import { editedLength, editedWords, keptSegments, toEditedTime } from "../../../shared/studio.js";
+import { planConcat, planRender } from "./plan.js";
 
 export const RENDER_CLIP_JOB = "render-clip";
 
 /**
  * Cuts and lays out one clip from its master into `outPath` (1080×1920, captions burned in, with the
- * finishing touches the clip has turned on), then checks the result.
+ * finishing touches the clip has turned on), then checks the result. A Studio edit list that leaves
+ * more than one piece is first joined into one file in `tmpDir`, then rendered like any clip.
  */
 export async function renderClip(
+  input: RenderInput & { faceCam: FaceCam | null },
+  outPath: string,
+  tmpDir: string,
+  signal?: AbortSignal,
+): Promise<{ durationSec: number; quality: ClipQuality }> {
+  const segments = keptSegments(input.startSec, input.endSec, input.cuts ?? []);
+  if (segments.length === 0) throw new Error("The edit cuts out the whole clip.");
+  if (segments.length === 1) return renderWindow({ ...input, ...segments[0]! }, outPath, tmpDir, signal);
+  const master = await probeVideo(input.masterPath, signal);
+  const joined = join(tmpDir, "edited.mp4");
+  await run("ffmpeg", planConcat({ masterPath: input.masterPath, outPath: joined, hasAudio: master.hasAudio, segments }).args, { signal });
+  const peak = input.peakSec === null ? null : toEditedTime(input.peakSec, segments);
+  const out = await renderWindow(
+    { ...input, masterPath: joined, startSec: 0, endSec: editedLength(segments), captionWords: editedWords(input.captionWords, segments), peakSec: peak },
+    outPath,
+    tmpDir,
+    signal,
+  );
+  // A fix is in seconds of the joined file, not the master: the Studio is the place to change this clip.
+  return { ...out, quality: { ...out.quality, fix: null } };
+}
+
+async function renderWindow(
   input: RenderInput & { faceCam: FaceCam | null },
   outPath: string,
   tmpDir: string,
@@ -45,7 +70,7 @@ export async function renderClip(
     tmpDir,
     signal,
   });
-  const plan = planRender({ ...input, outPath, srcW: master.width, srcH: master.height, polish });
+  const plan = planRender({ ...input, outPath, srcW: master.width, srcH: master.height, polish, look: input.look ?? undefined });
   if (plan.ass) await writeFile(join(tmpDir, "captions.ass"), plan.ass);
   await run("ffmpeg", plan.args, { signal, cwd: tmpDir });
   const quality = await checkQuality(outPath, { ass: plan.ass, effects: input.effects, startSec: input.startSec, signal });

@@ -1,6 +1,7 @@
 import { SubmitHoursCard } from "./SubmitWindow";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import type { IntegrationId, IntegrationStatus, SettingField, SettingsInfo } from "../../shared/types";
+import { TemplatesSettings } from "./TemplatesSettings";
 import { AccountsSettings } from "./AccountsSettings";
 import { api } from "./api";
 import { shortDate } from "./format";
@@ -213,6 +214,7 @@ export function SettingsTab({ focus }: { focus: string | undefined }) {
         </ul>
       )}
       <AccountsSettings focus={focus === "accounts"} />
+      <TemplatesSettings focus={focus === "templates"} />
       <AutoModeCard />
       <SubmitHoursCard />
       <div className="card look" data-testid="settings-look">

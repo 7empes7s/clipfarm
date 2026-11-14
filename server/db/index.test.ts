@@ -22,7 +22,7 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables, the campaign payouts and the chat column come after those. */
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables, the campaign payouts, the Studio's tables and the chat column come after those. */
 const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
@@ -99,6 +99,9 @@ describe("migrate", () => {
     }
     // Campaign payouts (the CSV import) come after the submit window.
     expect(tables(db)).toContain("campaign_payouts");
+    // The Studio: an edit list and look per clip, kept versions and brand templates.
+    expect(db.prepare("SELECT name FROM pragma_table_info('clips')").pluck().all()).toEqual(expect.arrayContaining(["cuts", "look"]));
+    expect(tables(db)).toEqual(expect.arrayContaining(["clip_versions", "brand_templates"]));
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

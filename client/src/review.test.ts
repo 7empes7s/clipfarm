@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_LOOK } from "../../shared/studio";
 import type { Clip, Job, Source } from "../../shared/types";
 import { DEFAULT_EFFECTS } from "../../shared/types";
 import { clipView, decide, filterClips, inboxQueue, merge, nextAfter, tabCounts, undo } from "./review";
@@ -22,6 +23,8 @@ function clip(id: number, patch: Partial<Clip> = {}): Clip {
     endSec: 20,
     masterDurationSec: 30,
     captionWords: [],
+    cuts: [],
+    look: DEFAULT_LOOK,
     postCount: 0,
     experiment: false,
     proof: false,

@@ -48,6 +48,8 @@ import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/tre
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 import type { ProofInfo } from "../../shared/proof";
+import type { BrandTemplate, BrandTemplateInput } from "../../shared/studio";
+import type { ClipVersion, StudioEditInput, StudioInfo } from "../../shared/types";
 import type { AutopilotInfo, AutopilotRule, AutopilotStep, CalendarInfo, ClipVersions } from "../../shared/publishing";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
 
@@ -137,6 +139,20 @@ export const api = {
   undoReview: () => call<Clip>("/api/clips/undo", { method: "POST" }),
   editClip: (id: number, edit: ClipEditInput) =>
     call<{ clip: Clip; job: Job }>(`/api/clips/${id}/edit`, { method: "POST", body: JSON.stringify(edit) }),
+  studio: (id: number) => call<StudioInfo>(`/api/clips/${id}/studio`),
+  studioExport: (id: number, edit: StudioEditInput) =>
+    call<{ clip: Clip; job: Job }>(`/api/clips/${id}/studio`, { method: "POST", body: JSON.stringify(edit) }),
+  splitClip: (id: number, edit: StudioEditInput, atSec: number) =>
+    call<{ clips: Clip[] }>(`/api/clips/${id}/split`, { method: "POST", body: JSON.stringify({ ...edit, atSec }) }),
+  restoreVersion: (id: number, versionId: number) => call<Clip>(`/api/clips/${id}/renders/${versionId}/restore`, { method: "POST" }),
+  revertClip: (id: number) => call<Clip>(`/api/clips/${id}/revert`, { method: "POST" }),
+  clipVersions: (id: number) => call<ClipVersion[]>(`/api/clips/${id}/renders`),
+  hookIdeas: (id: number, ai: boolean) =>
+    call<{ hook: string; title: string }[]>(`/api/clips/${id}/hook-ideas`, { method: "POST", body: JSON.stringify({ ai }) }),
+  templates: () => call<BrandTemplate[]>("/api/templates"),
+  addTemplate: (t: BrandTemplateInput) => call<BrandTemplate>("/api/templates", { method: "POST", body: JSON.stringify(t) }),
+  saveTemplate: (id: number, t: BrandTemplateInput) => call<BrandTemplate>(`/api/templates/${id}`, { method: "PUT", body: JSON.stringify(t) }),
+  removeTemplate: (id: number) => call<unknown>(`/api/templates/${id}`, { method: "DELETE" }),
   fixClip: (id: number) => call<{ clip: Clip; job: Job }>(`/api/clips/${id}/fix`, { method: "POST" }),
   setFaceCam: (sourceId: number, faceCam: FaceCam | null) =>
     call<Source>(`/api/sources/${sourceId}/face-cam`, { method: "PUT", body: JSON.stringify(faceCam ?? { clear: true }) }),
