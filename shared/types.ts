@@ -8,7 +8,7 @@ import type { CampaignSummary, Recommendation } from "./growth.js";
 export const PERMISSION_KINDS = ["whop-campaign", "direct-permission", "own-content", "public-allowance", "experiment"] as const;
 export type PermissionKind = (typeof PERMISSION_KINDS)[number];
 
-export const PLATFORMS = ["tiktok", "youtube", "instagram", "x"] as const;
+export const PLATFORMS = ["tiktok", "youtube", "instagram", "x", "facebook", "threads", "linkedin", "bluesky"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 export const PLATFORM_LABELS: Record<Platform, string> = {
@@ -16,6 +16,10 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   youtube: "YouTube Shorts",
   instagram: "Instagram Reels",
   x: "X",
+  facebook: "Facebook Reels",
+  threads: "Threads",
+  linkedin: "LinkedIn",
+  bluesky: "Bluesky",
 };
 
 export const PERMISSION_KIND_LABELS: Record<PermissionKind, string> = {

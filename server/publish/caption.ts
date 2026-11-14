@@ -1,12 +1,9 @@
 import type { CampaignRules, Platform } from "../../shared/types.js";
+import { PLATFORMS } from "../../shared/types.js";
+import { PLATFORM_RULES } from "../../shared/publishing.js";
 
-/** Longest caption each platform takes (YouTube's description, TikTok/Instagram captions, an X post). */
-export const CAPTION_LIMITS: Record<Platform, number> = {
-  tiktok: 2200,
-  youtube: 5000,
-  instagram: 2200,
-  x: 280,
-};
+/** Longest caption each platform takes (YouTube's description, TikTok/Instagram captions, an X post…). */
+export const CAPTION_LIMITS = Object.fromEntries(PLATFORMS.map((p) => [p, PLATFORM_RULES[p].captionMax])) as Record<Platform, number>;
 
 export interface CaptionInput {
   title: string;

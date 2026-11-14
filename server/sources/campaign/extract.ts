@@ -97,6 +97,11 @@ const PLATFORM_NAMES: Record<Platform, RegExp> = {
   youtube: /youtube|\bshorts\b/i,
   instagram: /instagram|\breels\b|\binsta\b/i,
   x: /twitter|(?:^|[\s,/(])x(?=$|[\s,/).])/i,
+  facebook: /facebook|\bfb reels\b/i,
+  // "threads" alone is a common word: only the app's own names count.
+  threads: /threads\.(?:net|com)|\bmeta threads\b|\bthreads app\b/i,
+  linkedin: /linked\s?in/i,
+  bluesky: /blue\s?sky|\bbsky\b/i,
 };
 
 function platformsIn(s: string): Platform[] {
