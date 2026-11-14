@@ -327,6 +327,14 @@ describe("the speech-to-text chain (fake engine runners)", () => {
 });
 
 describe("stitch", () => {
+  it("keeps each word's confidence, for the caption accuracy check", () => {
+    const words = stitch([{ segment: { index: 0, startSec: 30, durationSec: 30 }, words: [{ word: "Margaret", startSec: 1, endSec: 1.5, confidence: 0.38 }, word("opens", 1.5, 2)] }]);
+    expect(words).toEqual([
+      { word: "Margaret", startSec: 31, endSec: 31.5, confidence: 0.38 },
+      { word: "opens", startSec: 31.5, endSec: 32 },
+    ]);
+  });
+
   it("keeps words inside their own segment, so a timing slip cannot put them out of order", () => {
     const words = stitch([
       { segment: { index: 1, startSec: 60, durationSec: 60 }, words: [word("late", -0.4, 0.2), word("end", 59.8, 61)] },

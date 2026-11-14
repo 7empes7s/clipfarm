@@ -273,6 +273,23 @@ export interface Word {
   word: string;
   startSec: number;
   endSec: number;
+  /** How sure the speech-to-text was of this word, 0..1; left out when it does not say (or the word was checked). */
+  confidence?: number;
+}
+
+/** A misheard caption word the correction pass fixed ("Margaret" → "market"). Times are master seconds. */
+export interface CaptionFix {
+  startSec: number;
+  endSec: number;
+  /** What was heard, and what it was changed to. */
+  from: string;
+  to: string;
+  /** The words as heard, so the fix can be undone exactly. */
+  fromWords: Word[];
+  /** Why the model changed it, in its words. */
+  why: string;
+  /** In the captions now; false once undone in the Studio. */
+  applied: boolean;
 }
 
 export interface VodDetail extends Vod {
@@ -370,7 +387,7 @@ export const CLIP_EFFECT_LABELS: Record<ClipEffect, string> = {
   progressBar: "Progress bar",
 };
 
-export type QualityCode = "black" | "frozen" | "silence" | "captions" | "duration" | "size" | "loudness";
+export type QualityCode = "black" | "frozen" | "silence" | "captions" | "duration" | "size" | "loudness" | "accuracy";
 
 /** One thing the automatic check found wrong with a render, in plain words. */
 export interface QualityIssue {
@@ -413,6 +430,8 @@ export interface Clip {
   masterDurationSec: number;
   /** Caption words, timed in master seconds. */
   captionWords: Word[];
+  /** Misheard words the correction pass fixed, each one can be undone in the Studio. */
+  captionFixes: CaptionFix[];
   /** Studio edit list: ranges (master seconds) cut out of [startSec, endSec]. The master is never changed. */
   cuts: TimeRange[];
   /** Caption style, crop, watermark and outro (Studio). */

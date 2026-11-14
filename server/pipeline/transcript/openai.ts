@@ -62,7 +62,7 @@ export class OpenAiTranscriber implements Transcriber {
   async transcribe(audioPath: string, opts: TranscribeOptions): Promise<Transcript> {
     const { size } = await stat(audioPath);
     if (size <= this.maxUploadBytes) {
-      const words = await this.requestFile(audioPath, opts.signal);
+      const words = await this.requestFile(audioPath, opts.signal, opts.prompt);
       opts.onProgress?.(1);
       return { words, costUsd: cost(opts.durationSec), model: this.model };
     }
@@ -76,7 +76,7 @@ export class OpenAiTranscriber implements Transcriber {
     for (const chunk of plan) {
       const file = join(opts.tmpDir, `chunk-${chunk.index}.mp3`);
       await extractAudio(audioPath, file, { startSec: chunk.startSec, durationSec: chunk.durationSec, signal: opts.signal });
-      results.push({ ...chunk, words: await this.requestFile(file, opts.signal) });
+      results.push({ ...chunk, words: await this.requestFile(file, opts.signal, opts.prompt) });
       opts.onProgress?.((chunk.index + 1) / plan.length);
     }
     const billedSec = plan.reduce((sum, c) => sum + c.durationSec, 0);
@@ -89,14 +89,14 @@ export class OpenAiTranscriber implements Transcriber {
     return { words, model: this.model };
   }
 
-  private async requestFile(file: string, signal?: AbortSignal): Promise<Word[]> {
-    return this.request(new Uint8Array(await readFile(file)), basename(file), signal);
+  private async requestFile(file: string, signal?: AbortSignal, prompt?: string): Promise<Word[]> {
+    return this.request(new Uint8Array(await readFile(file)), basename(file), signal, prompt);
   }
 
-  private async request(audio: Uint8Array<ArrayBuffer>, fileName: string, signal?: AbortSignal): Promise<Word[]> {
+  private async request(audio: Uint8Array<ArrayBuffer>, fileName: string, signal?: AbortSignal, prompt?: string): Promise<Word[]> {
     const asked = this.model;
     try {
-      const words = await this.ask(asked, audio, fileName, signal);
+      const words = await this.ask(asked, audio, fileName, signal, prompt);
       if (words) return words;
     } catch (err) {
       // 400 or 404: the model does not take a word-timings request (or is not there). Anything else is a real failure.
@@ -106,14 +106,15 @@ export class OpenAiTranscriber implements Transcriber {
     if (asked === WORD_TIMING_MODEL) return [];
     // No word timings from this model: whisper-1 for this file and the rest of the job.
     this.model = WORD_TIMING_MODEL;
-    return (await this.ask(WORD_TIMING_MODEL, audio, fileName, signal)) ?? [];
+    return (await this.ask(WORD_TIMING_MODEL, audio, fileName, signal, prompt)) ?? [];
   }
 
   /** One upload. Null when the answer has no word timings at all. */
-  private async ask(model: string, audio: Uint8Array<ArrayBuffer>, fileName: string, signal?: AbortSignal): Promise<Word[] | null> {
+  private async ask(model: string, audio: Uint8Array<ArrayBuffer>, fileName: string, signal?: AbortSignal, prompt?: string): Promise<Word[] | null> {
     const form = new FormData();
     form.append("file", new Blob([audio]), fileName);
     form.append("model", model);
+    if (prompt) form.append("prompt", prompt);
     form.append("response_format", "verbose_json");
     form.append("timestamp_granularities[]", "word");
     const res = await this.fetchImpl(`${this.opts.baseUrl ?? OPENAI_BASE_URL}/audio/transcriptions`, {
