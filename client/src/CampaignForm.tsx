@@ -58,6 +58,7 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
       maxSec: numberOrNull(text("maxSec")),
       budgetLeftUsd: numberOrNull(text("budgetLeftUsd")),
       manualSubmit: f.get("manualSubmit") === "on",
+      aiBanned: f.get("aiBanned") === "on",
     };
     const input: NewSourceInput = {
       creatorName: text("creatorName"),
@@ -77,6 +78,8 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
         proofQuote: text("proofQuote") || null,
         proofCheckedAt: text("proofCheckedAt") || null,
         rules: kind === "whop-campaign" ? rules : null,
+        ownerName: text("ownerName") || null,
+        attested: f.get("attested") === "on",
       },
     };
     setSaving(true);
@@ -175,6 +178,18 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
               <label>
                 What this tests
                 <textarea name="note" rows={2} required maxLength={280} placeholder="Does TikTok remove a 20 s reaction clip?" />
+              </label>
+            </>
+          )}
+          {kind === "own-content" && (
+            <>
+              <label>
+                Who owns the videos
+                <input name="ownerName" autoComplete="off" placeholder="You, or your client's name" />
+              </label>
+              <label className="switch">
+                <input type="checkbox" name="attested" />
+                I own these videos, or have the owner's OK to clip and post them. Nothing posts until this is ticked.
               </label>
             </>
           )}
@@ -278,6 +293,10 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
               <label className="switch">
                 <input type="checkbox" role="switch" name="manualSubmit" defaultChecked={r?.manualSubmit ?? true} />
                 Submit each clip by hand within 30 minutes
+              </label>
+              <label className="switch">
+                <input type="checkbox" role="switch" name="aiBanned" defaultChecked={r?.aiBanned ?? false} />
+                The campaign bans AI content (AI hooks, titles and thumbnails stay off)
               </label>
             </fieldset>
           )}

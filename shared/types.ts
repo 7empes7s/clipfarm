@@ -54,7 +54,7 @@ export interface CampaignRules {
   budgetLeftUsd: number | null;
   /** The clip has to be submitted by hand within 30 minutes of posting (Whop and Content Rewards: yes unless the page says otherwise). */
   manualSubmit: boolean;
-  /** The campaign bans AI content (AI hooks, thumbnails, voices): the Studio turns those off. */
+  /** The campaign bans AI-made content (AI hooks, titles, thumbnails, voices): clipfarm's AI features (and the Studio's) stay off for it. */
   aiBanned?: boolean;
 }
 
@@ -130,6 +130,11 @@ export interface Permission {
   rules: CampaignRules | null;
   /** When the campaign page was last read by the daily check. */
   campaignCheckedAt: string | null;
+  /** "own-content" only: who owns the videos, and when the manager confirmed it. Without the date nothing posts. */
+  ownerName?: string | null;
+  attestedAt?: string | null;
+  /** The workspace of its source (1, "Me", when left out). */
+  workspaceId?: number;
   createdAt: string;
 }
 
@@ -154,6 +159,10 @@ export interface Source {
   permissions: Permission[];
   /** Whether the source has a permission record that is in force right now. */
   permissionState: PermissionState;
+  /** The workspace (me, or a client) it belongs to. */
+  workspaceId: number;
+  /** clipfarm's AI features (AI hooks, titles, thumbnails) may be used on it: off when a campaign in force bans AI. */
+  aiAllowed: boolean;
 }
 
 export interface NewPermissionInput {
@@ -171,6 +180,11 @@ export interface NewPermissionInput {
   /** ISO date or timestamp of the day the proof was read. */
   proofCheckedAt?: string | null;
   rules?: CampaignRules | null;
+  /** "own-content": who owns the videos, and when "I own these videos" was ticked (null: not yet, so nothing posts). */
+  ownerName?: string | null;
+  attestedAt?: string | null;
+  /** From the form: "I own these videos" is ticked (the server dates it). */
+  attested?: boolean;
 }
 
 export interface NewSourceInput {
@@ -537,6 +551,8 @@ export interface ChannelAccount extends PostingAccount, ChannelSettings {
   groupId: number;
   /** Connected in clipfarm (Settings, Accounts) and uploaded to directly, not through the posting service. */
   direct: boolean;
+  /** The workspace whose clips it posts (1, "Me", when left out). */
+  workspaceId?: number;
 }
 
 /** The two groups every install starts with. */
@@ -1015,6 +1031,8 @@ export interface WatchedCreator {
   autoIngest: boolean;
   live: LiveNow | null;
   lastVod: DetectedVod | null;
+  /** The workspace it belongs to (1, "Me", when left out). */
+  workspaceId?: number;
 }
 
 export interface WatchedCreatorInput {

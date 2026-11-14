@@ -4317,3 +4317,203 @@ button.chip-button {
   min-width: 0;
   display: grid;
 }
+
+/* Workspaces: the switcher sits between the logo and Settings on phones, under the logo in the sidebar. */
+.appbar {
+  flex-wrap: wrap;
+}
+.ws-switch {
+  flex: 1 1 7rem;
+  min-width: 0;
+  max-width: 11rem;
+  margin-left: auto;
+}
+.ws-switch select {
+  min-height: 40px;
+  padding: 0 var(--s2);
+  border-radius: var(--pill);
+  background: var(--sunk);
+  border-color: transparent;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+@media (min-width: 960px) {
+  .ws-switch {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+.ws-list {
+  list-style: none;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.ws-list li {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+.ws-list li[aria-current="true"] {
+  border-color: var(--ink);
+  background: var(--sunk);
+}
+
+/* Creator: add a video (file or link), the shows, and the other formats of each video. */
+.creator-sub {
+  margin: var(--s5) 0 var(--s3);
+  font-size: var(--t-lg);
+}
+.add-video {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: var(--s1);
+  gap: var(--s1);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+}
+.form .segmented label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: calc(var(--radius-small) - 4px);
+  cursor: pointer;
+  text-align: center;
+}
+.segmented label.on {
+  background: var(--surface);
+  box-shadow: var(--lift-1);
+}
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+}
+.form label.attest {
+  display: flex;
+  align-items: start;
+  gap: var(--s3);
+  font-weight: 400;
+}
+.form label.attest input {
+  flex: none;
+  width: 22px;
+  min-height: 22px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t-sm);
+}
+.upload-progress progress {
+  flex: 1;
+  min-width: 0;
+  height: 10px;
+  accent-color: var(--accent);
+}
+.ok-note {
+  margin: 0;
+  padding: var(--s3);
+  border-radius: var(--radius-small);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.attest-form {
+  padding-top: var(--s3);
+}
+.url {
+  overflow-wrap: anywhere;
+}
+.fmt-group {
+  margin-bottom: var(--s5);
+}
+.fmt-group h4 {
+  margin: 0 0 var(--s3);
+  font-size: var(--t-md);
+  overflow-wrap: anywhere;
+}
+.fmt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s3);
+}
+@media (min-width: 640px) {
+  .fmt-list {
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  }
+}
+.fmt {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3);
+}
+.fmt-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-small);
+  background: var(--well);
+  color: var(--well-ink);
+  overflow: hidden;
+}
+.fmt-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.fmt-label {
+  position: absolute;
+  left: var(--s2);
+  top: var(--s2);
+  padding: 0.1rem var(--s2);
+  border-radius: var(--pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+.fmt-body {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.fmt-body strong {
+  overflow-wrap: anywhere;
+}
+.fmt-desc {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: var(--t-sm);
+}
+.chapters {
+  margin: 0;
+  padding-left: var(--s4);
+  font-size: var(--t-sm);
+}
+.fmt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}

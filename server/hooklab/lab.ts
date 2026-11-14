@@ -210,7 +210,8 @@ export class HookLab {
         creatorName: source.creatorName,
         count: Math.min(MAX_VARIANTS, burners.length),
         prefer: [...(this.deps.trending?.() ?? []), ...won],
-        chat: this.deps.chat?.() ?? null,
+        // A source whose campaign bans AI gets hooks written without the AI model.
+        chat: source.aiAllowed ? (this.deps.chat?.() ?? null) : null,
         allowed: (c) => !banned.some((word) => says(`${c.title}\n${c.hook}`, word)),
       });
       if (copies.length < 2) {

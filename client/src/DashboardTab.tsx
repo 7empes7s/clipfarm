@@ -1,4 +1,5 @@
 import { BusyCard } from "./SubmitWindow";
+import type { WorkspaceSummary } from "../../shared/creator";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountCard,
@@ -767,6 +768,9 @@ function AccountSheet({
   const [enabled, setEnabled] = useState(a.enabled);
   const [takes, setTakes] = useState<PermissionKind[]>(a.takes);
   const [pinned, setPinned] = useState<number[]>(a.pinnedCampaignIds);
+  const [workspace, setWorkspace] = useState(a.workspaceId ?? 1);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
+  useEffect(() => void api.workspaces().then(setWorkspaces).catch(() => undefined), []);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const campaigns = whopCampaigns(sources);
@@ -777,6 +781,8 @@ function AccountSheet({
     setError(null);
     setSaving(true);
     try {
+      // Moved to another workspace: from now on it posts only that workspace's clips.
+      if (workspace !== (a.workspaceId ?? 1)) await api.accountWorkspace(a.id, workspace);
       onSaved(
         await api.saveAccount(a.id, {
           role,
@@ -813,6 +819,19 @@ function AccountSheet({
           </div>
           <p className="hint">A burner is a throwaway channel for tests. It is never ticked for you when posting.</p>
         </fieldset>
+        {workspaces.length > 1 && (
+          <div className="field">
+            <label htmlFor="account-workspace">Workspace</label>
+            <select id="account-workspace" value={workspace} onChange={(e) => setWorkspace(Number(e.target.value))}>
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+            <p className="hint">It posts only the clips of this workspace.</p>
+          </div>
+        )}
         <label>
           Niche
           <input type="text" maxLength={60} placeholder="GTA VI moments" value={niche} onChange={(e) => setNiche(e.target.value)} />

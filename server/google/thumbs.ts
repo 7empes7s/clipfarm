@@ -129,6 +129,8 @@ export interface ThumbsDeps {
   google: GoogleAi;
   /** Thumbnails are kept in <mediaDir>/thumbs. */
   mediaDir: string;
+  /** False when the clip's source bans AI (a campaign rule): only the plain frame is made. Left out, AI is allowed. */
+  aiAllowed?: (sourceId: number) => boolean;
 }
 
 /**
@@ -160,8 +162,9 @@ export function thumbsHandler(deps: ThumbsDeps): JobHandler {
       made.push({ label, ai, coverPath, widePath });
     };
 
+    const useAi = deps.aiAllowed?.(clip.sourceId) ?? true;
     try {
-      for (const [n, style] of noAi ? [] : STYLES.entries()) {
+      for (const [n, style] of useAi && !noAi ? STYLES.entries() : []) {
         progress(0.1 + 0.4 * n, `Making thumbnail ${n + 1} of ${STYLES.length}`);
         try {
           const res = await deps.google.image(
