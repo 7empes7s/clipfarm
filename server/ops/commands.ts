@@ -80,7 +80,7 @@ export function duration(sec: number): string {
   return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-export function findSource(rt: Runtime, ref: string): Source {
+function findSource(rt: Runtime, ref: string): Source {
   if (/^\d+$/.test(ref)) return rt.sources.get(Number(ref));
   const key = channelKey(ref);
   const found = rt.sources.list().find((s) => s.channelUrls.some((u) => channelKey(u) === key));
