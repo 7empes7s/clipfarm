@@ -642,6 +642,9 @@ export interface Post {
   /** Tapped by hand once Whop approved the submission, and once it paid. */
   whopApprovedAt: string | null;
   whopPaidAt: string | null;
+  /** Tapped by hand when the campaign turned the submission down, with its reason. */
+  whopRejectedAt: string | null;
+  whopRejectReason: string | null;
   /** When an approved submission's payout should settle: approval plus Whop's hold. */
   whopPayoutAt: string | null;
   /** Posted under an experiment record (always on a burner account). */
@@ -691,6 +694,8 @@ export interface PlannedPost {
   permissionId: number;
   caption: string;
   scheduledAt: string;
+  /** Why it would wait past the wanted time (a platform's limit, the submit hours), in plain words. */
+  note?: string | null;
 }
 
 export interface StatsRow {

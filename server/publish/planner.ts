@@ -28,6 +28,8 @@ export interface SlotRequest {
   /** Only inside these hours (autopilot's "next best slot"); left out: any time. */
   best?: { hours: number[]; timeZone: string } | null;
   tiktokAudited?: boolean;
+  /** The platform's limit is kept elsewhere (a direct YouTube upload counts its group's real units). */
+  ignoreLimit?: boolean;
 }
 
 export interface PlannedSlot {
@@ -93,7 +95,7 @@ export function limitBlock(req: SlotRequest, t: number, limit: PlatformLimit | n
  * that does not fit rolls to the next time that does, with each reason in plain words.
  */
 export function planSlot(req: SlotRequest): PlannedSlot {
-  const limit = limitFor(req.platform, req.tiktokAudited ?? false);
+  const limit = req.ignoreLimit ? null : limitFor(req.platform, req.tiktokAudited ?? false);
   const reasons: string[] = [];
   const because = (r: string) => {
     const text = /[.!?]$/.test(r) ? r : `${r}.`;

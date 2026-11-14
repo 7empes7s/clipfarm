@@ -79,6 +79,12 @@ describe("planRule (what a run or a dry run does)", () => {
     expect(steps.map((s) => s.action)).toEqual(["post"]);
   });
 
+  it("a mixed rule does not approve a waiting clip for its burners: they wait for the tap too", () => {
+    const steps = planRule({ rule: rule({ accountIds: ["yt-main", "tt-burner"] }), clips: [clip({ status: "pending" })], accounts: ACCOUNTS, doneToday: 0, handled: new Set() });
+    expect(steps.map((s) => s.action)).toEqual(["wait-approval", "wait-approval"]);
+    expect(steps[1]!.reason).toBe("Waits for your approve tap in the Inbox: this rule also posts to main accounts.");
+  });
+
   it("keeps the daily cap, counting what the rule already did today", () => {
     const clips = [clip({ id: 1, score: 90 }), clip({ id: 2, score: 95 }), clip({ id: 3, score: 85 })];
     const steps = planRule({ rule: rule({ accountIds: ["yt-main"], dailyCap: 3 }), clips, accounts: ACCOUNTS, doneToday: 1, handled: new Set() });

@@ -72,6 +72,8 @@ export function planRule({ rule, clips, accounts, doneToday, handled }: RulePlan
       if (!handled.has(`${clip.id}:`)) steps.push({ ...base, accountId: null, accountName: null, action: "skip", reason: "It has no permission record in force, so it never posts." });
       continue;
     }
+    // Posting approves a waiting clip, so it needs the manager's tap unless only burners can ever get it.
+    const tapNeeded = clip.status !== "approved" && !rule.auto && !rule.burnerOnly && !clip.experiment;
     const why = `It scores ${Math.round(clip.score!)} (the rule needs ${rule.minScore})${rule.needsQuality ? " and passed the quality check" : ""}.`;
     for (const accountId of rule.accountIds) {
       if (handled.has(`${clip.id}:${accountId}`)) continue;
@@ -82,8 +84,11 @@ export function planRule({ rule, clips, accounts, doneToday, handled }: RulePlan
       else if (!account.enabled) step("skip", `${account.name} is switched off.`);
       else if (rule.burnerOnly && account.role !== "burner") step("skip", `${account.name} is no longer a burner, and this rule posts only to burners.`);
       else if (clip.experiment && account.role !== "burner") step("skip", "It is an experiment, which posts only to burner accounts.");
-      else if (account.role === "main" && clip.status !== "approved" && !rule.auto) {
-        step("wait-approval", `Waits for your approve tap in the Inbox: ${account.name} is a main account.`);
+      else if (tapNeeded) {
+        step(
+          "wait-approval",
+          account.role === "main" ? `Waits for your approve tap in the Inbox: ${account.name} is a main account.` : "Waits for your approve tap in the Inbox: this rule also posts to main accounts.",
+        );
       } else if (posts >= rule.dailyCap) step("skip", `The rule's daily cap of ${rule.dailyCap} posts is reached.`);
       else {
         posts++;
