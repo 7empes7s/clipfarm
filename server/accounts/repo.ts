@@ -33,6 +33,7 @@ interface Row {
   takes: string | null;
   pinned_campaigns: string;
   paused_reason: string | null;
+  workspace_id: number;
 }
 
 export { accountsAllowedFor } from "../../shared/routing.js";
@@ -114,6 +115,7 @@ export class AccountsRepo {
       pausedReason: r.paused_reason,
       groupId: r.group_id ?? (r.role === "burner" ? BURNERS_GROUP_ID : MAIN_GROUP_ID),
       direct: r.service === "direct",
+      workspaceId: r.workspace_id ?? 1,
     };
   }
 

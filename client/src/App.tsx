@@ -1,7 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { CampaignDraft, CampaignRules, Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
-import { api } from "./api";
 import { CampaignForm } from "./CampaignForm";
 import { CampaignImport } from "./CampaignImport";
 import { CalendarTab } from "./CalendarTab";
@@ -15,6 +14,9 @@ import { SettingsTab } from "./SettingsTab";
 import { StatsTab } from "./StatsTab";
 import { SuggestedSheet } from "./SuggestedSheet";
 import { WatchlistTab } from "./WatchlistTab";
+import { CreatorTab } from "./CreatorTab";
+import { WorkspaceSwitcher } from "./Workspaces";
+import { api, currentWorkspace, setWorkspace } from "./api";
 import { Clips } from "./Clips";
 import { clock, shortDate, usd } from "./format";
 import { EmptyState, Icon, type IconName, Logo, Skeleton } from "./ui";
@@ -44,6 +46,7 @@ const JOB_TYPE_LABEL: Record<string, string> = {
   "render-clip": "New version",
   "hook-variants": "Hook variants",
   "demo-clips": "Demo clips",
+  formats: "Other formats",
 };
 
 const TABS = [
@@ -52,6 +55,7 @@ const TABS = [
   { id: "approved", label: "Approved" },
   { id: "posted", label: "Posted" },
   { id: "calendar", label: "Calendar" },
+  { id: "creator", label: "Creator" },
   { id: "sources", label: "Sources" },
   { id: "watchlist", label: "Watchlist" },
   { id: "campaigns", label: "Campaigns" },
@@ -82,6 +86,8 @@ function dashViewFromHash(): DashView {
 
 export function App() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
+  // The workspace on show; switching it reloads every list for that workspace.
+  const [workspace, setWs] = useState(currentWorkspace);
   const [dashView, setDashView] = useState<DashView>(dashViewFromHash);
   const [sub, setSub] = useState(subFromHash);
   const [sources, setSources] = useState<Source[]>([]);
@@ -108,8 +114,11 @@ export function App() {
 
   const refresh = useCallback(async () => {
     const edits = clipsEdits.current;
+    const ws = currentWorkspace();
     try {
       const [s, v, j, c, p] = await Promise.all([api.sources(), api.vods(), api.jobs(), api.clips(), api.picks()]);
+      // The workspace was switched while this was on its way: its answer is for the other one.
+      if (ws !== currentWorkspace()) return;
       setSources(s);
       setVods(v);
       setJobs(j);
@@ -172,6 +181,16 @@ export function App() {
             <Logo />
             clipfarm
           </h1>
+          <WorkspaceSwitcher
+            key={workspace}
+            onSwitch={(id) => {
+              setWorkspace(id);
+              setWs(id);
+              setLoaded(false);
+              setClips([]);
+              void refresh();
+            }}
+          />
           <a className="more" href="#settings" aria-label="Settings: keys and connections" title="Settings" aria-current={tab === "settings" ? "page" : undefined}>
             <Icon name="settings" size={22} />
           </a>
@@ -182,14 +201,14 @@ export function App() {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <Icon name={t.id} />
               {t.label}
-              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && t.id !== "calendar" && <span className="count">{counts[t.id]}</span>}
+              {t.id !== "stats" && t.id !== "dashboard" && t.id !== "watchlist" && t.id !== "campaigns" && t.id !== "calendar" && t.id !== "creator" && <span className="count">{counts[t.id]}</span>}
             </a>
           ))}
         </nav>
         <p className="tagline">Streams in, vertical clips out. Only from creators who said yes.</p>
       </div>
 
-      <main className="page">
+      <main className="page" key={workspace}>
       {loadError && (
         <p className="error" role="alert">
           Could not reach the server: {loadError}
@@ -205,6 +224,7 @@ export function App() {
       {tab === "campaigns" && <CampaignsTab sources={sources} sub={sub} />}
       {tab === "settings" && <SettingsTab focus={sub} />}
       {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
+      {tab === "creator" && <CreatorTab sources={sources} vods={vods} onAdded={() => void refresh()} />}
 
       {tab === "sources" && (
         <section aria-labelledby="campaigns-title">

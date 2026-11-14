@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships up to the proof runs; the submit window's columns and the publishing tables come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 2;
+/** Everything main ships up to the proof runs; the submit window, creator mode and the publishing tables come after those. */
+const ALL_OF_MAIN = MIGRATIONS.length - 3;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -88,6 +88,13 @@ describe("migrate", () => {
       expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at", "whop_rejected_at", "retried_by"]),
     );
     expect(tables(db)).toEqual(expect.arrayContaining(["post_versions", "autopilot_rules", "autopilot_log"]));
+    // Creator mode: workspaces ("Me" first), uploads, outputs, and the owner's dated tick on own-content records.
+    expect(tables(db)).toEqual(expect.arrayContaining(["workspaces", "uploads", "outputs"]));
+    expect(db.prepare("SELECT name FROM workspaces WHERE id = 1").pluck().get()).toBe("Me");
+    expect(db.prepare("SELECT name FROM pragma_table_info('permissions')").pluck().all()).toEqual(expect.arrayContaining(["owner_name", "attested_at"]));
+    for (const t of ["sources", "posting_accounts", "watchlist"]) {
+      expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
+    }
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

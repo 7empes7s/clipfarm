@@ -48,6 +48,11 @@ import type { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { parseWatchedCreator, type WatchlistRepo } from "./sources/watchlist/repo.js";
 import type { TrendRadar } from "./trends/radar.js";
 import type { VodsRepo } from "./vods/repo.js";
+import { MY_WORKSPACE_ID, UPLOAD_CHUNK_BYTES } from "../shared/creator.js";
+import type { OutputsRepo } from "./creator/outputs.js";
+import { type Creator, parseCreatorAdd } from "./creator/service.js";
+import { parseNewUpload, type UploadsRepo } from "./creator/uploads.js";
+import { parseBrand, parseWorkspaceName, type WorkspacesRepo } from "./workspaces/repo.js";
 
 export interface AppDeps {
   sources: SourcesRepo;
@@ -99,6 +104,10 @@ export interface AppDeps {
   supportEmail?: string | null;
   /** Live box (CLIPFARM_REQUIRE_ACCESS=1): refuse requests without a token signed by Cloudflare Access. */
   access?: AccessVerifier;
+  /** Workspaces (me, or a client): lists are scoped to the one the header names. Left out, lists show everything. */
+  workspaces?: WorkspacesRepo;
+  /** Creator mode: own videos in (uploads and links), and the other formats made from them. */
+  creator?: { service: Creator; uploads: UploadsRepo; outputs: OutputsRepo };
 }
 
 /** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
@@ -155,10 +164,24 @@ export function createApp({
   deployStatusFile,
   supportEmail = null,
   access,
+  workspaces,
+  creator,
 }: AppDeps): express.Express {
   const app = express();
   if (access) app.use(accessGate(access));
   app.use(express.json({ limit: "1mb" }));
+
+  // The workspace a request is about (the header's switcher sends it); undefined: no scoping.
+  const wsOf = (req: express.Request): number | undefined => workspaces?.resolve(req.get("x-workspace") ?? req.query.ws);
+  /** The ids of the workspace's sources; null: every source. */
+  const wsSources = (req: express.Request): Set<number> | null => {
+    const ws = wsOf(req);
+    return ws === undefined ? null : new Set(sources.list(ws).map((s) => s.id));
+  };
+  const inWs = <T extends { sourceId: number }>(req: express.Request, items: T[]): T[] => {
+    const ids = wsSources(req);
+    return ids ? items.filter((i) => ids.has(i.sourceId)) : items;
+  };
 
   // Open to anyone, and ahead of the app's catch-all, which would answer them with the app shell.
   publicPages(app, supportEmail);
@@ -168,13 +191,76 @@ export function createApp({
     res.json(settings ? { ok: true, configured: configuredMap(settings.store) } : { ok: true });
   });
 
-  app.get("/api/sources", (_req, res) => {
-    res.json(sources.list());
+  app.get("/api/sources", (req, res) => {
+    res.json(sources.list(wsOf(req)));
   });
 
   app.post("/api/sources", (req, res) => {
-    res.status(201).json(sources.create(parseNewSource(req.body)));
+    res.status(201).json(sources.create(parseNewSource(req.body), wsOf(req)));
   });
+
+  // "I own these videos": dates an own-content record so its clips may post.
+  app.post("/api/permissions/:id/attest", (req, res) => {
+    res.json(sources.attest(idParam(req.params.id), ((req.body ?? {}) as { ownerName?: unknown }).ownerName));
+  });
+
+  if (workspaces) {
+    app.get("/api/workspaces", (_req, res) => {
+      res.json(workspaces.summaries());
+    });
+
+    app.post("/api/workspaces", (req, res) => {
+      res.status(201).json(workspaces.create(parseWorkspaceName((req.body ?? {}).name)));
+    });
+
+    app.put("/api/workspaces/:id", (req, res) => {
+      const b = (req.body ?? {}) as { name?: unknown; brand?: unknown };
+      res.json(workspaces.update(idParam(req.params.id), parseWorkspaceName(b.name), parseBrand(b.brand)));
+    });
+
+    // A connected account posts only the clips of its workspace.
+    app.put("/api/accounts/:id/workspace", (req, res) => {
+      workspaces.assignAccount(String(req.params.id), idParam(String((req.body ?? {}).workspaceId)));
+      res.json(publisher.accounts.list().find((a) => a.id === String(req.params.id)));
+    });
+  }
+
+  if (creator) {
+    const { service, uploads, outputs } = creator;
+    const ws = (req: express.Request) => wsOf(req) ?? MY_WORKSPACE_ID;
+
+    app.get("/api/creator", (req, res) => {
+      res.json({ workspace: workspaces ? workspaces.get(ws(req)) : null, outputs: outputs.listForWorkspace(ws(req)) });
+    });
+
+    // "Add your video": a finished upload or a pasted link, with the owner and the dated tick.
+    app.post("/api/creator", async (req, res) => {
+      res.status(201).json(await service.add(ws(req), parseCreatorAdd(req.body)));
+    });
+
+    app.post("/api/uploads", async (req, res) => {
+      res.status(201).json(await uploads.create(ws(req), parseNewUpload(req.body)));
+    });
+
+    // Where an upload stands, so a dropped one carries on from there.
+    app.get("/api/uploads/:id", (req, res) => {
+      res.json(uploads.get(idParam(req.params.id)));
+    });
+
+    // One piece of the file, sent raw; ?offset= says where it starts.
+    app.put("/api/uploads/:id", express.raw({ type: () => true, limit: UPLOAD_CHUNK_BYTES + 1024 }), async (req, res) => {
+      const chunk = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      res.json(await uploads.append(idParam(req.params.id), Number(req.query.offset), chunk));
+    });
+
+    app.get("/api/outputs/:id/video", (req, res, next) => {
+      sendMedia(res, next, outputs.files(idParam(req.params.id)).video);
+    });
+
+    app.get("/api/outputs/:id/thumb", (req, res, next) => {
+      sendMedia(res, next, outputs.files(idParam(req.params.id)).thumb);
+    });
+  }
 
   app.get("/api/sources/suggested", (_req, res) => {
     res.json(listSuggested(suggested, sources.list()));
@@ -190,7 +276,7 @@ export function createApp({
 
   // Paste a campaign link: an imported campaign is saved onto its creator (made, or brought up to date).
   app.post("/api/campaigns", (req, res) => {
-    res.status(201).json(sources.saveCampaign(parseNewSource(req.body)));
+    res.status(201).json(sources.saveCampaign(parseNewSource(req.body), wsOf(req)));
   });
 
   if (campaigns) {
@@ -243,8 +329,8 @@ export function createApp({
     res.json(picks.listForVod(id));
   });
 
-  app.get("/api/picks", (_req, res) => {
-    res.json(picks.list());
+  app.get("/api/picks", (req, res) => {
+    res.json(inWs(req, picks.list()));
   });
 
   app.get("/api/picks/:id/video", (req, res, next) => {
@@ -255,8 +341,8 @@ export function createApp({
     sendMedia(res, next, picks.files(idParam(req.params.id)).thumb);
   });
 
-  app.get("/api/vods", (_req, res) => {
-    res.json(vods.list());
+  app.get("/api/vods", (req, res) => {
+    res.json(inWs(req, vods.list()));
   });
 
   app.get("/api/vods/:id", (req, res) => {
@@ -283,8 +369,13 @@ export function createApp({
     res.status(201).json({ vod, job });
   });
 
-  app.get("/api/jobs", (_req, res) => {
-    res.json(queue.list());
+  app.get("/api/jobs", (req, res) => {
+    const ids = wsSources(req);
+    if (!ids) return void res.json(queue.list());
+    // Jobs about a video or clip show in that workspace only; the rest (engine setup, demo) everywhere.
+    const vodIds = new Set(inWs(req, vods.list()).map((v) => v.id));
+    const clipIds = new Set(inWs(req, clips.list()).map((c) => c.id));
+    res.json(queue.list().filter((j) => (j.vodId === null || vodIds.has(j.vodId)) && (j.clipId === null || clipIds.has(j.clipId))));
   });
 
   app.post("/api/jobs/:id/cancel", (req, res) => {
@@ -297,8 +388,8 @@ export function createApp({
     res.json(job);
   });
 
-  app.get("/api/clips", (_req, res) => {
-    res.json(clips.list());
+  app.get("/api/clips", (req, res) => {
+    res.json(inWs(req, clips.list()));
   });
 
   app.post("/api/clips/undo", (_req, res) => {
@@ -520,8 +611,13 @@ export function createApp({
   if (watchlist) {
     const { repo, poller } = watchlist;
 
-    app.get("/api/watchlist", (_req, res) => {
-      res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+    const watched = (req: express.Request) => {
+      const ws = wsOf(req);
+      return ws === undefined ? repo.list() : repo.list().filter((c) => (c.workspaceId ?? MY_WORKSPACE_ID) === ws);
+    };
+
+    app.get("/api/watchlist", (req, res) => {
+      res.json({ creators: watched(req), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
     });
 
     app.post("/api/watchlist", (req, res) => {
@@ -553,9 +649,9 @@ export function createApp({
       res.json(repo.get(id));
     });
 
-    app.post("/api/watchlist/poll", async (_req, res) => {
+    app.post("/api/watchlist/poll", async (req, res) => {
       await poller.pollAll();
-      res.json({ creators: repo.list(), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
+      res.json({ creators: watched(req), platforms: poller.status(), lastPollAt: poller.lastPollAt?.toISOString() ?? null });
     });
   }
 
@@ -877,27 +973,34 @@ export function createApp({
     });
 
     // Reads the posting service only when the cached stats are due (see AccountStatsStore).
-    app.get("/api/accounts", async (_req, res) => {
+    // The account cards of the workspace the request is about.
+    const accountsInfo = (req: express.Request) => {
+      const info = accountStats.info(posts.rules());
+      const ws = wsOf(req);
+      return ws === undefined ? info : { ...info, cards: info.cards.filter((c) => (c.account?.workspaceId ?? MY_WORKSPACE_ID) === ws) };
+    };
+
+    app.get("/api/accounts", async (req, res) => {
       await accountStats.refresh();
-      res.json(accountStats.info(posts.rules()));
+      res.json(accountsInfo(req));
     });
 
     // Reads the connected accounts from the posting service now (stats keep their own interval).
-    app.post("/api/accounts/sync", async (_req, res) => {
+    app.post("/api/accounts/sync", async (req, res) => {
       await publisher.syncAccounts();
-      res.json(accountStats.info(posts.rules()));
+      res.json(accountsInfo(req));
     });
 
     app.put("/api/accounts/:id", (req, res) => {
       publisher.accounts.update(String(req.params.id), parseChannelSettings(req.body));
-      res.json(accountStats.info(posts.rules()));
+      res.json(accountsInfo(req));
     });
 
     app.post("/api/accounts/:id/followers", (req, res) => {
       const followers = Number((req.body ?? {}).followers);
       if (!Number.isInteger(followers) || followers < 0) throw new ValidationError("Followers must be a whole number of zero or more.");
       accountStats.setManualFollowers(String(req.params.id), followers);
-      res.json(accountStats.info(posts.rules()));
+      res.json(accountsInfo(req));
     });
 
     // "Load demo data" on an empty dashboard: demo clips plus history, made by a queued job.

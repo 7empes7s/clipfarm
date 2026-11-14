@@ -21,11 +21,16 @@ export function mentionsGame(text: string, game: string): boolean {
   return names.some((n) => n && new RegExp(` ${escapeRe(normalize(n))} `).test(hay));
 }
 
+/** In a watched creator's games: every video counts, whatever its game. */
+export const ANY_VIDEO = "*";
+
 export type VodMatch = { matched: true; game: string } | { matched: false };
 
 /** Whether a VOD is one of the creator's games, by its category first, then its title. */
 export function matchVod(vod: { title: string; category: string | null }, games: string[]): VodMatch {
   for (const game of games) {
+    // "*": every video (the user's own channel, watched in Creator).
+    if (game === ANY_VIDEO) return { matched: true, game: "any video" };
     if ((vod.category && mentionsGame(vod.category, game)) || mentionsGame(vod.title, game)) return { matched: true, game };
   }
   return { matched: false };

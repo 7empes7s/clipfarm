@@ -24,6 +24,16 @@ export function permissionState(perms: Permission[], now: Date): PermissionState
   return perms.some((p) => notExpired(p, now)) ? "needs-review" : "expired";
 }
 
+/** An "own-content" record covers posting only once the manager confirmed who owns the videos. */
+export function isAttested(p: Permission): boolean {
+  return p.kind !== "own-content" || (!!p.attestedAt && !!p.ownerName?.trim());
+}
+
+/** clipfarm's AI features (AI-written hooks and titles, AI thumbnails) may be used: no record in force bans AI. */
+export function aiAllowed(perms: Permission[], now: Date): boolean {
+  return !perms.some((p) => isActive(p, now) && p.rules?.aiBanned === true);
+}
+
 /** True when the only records in force are experiments: the creator's clips go to burner accounts only. */
 export function isExperimentOnly(perms: Permission[], now: Date): boolean {
   const active = perms.filter((p) => isActive(p, now));
@@ -74,7 +84,13 @@ export function requireActivePermission(
         `The permission for ${creatorName} does not allow posting to ${PLATFORM_LABELS[platform]}.`,
       );
     }
-    const covering = onPlatform.find((p) => p.kind !== "experiment") ?? (role === "burner" ? onPlatform[0] : undefined);
+    const attested = onPlatform.filter(isAttested);
+    if (attested.length === 0) {
+      throw new PermissionError(
+        `Confirm that ${creatorName}'s videos are yours (or your client's) before posting: tick "I own these videos" on the creator in Creator.`,
+      );
+    }
+    const covering = attested.find((p) => p.kind !== "experiment") ?? (role === "burner" ? attested[0] : undefined);
     if (!covering) {
       throw new PermissionError(
         `${creatorName} is an experiment: its clips go only to burner accounts, through Post. Nothing is exported or sent to a main account.`,
