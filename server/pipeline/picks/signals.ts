@@ -1,5 +1,7 @@
 import type { Word } from "../../../shared/types.js";
 import { run } from "../../tools/exec.js";
+import { chatPerSecond } from "../chat/spikes.js";
+import type { ChatBuckets } from "../chat/types.js";
 import { type Sentence, snapWindow, type TimeRange } from "./sentences.js";
 
 /** Words that usually mean something just happened: laughing, shouting, disbelief, hype. */
@@ -11,8 +13,8 @@ const HYPE_WORDS = new Set([
 export interface Signals {
   /** Loudest momentary loudness (LUFS) per second of the VOD, from the audio downloaded at ingest. */
   loudness: number[];
-  /** Chat messages per second, when the platform gives a chat replay (not fetched yet). */
-  chat: number[] | null;
+  /** The chat replay in 10 s buckets, when the platform gives one (Twitch, Kick); null for uploads and YouTube. */
+  chat: ChatBuckets | null;
 }
 
 /** Parses ffmpeg `ebur128` log lines into the loudest momentary value per second. */
@@ -64,7 +66,7 @@ export function isHypeWord(word: string): boolean {
 
 /**
  * An excitement score per second of the VOD, from plain signals: loudness spikes, fast speech,
- * laughing/shouting words and (when available) chat spikes.
+ * laughing/shouting words and (when there is a chat replay) chat spikes.
  */
 export function secondScores(durationSec: number, words: Word[], signals: Signals): number[] {
   const n = Math.max(0, Math.ceil(durationSec));
@@ -80,14 +82,14 @@ export function secondScores(durationSec: number, words: Word[], signals: Signal
     rate[s]!++;
     if (isHypeWord(w.word)) hype[s]! += 1;
   }
-  const chat = signals.chat ? Array.from({ length: n }, (_, i) => signals.chat![i] ?? 0) : null;
+  // Already 0-3 where chat spiked, placed so a window opens ~30 s before the spike.
+  const chat = chatPerSecond(signals.chat, n);
 
   const loudZ = zScores(loud);
   const rateZ = zScores(smooth(rate, 2));
   const hypeS = smooth(hype, 2);
-  const chatZ = chat ? zScores(smooth(chat, 2)) : null;
   return smooth(
-    loudZ.map((l, i) => l + 0.5 * rateZ[i]! + hypeS[i]! + (chatZ ? chatZ[i]! : 0)),
+    loudZ.map((l, i) => l + 0.5 * rateZ[i]! + hypeS[i]! + (chat ? chat[i]! : 0)),
     1,
   );
 }

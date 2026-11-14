@@ -606,6 +606,10 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN whop_reject_reason TEXT;
   ALTER TABLE posts ADD COLUMN retried_by INTEGER;
   `,
+  `
+  -- A VOD's chat replay in 10 s buckets (JSON), for chat-spike picks; NULL when it has no chat.
+  ALTER TABLE vods ADD COLUMN chat TEXT;
+  `,
 ];
 
 export function migrate(db: Db): void {

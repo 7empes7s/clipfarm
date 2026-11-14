@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships up to the proof runs; the submit window, creator mode and the publishing tables come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 3;
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables and the chat column come after those. */
+const ALL_OF_MAIN = MIGRATIONS.length - 4;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -88,6 +88,8 @@ describe("migrate", () => {
       expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at", "whop_rejected_at", "retried_by"]),
     );
     expect(tables(db)).toEqual(expect.arrayContaining(["post_versions", "autopilot_rules", "autopilot_log"]));
+    // Chat-spike picks: a VOD's chat replay, bucketed.
+    expect(db.prepare("SELECT name FROM pragma_table_info('vods')").pluck().all()).toContain("chat");
     // Creator mode: workspaces ("Me" first), uploads, outputs, and the owner's dated tick on own-content records.
     expect(tables(db)).toEqual(expect.arrayContaining(["workspaces", "uploads", "outputs"]));
     expect(db.prepare("SELECT name FROM workspaces WHERE id = 1").pluck().get()).toBe("Me");

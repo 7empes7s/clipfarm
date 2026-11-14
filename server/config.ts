@@ -42,6 +42,11 @@ import { openAiSetup, pickChatOptions } from "./settings/openai.js";
 import { parseSupportEmail } from "./publicPages.js";
 import { Settings } from "./settings/store.js";
 import { FakeTrendSource, type TrendSource, YouTubeTrendSource } from "./trends/youtube.js";
+import { FakeChatSource, FakeChatTap } from "./pipeline/chat/fake.js";
+import { KickChatSource } from "./pipeline/chat/kick.js";
+import { chatSources, chatTaps, KickChatTap, TwitchChatTap } from "./pipeline/chat/live.js";
+import { type Helix, TwitchChatSource } from "./pipeline/chat/twitch.js";
+import type { ChatSource, LiveChatTap } from "./pipeline/chat/types.js";
 
 export interface Config {
   port: number;
@@ -85,8 +90,12 @@ export interface Config {
   /** What an hour of this server costs (USD), for a clip's compute cost. */
   computeUsdPerHour: number;
   /** Live mode: records streams while they are live, in rolling segments. */
+  /** Twitch/Kick chat replay for chat-spike picks (a fake in demo mode). */
+  chatSource: ChatSource;
   live: {
     capturer: LiveCapturer;
+    /** Listens to a live stream's chat while it records. */
+    chatTap: LiveChatTap;
     /** A new segment starts this often, and each runs `overlapSec` longer. */
     segmentSec: number;
     overlapSec: number;
@@ -255,6 +264,16 @@ function livePostingService(settings: Settings): PostingService {
   };
 }
 
+/** Chat replay from Twitch (community clips too, once the Twitch key is in Settings) and Kick. */
+function liveChatSource(settings: Settings): ChatSource {
+  const twitch = live(settings, ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"], (env) => new TwitchClient({ clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET }));
+  const helix = (): Helix | null => {
+    const client = twitch();
+    return client.missing ? null : <T,>(path: string, signal?: AbortSignal) => client.helix<T>(path, signal);
+  };
+  return chatSources([new TwitchChatSource({ helix }), new KickChatSource()]);
+}
+
 function liveWatchClient(settings: Settings, names: string[], build: (now: { env: NodeJS.ProcessEnv }) => PlatformClient): PlatformClient {
   const cur = live(settings, names, (env) => build({ env }));
   return {
@@ -352,7 +371,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     platformStats: fakes ? [] : [new YouTubeStats({ apiKey: () => settings.get("YOUTUBE_API_KEY") })],
     // A Hetzner CX32 is about $8 a month: roughly a cent an hour.
     computeUsdPerHour: Number(env.COMPUTE_USD_PER_HOUR) || 0.011,
+    chatSource: fakeDownloads ? new FakeChatSource() : liveChatSource(settings),
     live: {
+      chatTap: fakeDownloads ? new FakeChatTap() : chatTaps([new TwitchChatTap(), new KickChatTap()]),
       // Demo mode: a made-up stream of two short segments, so LIVE clips show up within seconds.
       capturer: fakeDownloads ? new FakeLiveCapturer({ maxSegments: 2 }) : new PlatformLiveCapturer(new YtDlpLiveCapturer(env.YT_DLP_BIN ?? "yt-dlp")),
       segmentSec: Math.max(1, Number(env.LIVE_SEGMENT_SEC) || (fakeDownloads ? 30 : 600)),
