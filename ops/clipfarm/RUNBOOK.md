@@ -25,6 +25,7 @@ logs, backups and restore.
 | 12 | Test the live site end to end | Manager makes the token, then runs it (or IT does) |
 | IT ops | Test keys, add a source, turn a video into clips, list clips: no browser | IT |
 | Auto-deploy | One command, once. After this, nothing is deployed by hand | IT |
+| Go live | One command: auto-deploy, Postiz and YouTube keys, proof, TJR clips, a private post | IT |
 
 Do step 7 before step 8: the sign-in exists before the address does, so the gallery is never
 open to the internet, not even for a minute.
@@ -731,6 +732,98 @@ same commit again: `rm /var/lib/clipfarm-autodeploy/last-sha`. What happened and
 The GitHub token is only handed to `gh` in its environment: it is never printed, logged or
 written to the status file. The status file holds names and states only (`OpenAI: Working`),
 never a key or a service's answer.
+
+## Go live (IT: one command, safe to run again)
+
+One card does everything that stands between clipfarm and a first TJR post on Leonida Daily, and
+then says plainly what is still missing. It never posts in public and never prints a key. Run it as
+root (replace `<TJR Whop link>` with the campaign's Whop link or id; it is only used when TJR is not
+in Sources yet):
+
+```bash
+systemd-run --pipe --wait --collect --quiet --unit=clipfarm-golive /usr/bin/bash -c 'runuser -u clipfarm -- git -C /opt/clipfarm-live/repo pull -q --ff-only && exec bash /opt/clipfarm-live/repo/ops/clipfarm/golive.sh --campaign <TJR Whop link>'
+```
+
+(`npm run clipfarm:golive -- --campaign <link>` in `/opt/clipfarm-live/repo`, as root, is the
+same thing.) What it does, in order (`ops/clipfarm/golive.sh`, then `clipfarm-ops golive`):
+
+1. **Keys waiting in `/etc/clipfarm/pending-keys/`.** clipfarm's own keys (`YOUTUBE_API_KEY`,
+   `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`,
+   `GOOGLE_CLOUD_PROJECT`) move into `/etc/clipfarm/clipfarm.env`; Postiz's platform keys stay
+   there for its installer.
+2. **Auto-deploy and main.** `install-autodeploy.sh`, then one auto-deploy run, until
+   `/var/lib/clipfarm/deploy-status.json` (what `/api/live-version` serves) says main's commit is
+   live. It waits up to 30 minutes for main's GitHub checks (`CLIPFARM_GOLIVE_DEPLOY_WAIT`), and
+   tries a main that failed once more.
+3. **Postiz.** When clipfarm has no Postiz key, or one Postiz refuses, it reads the key from
+   Postiz's own database, checks it against Postiz, saves it with `POSTIZ_URL` in `clipfarm.env`
+   and restarts clipfarm. Then it lists Postiz's channels: Leonida Daily (YouTube) must be there.
+4. **clipfarm** (`clipfarm-ops golive`, as the `clipfarm` user): reads the posting accounts from
+   Postiz into clipfarm (the demo accounts drop out), runs test-keys, adds TJR with its campaign
+   permission record if it is missing, runs the daily proof (the latest kick.com/tjr video and a
+   GTA video) and a 15-minute launch drill (`--drill-minutes 0` skips it), and reports the TJR
+   clips: count, time, quality check, and each clip's hook and title.
+5. **A private test post.** The best TJR clip that passed the quality check goes to Leonida Daily
+   as a **private** YouTube video through Postiz (only the channel's owner sees it). The permission
+   gate and the campaign's rules still decide. It is not approved, not stored as a post and not
+   submitted on Whop. A second go-live reuses it instead of uploading again, and fetches its link
+   if Postiz had not finished (`--url-wait 10` minutes).
+6. **What is left before a public post**, and **exit code 1 with the list of what is missing**
+   (0 when nothing is).
+
+It ends like this (shortened):
+
+```
+== 1. Keys waiting in the pending-keys folder ==
+Saved in clipfarm.env: YOUTUBE_API_KEY.
+== 2. Auto-deploy and main ==
+clipfarm install-autodeploy: auto-deploy is on: CI-green main goes live within 10 minutes, ...
+  clipfarm autodeploy: deploying 1a2b3c4d5e6f
+1a2b3c4d5e6f (main) is live.
+== 3. Postiz ==
+clipfarm has no Postiz key: took the one from Postiz, which works, and saved it in clipfarm.env.
+Postiz has 1 channel:
+  Leonida Daily (youtube)
+clipfarm.env changed: restarting clipfarm.
+== 4. clipfarm: accounts, keys, proof, clips and a private post ==
+== Posting accounts ==
+Posting through Postiz: 1 account.
+  Leonida Daily (youtube)
+== Keys ==
+YouTube: Working
+Postiz: Working
+...
+Campaign video: PASSED  TJR: <the video's title>
+  ok   Clips: 11 (target: at least 10)
+  ok   Time to all clips: 24 min (target: under 31 min)
+  ok   Quality check: 11 of 11 passed
+TJR video 7 (1h 2m): 11 clips in 24 min, quality check 11 of 11 passed. https://kick.com/tjr/videos/...
+clip 31  score 92  27 s  quality ok
+  Hook: He did NOT see that coming
+  Title: TJR loses it over the bank job
+...
+== Private test post ==
+Uploaded clip 31 to Leonida Daily as a private video.
+Private post on Leonida Daily: https://www.youtube.com/watch?v=... (private: only the channel's owner can see it)
+== Before a public post ==
+  - The manager's go-ahead: approve clip 31 ("TJR loses it over the bank job") in the app, then Post to Leonida Daily. Nothing goes public before that.
+  - The Whop submit window: TJR posts go out only in the manager's submit hours (Europe/Luxembourg), and each one is submitted on Whop within 30 minutes (the phone counts down).
+
+Go-live: nothing is missing. The private post link is above; a public post waits for the manager.
+```
+
+When something is missing, each problem is printed as `Missing: ...` where it was found, and the
+end lists them all, for example:
+
+```
+Go-live: still missing
+  - YouTube: no Data API key. Put a line YOUTUBE_API_KEY=<key> in a file under /etc/clipfarm/pending-keys/ (or run the Google provider action), then run go-live again.
+  - clipfarm has no Postiz key, and Postiz has none yet: the manager signs up once on postiz.techinsiderbytes.com (the first account is the admin), then run go-live again.
+```
+
+Fix what it names and run the same card again: every step that is done already is left as it is.
+The clips wait in the Inbox like any other; the private post stays private until the manager says
+otherwise.
 
 ## Update (IT)
 

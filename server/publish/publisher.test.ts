@@ -290,3 +290,29 @@ describe("tracking, Whop and stats", () => {
     expect(JSON.stringify(res.body)).not.toMatch(/key/i);
   });
 });
+
+describe("Publisher.privateTest (go-live's private upload)", () => {
+  it("uploads the clip as a private video to the YouTube channel, without approving it or storing a post", async () => {
+    const { service, publisher, clip, posts, clips } = setup({}, { clipStatus: "pending" });
+    const result = await publisher.privateTest(clip.id, YT);
+    expect(result).toMatchObject({ accountId: YT, status: "posted", error: null });
+    expect(service.published).toEqual([expect.objectContaining({ title: "He actually landed the jump", privacy: "private", when: null })]);
+    expect(posts.list()).toEqual([]);
+    expect(clips.get(clip.id).status).toBe("pending");
+  });
+
+  it("still needs a permission record in force that allows YouTube", async () => {
+    const { db, service, publisher, clip } = setup();
+    db.prepare("DELETE FROM permissions").run();
+    await expect(publisher.privateTest(clip.id, YT)).rejects.toThrow("Test Streamer has no permission record.");
+    const expired = setup({ expiresAt: "2026-11-01T00:00:00.000Z" });
+    await expect(expired.publisher.privateTest(expired.clip.id, YT)).rejects.toThrow(/expired on 2026-11-01/);
+    expect([...service.calls, ...expired.service.calls].filter((c) => c === "publish")).toEqual([]);
+  });
+
+  it("goes only to YouTube, where a private upload exists", async () => {
+    const { service, publisher, clip } = setup();
+    await expect(publisher.privateTest(clip.id, TT)).rejects.toThrow("gtavimoments: a private test post goes only to a YouTube channel linked in Test posting service.");
+    expect(service.calls.filter((c) => c === "publish")).toEqual([]);
+  });
+});

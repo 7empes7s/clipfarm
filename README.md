@@ -182,6 +182,12 @@ npm run ops -- run latest kick.com/tjr
 npm run ops -- clips
 ```
 
+**Go live** on the box is one command for IT (`npm run clipfarm:golive`, `ops/clipfarm/golive.sh`;
+RUNBOOK, "Go live"): it installs auto-deploy and deploys CI-green main, hands Postiz's API key and
+waiting keys to clipfarm, then `clipfarm-ops golive` runs test-keys, the proof, reports the TJR clips
+with hooks and titles, uploads one **private** test video to Leonida Daily, and exits 1 with what is
+still missing. With fakes: `npm run ops -- golive --channel "GTA VI Moments" --campaign tjr-clipping`.
+
 ## Posting (Postiz or Upload-Post)
 
 Except for channels connected in Settings, Accounts (see Account isolation below), clipfarm does
