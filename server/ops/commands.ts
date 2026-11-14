@@ -2,11 +2,12 @@ import { readdirSync, statfsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import type { ProofRun } from "../../shared/proof.js";
-import type { Clip, Job, Source } from "../../shared/types.js";
+import type { Clip, IntegrationId, Job, Source } from "../../shared/types.js";
 import { PERMISSION_KIND_LABELS } from "../../shared/types.js";
 import { channelUrl } from "../../shared/watchlist.js";
 import { openSettings } from "../config.js";
 import { HttpError, ValidationError } from "../errors.js";
+import { golive } from "./golive.js";
 import { channelKey, channelOf, withScheme } from "../liveproof/service.js";
 import type { Notifier } from "../live/notify.js";
 import { INGEST_JOB } from "../pipeline/ingest/ingest.js";
@@ -62,20 +63,24 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
   clipfarm-ops clips [--since 2h | 3d | 2026-11-12]
   clipfarm-ops status
       Jobs, the queue and the disk.
+  clipfarm-ops golive [--channel "Leonida Daily"] [--campaign <TJR Whop link>] [--drill-minutes 15] [--url-wait 10]
+      The app's half of go-live (ops/clipfarm/golive.sh runs it): posting accounts, keys, the proof and
+      the drill, the TJR clips with hooks and titles, one PRIVATE test upload to the channel, and what is
+      left before a public post. Exits 1 with a "Missing:" line for each thing still missing.
   clipfarm-ops notify <title> <text>
       Sends a push notification to every phone that turned notifications on (auto-deploy uses it).`;
 
 /** A mistake in how the command was typed (exit code 2). */
-class UsageError extends Error {}
+export class UsageError extends Error {}
 
-function duration(sec: number): string {
+export function duration(sec: number): string {
   const s = Math.round(sec);
   if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
   return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function findSource(rt: Runtime, ref: string): Source {
+export function findSource(rt: Runtime, ref: string): Source {
   if (/^\d+$/.test(ref)) return rt.sources.get(Number(ref));
   const key = channelKey(ref);
   const found = rt.sources.list().find((s) => s.channelUrls.some((u) => channelKey(u) === key));
@@ -83,35 +88,51 @@ function findSource(rt: Runtime, ref: string): Source {
   return found;
 }
 
-function sourceLine(s: Source): string {
+export function sourceLine(s: Source): string {
   const p = s.permissions.at(-1);
   const permission = p ? `${PERMISSION_KIND_LABELS[p.kind]}${p.campaignUrl ? ` ${p.campaignUrl}` : ""}, ${p.allowedPlatforms.join(", ")}` : "no permission record";
   return `Source ${s.id}: ${s.creatorName} (${s.channelUrls.join(", ") || "no channel"}), ${permission}, permission ${s.permissionState}`;
 }
 
-async function testKeys(io: OpsIo): Promise<number> {
+export interface KeyResult {
+  id: IntegrationId;
+  label: string;
+  state: "Working" | "Failed" | "Not set";
+  /** Why it failed, with keys taken out; empty otherwise. */
+  detail: string;
+}
+
+/** Tests every saved key, the same test as the Test button in Settings. Never returns a key. */
+export async function keyResults(env: NodeJS.ProcessEnv): Promise<KeyResult[]> {
   // A copy in memory: testing from here never writes the keys file the server owns.
-  const settings = new Settings(null, openSettings(io.env).env());
-  const demo = io.env.CLIPFARM_FAKES === "1";
-  let set = 0;
-  let failed = 0;
+  const settings = new Settings(null, openSettings(env).env());
+  const demo = env.CLIPFARM_FAKES === "1";
+  const results: KeyResult[] = [];
   for (const def of INTEGRATIONS) {
     if (!isConfigured(settings, def.id)) {
-      io.out(`${def.label}: Not set`);
+      results.push({ id: def.id, label: def.label, state: "Not set", detail: "" });
       continue;
     }
-    set++;
     const result = await testIntegration(def.id, settings, demo);
-    if (!result.ok) failed++;
-    io.out(`${def.label}: ${result.ok ? "Working" : `Failed ${settings.scrub(result.message)}`}`);
+    results.push({ id: def.id, label: def.label, state: result.ok ? "Working" : "Failed", detail: result.ok ? "" : settings.scrub(result.message) });
   }
-  if (demo) io.out("Demo mode (CLIPFARM_FAKES=1): nothing outside was called.");
+  return results;
+}
+
+export const keyLine = (r: KeyResult): string => `${r.label}: ${r.state}${r.detail ? ` ${r.detail}` : ""}`;
+
+async function testKeys(io: OpsIo): Promise<number> {
+  const results = await keyResults(io.env);
+  for (const r of results) io.out(keyLine(r));
+  const set = results.filter((r) => r.state !== "Not set").length;
+  const failed = results.filter((r) => r.state === "Failed").length;
+  if (io.env.CLIPFARM_FAKES === "1") io.out("Demo mode (CLIPFARM_FAKES=1): nothing outside was called.");
   if (set === 0) throw new ValidationError("No key is saved yet. Paste them in the app under Settings.");
   if (failed > 0) throw new ValidationError(`${failed} of ${set} connections failed.`);
   return 0;
 }
 
-function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
+export function sourceCommand(rt: Runtime, io: OpsIo, args: string[]): number {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
@@ -338,7 +359,7 @@ function status(rt: Runtime, io: OpsIo): number {
   return 0;
 }
 
-function proofLines(run: ProofRun): string[] {
+export function proofLines(run: ProofRun): string[] {
   const name = run.kind === "drill" ? "Drill" : run.target === "gta" ? "GTA video" : "Campaign video";
   const head = `${name}: ${run.status.toUpperCase()}${run.label ? `  ${run.label}` : ""}${run.status === "skipped" || run.status === "running" ? `  (${run.step})` : ""}`;
   if (run.status === "skipped" || run.status === "waiting") return [head];
@@ -349,13 +370,13 @@ function proofLines(run: ProofRun): string[] {
   ];
 }
 
-function launchLines(rt: Runtime): string[] {
+export function launchLines(rt: Runtime): string[] {
   const { launch } = rt.proof.info();
   return [`Launch ready: ${launch.ready ? "yes" : "no"}`, ...launch.reasons.map((r) => `  - ${r}`)];
 }
 
 /** Before a proof or drill is asked for: the service does the work when it is up, else this command takes the queue. */
-async function takeProofWork(rt: Runtime, io: OpsIo): Promise<void> {
+export async function takeProofWork(rt: Runtime, io: OpsIo): Promise<void> {
   rt.queue.start();
   if (rt.queue.working) {
     io.out("The clipfarm service is not running, so this command does the work.");
@@ -366,7 +387,7 @@ async function takeProofWork(rt: Runtime, io: OpsIo): Promise<void> {
 }
 
 /** Follows runs that were just asked for until they end, printing each change. */
-async function followProof(rt: Runtime, io: OpsIo, ids: number[]): Promise<ProofRun[]> {
+export async function followProof(rt: Runtime, io: OpsIo, ids: number[]): Promise<ProofRun[]> {
   if (rt.queue.working) void rt.proof.work();
   const seen = new Map<number, string>();
   for (;;) {
@@ -404,12 +425,8 @@ async function proofCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<num
   return 0;
 }
 
-async function drillCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<number> {
-  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: "string", default: "15" } } });
-  const minutes = Number(values.minutes);
-  if (positionals[0] !== "live" || positionals.length > 2 || !(minutes > 0) || minutes > 120) {
-    throw new UsageError("Usage: clipfarm-ops drill live [creator name, channel link or source id] [--minutes 15]");
-  }
+/** The launch drill: loads the launch-day watchlist, then follows one drill until it ends. */
+export async function runDrill(rt: Runtime, io: OpsIo, minutes: number, who?: string): Promise<ProofRun> {
   // Launch day's watchlist: the seed list, and the starter list of creators who allow clipping in
   // public, each with its proof on record (the weekly check keeps that proof true).
   const seeded = rt.watchRepo.seedOnce(watchSeed.creators);
@@ -421,11 +438,21 @@ async function drillCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<num
       `${seeded + added.length > 0 ? ` (${seeded} loaded from the list, ${added.length} added with a public allowance)` : ""}.`,
   );
   await takeProofWork(rt, io);
-  const [run] = await followProof(rt, io, [rt.proof.requestDrill("ops", { minutes, who: positionals[1] }).id]);
-  for (const line of proofLines(run!)) io.out(line);
+  const [run] = await followProof(rt, io, [rt.proof.requestDrill("ops", { minutes, who }).id]);
+  return run!;
+}
+
+async function drillCommand(rt: Runtime, io: OpsIo, args: string[]): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: "string", default: "15" } } });
+  const minutes = Number(values.minutes);
+  if (positionals[0] !== "live" || positionals.length > 2 || !(minutes > 0) || minutes > 120) {
+    throw new UsageError("Usage: clipfarm-ops drill live [creator name, channel link or source id] [--minutes 15]");
+  }
+  const run = await runDrill(rt, io, minutes, positionals[1]);
+  for (const line of proofLines(run)) io.out(line);
   for (const line of launchLines(rt)) io.out(line);
-  if (run!.status === "skipped") throw new ValidationError(run!.step);
-  if (run!.status === "failed") throw new ValidationError("The launch drill missed its target.");
+  if (run.status === "skipped") throw new ValidationError(run.step);
+  if (run.status === "failed") throw new ValidationError("The launch drill missed its target.");
   return 0;
 }
 
@@ -440,7 +467,7 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   let scrub = (line: string) => line;
   try {
     if (command === "test-keys" && args.length === 0) return await testKeys(io);
-    if (!["source", "run", "clips", "status", "proof", "drill", "notify"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
+    if (!["source", "run", "clips", "status", "proof", "drill", "notify", "golive"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
       throw new UsageError(`Unknown command "${argv.join(" ")}".\n\n${USAGE}`);
     }
     rt = openRuntime(io.env, { pollMs: io.pollMs });
@@ -451,6 +478,7 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
     if (command === "clips") return listClips(rt, safe, args);
     if (command === "proof") return await proofCommand(rt, safe, args);
     if (command === "drill") return await drillCommand(rt, safe, args);
+    if (command === "golive") return await golive(rt, safe, args);
     if (command === "notify") {
       const phones = rt.liveRepo.pushSubscriptions().length;
       await (io.notifier ?? rt.notifier).notify({ title: scrub(args[0]!), body: scrub(args[1]!), url: "/#dashboard" });

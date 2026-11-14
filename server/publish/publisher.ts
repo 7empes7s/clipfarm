@@ -31,7 +31,7 @@ import { campaignProblems, clipTranscript, problemsLine } from "./compliance.js"
 import { assertCanPost } from "./gate.js";
 import type { PostsRepo } from "./repo.js";
 import { nextFreeSlot, nextSubmitSlot } from "./spacing.js";
-import type { PostingService, PublishItem } from "./types.js";
+import type { PostingService, PublishItem, PublishResult } from "./types.js";
 
 /** Platform limits in plain words, shown next to the post button. */
 export const PLATFORM_NOTES = [
@@ -527,6 +527,35 @@ export class Publisher {
       scheduledAt: at.toISOString(),
     }));
     return { wouldPost, skipped };
+  }
+
+  /**
+   * Go-live's test post: the clip uploaded as a private YouTube video, which only the channel's
+   * owner can see. It is never public and never stored as a post (no stats, no Whop submit), but
+   * it passes the same permission gate, campaign rules and isolation check as a real post. The
+   * clip does not have to be approved: approving and posting in public stay the manager's taps.
+   */
+  async privateTest(clipId: number, accountId: string): Promise<PublishResult> {
+    const { clips, sources, service } = this.deps;
+    // Only Postiz passes "private" on to YouTube (and the stand-in sends nothing anywhere).
+    if (service.name !== "postiz" && service.name !== "fake") throw new ValidationError(`A private test post goes only through Postiz, not ${service.label}.`);
+    const clip = clips.get(clipId);
+    const source = sources.get(clip.sourceId);
+    const account = (await this.knownAccounts()).find((a) => a.id === accountId);
+    if (!account) throw new ValidationError("That account is not connected.");
+    if (account.platform !== "youtube" || account.direct) throw new ValidationError(`${account.name}: a private test post goes only to a YouTube channel linked in ${service.label}.`);
+    if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
+    const permission = requireActivePermission(source.creatorName, source.permissions, this.now(), account.platform, account.role);
+    const caption = this.caption(clip, source, permission, account.platform);
+    const problems = this.rulesBroken(clip, clip, permission, account.platform, caption);
+    if (problems.length > 0) throw new ValidationError(problemsLine(problems));
+    const blocked = await this.isolationBlockNow(account);
+    if (blocked) throw new ValidationError(`${account.name} cannot post: ${blocked}`);
+    const [result] = await service.publish({ path: clips.filePath(clip.id), fileName: `${slug(clip.title)}.mp4` }, [
+      { account, title: clip.title, caption, when: null, paidPromotion: permission.kind === "whop-campaign", privacy: "private" },
+    ]);
+    if (!result) throw new ValidationError(`${service.label} did not answer for ${account.name}.`);
+    return result;
   }
 
   private async plan(clipId: number, accountIds: string[], when: Date | null, variant?: Copy) {

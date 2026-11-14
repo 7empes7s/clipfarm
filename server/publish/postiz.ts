@@ -170,7 +170,7 @@ export class PostizService implements PostingService {
     const identifier = this.identifiers.get(item.account.id) ?? item.account.platform;
     switch (item.account.platform) {
       case "youtube":
-        return { __type: "youtube", title: item.title.slice(0, 100), type: "public", selfDeclaredMadeForKids: "no", tags: [] };
+        return { __type: "youtube", title: item.title.slice(0, 100), type: item.privacy ?? "public", selfDeclaredMadeForKids: "no", tags: [] };
       case "tiktok":
         return {
           __type: "tiktok",
