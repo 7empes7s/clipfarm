@@ -9,12 +9,15 @@ export interface DigestInput {
   campaigns: { name: string; progress: CampaignProgress }[];
   /** The newest open recommendation. */
   recommendation: string | null;
+  /** What posted, earned and failed yesterday, and what's next. */
+  more?: string[];
 }
 
 /** The daily digest in a few plain lines: yesterday's views, the best clip, each running campaign and one tip. */
-export function buildDigest({ yesterday, campaigns, recommendation }: DigestInput): Digest {
+export function buildDigest({ yesterday, campaigns, recommendation, more = [] }: DigestInput): Digest {
   const lines = [yesterday ? `Yesterday: ${yesterday.views.toLocaleString("en")} views` : `Yesterday's views: ${NOT_AVAILABLE}`];
   if (yesterday?.best) lines.push(`Best clip: "${yesterday.best.title}" (+${yesterday.best.views.toLocaleString("en")} views)`);
+  lines.push(...more);
   for (const c of campaigns.slice(0, 3)) lines.push(`${c.name}: day ${c.progress.day} of ${c.progress.days}, ${c.progress.posts} of ${c.progress.planned} posts`);
   if (campaigns.length === 0) lines.push("No campaign is running.");
   if (recommendation) lines.push(`Tip: ${recommendation}`);

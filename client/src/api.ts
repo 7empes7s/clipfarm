@@ -76,6 +76,7 @@ export function setWorkspace(id: number): void {
     /* private mode: the choice lasts until the page is closed */
   }
 }
+import type { BusinessBoard, HealthBoard, RangeId } from "../../shared/business";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -224,6 +225,15 @@ export const api = {
   saveHookLab: (change: Partial<HookLabSettings>) => call<HookLabInfo>("/api/hooklab/settings", { method: "PUT", body: JSON.stringify(change) }),
   runHookLab: () => call<HookLabInfo>("/api/hooklab/run", { method: "POST" }),
   growth: () => call<GrowthInfo>("/api/growth"),
+  business: (range: RangeId) => call<BusinessBoard>(`/api/business?range=${range}`),
+  businessHealth: () => call<HealthBoard>("/api/business/health"),
+  /** A campaign's CSV export, sent as it is. */
+  importPayouts: async (csv: string) => {
+    const res = await fetch("/api/business/payouts", { method: "POST", headers: { "Content-Type": "text/csv" }, body: csv });
+    const body = (await res.json().catch(() => ({}))) as { imported: number; matched: number; skipped: number; unmatched: string[]; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
+    return body;
+  },
   addCampaign: (input: GrowthCampaignInput) => call<GrowthCampaign>("/api/growth/campaigns", { method: "POST", body: JSON.stringify(input) }),
   campaignAction: (id: number, action: "start" | "pause" | "stop") => call<GrowthCampaign>(`/api/growth/campaigns/${id}/${action}`, { method: "POST" }),
   removeCampaign: (id: number) => call<unknown>(`/api/growth/campaigns/${id}`, { method: "DELETE" }),

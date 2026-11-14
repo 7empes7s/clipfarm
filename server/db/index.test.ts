@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships up to the proof runs; the submit window, creator mode and the publishing tables come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 3;
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables and the campaign payouts come after those. */
+const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -95,6 +95,8 @@ describe("migrate", () => {
     for (const t of ["sources", "posting_accounts", "watchlist"]) {
       expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
     }
+    // Campaign payouts (the CSV import) come after the submit window.
+    expect(tables(db)).toContain("campaign_payouts");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

@@ -21,6 +21,8 @@ import { directPlatform, type Isolation } from "./isolation/isolation.js";
 import type { HookLab } from "./hooklab/lab.js";
 import type { GrowthLab } from "./growth/lab.js";
 import { growthRoutes } from "./growth/routes.js";
+import { businessRoutes } from "./business/routes.js";
+import type { BusinessService } from "./business/service.js";
 import type { JobQueue } from "./jobs/queue.js";
 import { HttpError, NotFoundError, ValidationError } from "./errors.js";
 import type { LiveManager } from "./live/manager.js";
@@ -90,6 +92,8 @@ export interface AppDeps {
   hookLab?: HookLab;
   /** Test campaigns, their reports and the daily digest. */
   growth?: GrowthLab;
+  /** Views, earnings and costs per clip, platform, account and campaign, and the pipeline's health. */
+  business?: BusinessService;
   /** The campaign scout: "Campaigns for you" and auto mode. */
   scout?: Scout;
   /** Autopilot rules: post matching clips at the next best slot, or show what they would do. */
@@ -157,6 +161,7 @@ export function createApp({
   trends,
   hookLab,
   growth,
+  business,
   scout,
   autopilot,
   seedDemoClip,
@@ -944,6 +949,7 @@ export function createApp({
     });
   }
   if (growth) app.use("/api/growth", growthRoutes(growth));
+  if (business) app.use("/api/business", businessRoutes(business));
   if (scout) app.use("/api/scout", scoutRoutes(scout));
 
   app.post("/api/demo", (_req, res) => {
