@@ -274,7 +274,8 @@ export class JobQueue {
         // A job added after the loop saw an empty queue but before this ran (for example
         // enqueue() right after start()) found the old drain still set: pick it up now.
         // Only while this queue is the worker: another process's jobs are found by the timer.
-        if (!this.stopped && this.holdsLease && this.hasQueued()) void this.kick();
+        // A paused queue leaves them waiting: the timer looks again, so resuming picks them up.
+        if (!this.stopped && this.holdsLease && !this.opts.paused?.() && this.hasQueued()) void this.kick();
       });
     }
     return this.draining;
