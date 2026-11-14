@@ -10,12 +10,12 @@ const line = (start: number, duration: number, ...words: [string, number, number
 });
 
 describe("readMoonshineJson", () => {
-  it("turns Moonshine's lines into words with its own times and the average confidence", () => {
+  it("turns Moonshine's lines into words with its own times and confidence, and the average confidence", () => {
     const r = readMoonshineJson(JSON.stringify({ lines: [line(20, 2, ["No", 20.03, 20.4, 0.9], ["way,", 20.4, 20.95, 0.7]), line(50, 1.5, ["Insane.", 50.1, 50.9, 0.8])] }));
     expect(r.words).toEqual([
-      { word: "No", startSec: 20.03, endSec: 20.4 },
-      { word: "way,", startSec: 20.4, endSec: 20.95 },
-      { word: "Insane.", startSec: 50.1, endSec: 50.9 },
+      { word: "No", startSec: 20.03, endSec: 20.4, confidence: 0.9 },
+      { word: "way,", startSec: 20.4, endSec: 20.95, confidence: 0.7 },
+      { word: "Insane.", startSec: 50.1, endSec: 50.9, confidence: 0.8 },
     ]);
     expect(r.confidence).toBeCloseTo(0.8, 6);
     expect(r).toMatchObject({ heardSec: 3.5, silentSec: 0, language: "en" });

@@ -23,6 +23,7 @@ function clip(id: number, patch: Partial<Clip> = {}): Clip {
     endSec: 20,
     masterDurationSec: 30,
     captionWords: [],
+    captionFixes: [],
     cuts: [],
     look: DEFAULT_LOOK,
     postCount: 0,

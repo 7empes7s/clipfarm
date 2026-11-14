@@ -7,6 +7,8 @@ export interface TranscribeOptions {
   tmpDir: string;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
+  /** Words to listen for (the source's glossary), for engines that take a prompt. */
+  prompt?: string;
   /** The video this transcript is for, so the engine can note which step did what; `add` on a live stream, where each segment adds to the last. */
   run?: { vodId: number; add?: boolean };
 }

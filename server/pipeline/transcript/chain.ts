@@ -249,7 +249,7 @@ export function stitch(parts: { segment: Segment; words: Word[] }[]): Word[] {
       // Kept inside its own segment, so a step's small timing slip cannot reorder two segments.
       const startSec = Math.min(Math.max(w.startSec + part.segment.startSec, floor, part.segment.startSec), end);
       const endSec = Math.min(Math.max(w.endSec + part.segment.startSec, startSec), Math.max(end, startSec));
-      out.push({ word: w.word, startSec: round(startSec), endSec: round(endSec) });
+      out.push({ word: w.word, startSec: round(startSec), endSec: round(endSec), ...(w.confidence === undefined ? {} : { confidence: w.confidence }) });
       floor = startSec;
     }
   }

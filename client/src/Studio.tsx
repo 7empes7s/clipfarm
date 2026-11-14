@@ -414,6 +414,7 @@ function StudioEditor({ info, hist, setHist, panel, setPanel, busy, setBusy, err
                   </button>
                 </div>
               )}
+              {clip.captionFixes.length > 0 && <CaptionFixes clip={clip} locked={locked || busy} reload={reload} setError={setError} setNote={setNote} />}
               {words.length === 0 ? (
                 <p className="hint">This clip has no words to edit by. Use the timeline handles.</p>
               ) : (
@@ -427,6 +428,7 @@ function StudioEditor({ info, hist, setHist, panel, setPanel, busy, setBusy, err
                       outside && "outside",
                       isCut(w) && "cut",
                       isFiller(w.word) && "filler",
+                      typeof w.confidence === "number" && w.confidence < UNSURE_CONFIDENCE && "unsure",
                       i >= lo && i <= hi && "selected",
                       playhead >= w.startSec && playhead < w.endSec && "now",
                     ]
@@ -441,6 +443,9 @@ function StudioEditor({ info, hist, setHist, panel, setPanel, busy, setBusy, err
                 </p>
               )}
               <p className="hint">Tap a word, then another, to select the words between. Cut takes them out of the clip; nothing is lost.</p>
+              {words.some((w) => typeof w.confidence === "number" && w.confidence < UNSURE_CONFIDENCE) && (
+                <p className="hint">Wavy underline: the speech-to-text was not sure of that word. Listen and fix it in Edit if it is wrong.</p>
+              )}
             </div>
           )}
 
@@ -478,6 +483,65 @@ function StudioEditor({ info, hist, setHist, panel, setPanel, busy, setBusy, err
         </div>
       </div>
     </StudioShell>
+  );
+}
+
+/** Below this the speech-to-text was guessing at a word (the same line the quality check uses). */
+const UNSURE_CONFIDENCE = 0.5;
+
+/** The misheard words the correction pass fixed, each one can be undone (or used again); Export remakes the video. */
+function CaptionFixes({
+  clip,
+  locked,
+  reload,
+  setError,
+  setNote,
+}: {
+  clip: StudioInfo["clip"];
+  locked: boolean;
+  reload: () => Promise<StudioInfo>;
+  setError: (e: string | null) => void;
+  setNote: (n: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function toggle(n: number, applied: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setCaptionFix(clip.id, n, applied);
+      await reload();
+      setNote("Captions changed. Export to remake the clip with them.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="caption-fixes" data-testid="caption-fixes">
+      <h3>Fixed misheard words</h3>
+      <ul>
+        {clip.captionFixes.map((f, i) => (
+          <li key={i} className={f.applied ? "" : "undone"}>
+            <span className="caption-fix-text">
+              {f.applied ? (
+                <>
+                  <s>{f.from}</s> → <strong>{f.to}</strong>
+                </>
+              ) : (
+                <>
+                  <strong>{f.from}</strong> <span className="hint">(suggested: {f.to})</span>
+                </>
+              )}
+              <span className="hint"> at {fmt(f.startSec)}</span>
+            </span>
+            <button type="button" disabled={locked || busy} onClick={() => void toggle(i, !f.applied)}>
+              {f.applied ? "Undo" : "Use fix"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_EFFECTS } from "../../../shared/types.js";
+import { applyFixes } from "../accuracy/correct.js";
 import { buildAss as buildPickAss } from "../render/captions.js";
 import { buildAss as buildEditAss } from "../rerender/plan.js";
-import { captionProblem, type Detected, detectArgs, judgeQuality, parseDetected, suggestFix } from "./quality.js";
+import { accuracyIssues, captionProblem, type Detected, detectArgs, judgeQuality, MAX_UNSURE_WORDS, parseDetected, suggestFix, unsureWords } from "./quality.js";
 
 const CLEAN: Detected = { black: [], frozen: [], silence: [], lufs: -14.1, truePeak: -2.3 };
 const INFO = { width: 1080, height: 1920, durationSec: 24, hasAudio: true };
@@ -143,5 +144,55 @@ describe("suggestFix", () => {
     });
     // Loudness was already on: remaking the clip the same way would not help.
     expect(suggestFix({ ...base, issues: quiet, detected: CLEAN })).toBeNull();
+  });
+});
+
+describe("the caption accuracy check", () => {
+  const word = (w: string, confidence?: number) => ({ word: w, startSec: 1, endSec: 1.3, ...(confidence === undefined ? {} : { confidence }) });
+  const SURE = ["I", "forgot,", "market", "opens"].map((w) => word(w, 0.9));
+
+  it("passes captions the speech-to-text was sure of", () => {
+    expect(accuracyIssues({ words: SURE, title: "TJR: market opens", hook: "He forgot" })).toEqual([]);
+    expect(judgeQuality({ info: INFO, detected: CLEAN, ass: null, words: SURE, title: "t", hook: "h" })).toEqual([]);
+  });
+
+  it(`flags low-confidence words and holds the clip when more than ${MAX_UNSURE_WORDS} are unsure`, () => {
+    const unsure = [word("I", 0.9), word("for", 0.4), word("God,", 0.3), word("Margaret", 0.2), word("opens", 0.45)];
+    expect(unsureWords(unsure).map((w) => w.word)).toEqual(["for", "God,", "Margaret", "opens"]);
+    const issues = judgeQuality({ info: INFO, detected: CLEAN, ass: null, words: unsure, title: "TJR live", hook: "" });
+    expect(issues).toEqual([{ code: "accuracy", reason: expect.stringContaining("4 caption words may be misheard") }]);
+    expect(issues[0]!.reason).toContain("“Margaret”");
+    // A few unsure words are shown in the Studio but do not hold the clip.
+    expect(accuracyIssues({ words: unsure.slice(0, 3), title: "TJR live", hook: "" })).toEqual([]);
+  });
+
+  it("holds a clip whose title or hook carries an unsure word", () => {
+    const words = [...SURE, word("Margaret", 0.2)];
+    expect(accuracyIssues({ words, title: "Margaret opens at ten", hook: "" })).toEqual([
+      { code: "accuracy", reason: expect.stringMatching(/^The title may have a misheard word: .*Margaret/) },
+    ]);
+  });
+});
+
+describe("the title check after a fix", () => {
+  const heard = "I for God, Margaret opens at ten thirty. Waiting for the open".split(" ").map((word, i) => ({ word, startSec: i * 0.5, endSec: i * 0.5 + 0.45 }));
+  const { words, fixes } = applyFixes(heard, [
+    { first: 1, last: 2, to: "forgot,", why: "" },
+    { first: 3, last: 3, to: "market", why: "" },
+  ]);
+
+  it("passes a correct title that still uses a common word of a fixed phrase ('for')", () => {
+    expect(accuracyIssues({ words, fixes, title: "I forgot, market opens at ten thirty — waiting for the open", hook: "Waiting for the open" })).toEqual([]);
+  });
+
+  it("holds a title that still has the whole misheard phrase", () => {
+    expect(accuracyIssues({ words, fixes, title: "I for God, market opens", hook: "" })).toEqual([
+      { code: "accuracy", reason: expect.stringContaining("“for God” may be misheard") },
+    ]);
+  });
+
+  it("does not hold a title for a short common word the speech-to-text was unsure of", () => {
+    const unsureFor = words.map((w) => (w.word === "for" ? { ...w, confidence: 0.3 } : w));
+    expect(accuracyIssues({ words: unsureFor, fixes, title: "Waiting for the open", hook: "" })).toEqual([]);
   });
 });

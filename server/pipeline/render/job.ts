@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ClipQuality, Job, Pick } from "../../../shared/types.js";
+import type { CaptionFix, ClipQuality, Job, Pick } from "../../../shared/types.js";
 import { DEFAULT_EFFECTS } from "../../../shared/types.js";
 import { HttpError } from "../../errors.js";
 import type { ClipsRepo } from "../../clips/repo.js";
@@ -9,6 +9,7 @@ import type { PicksRepo } from "../../picks/repo.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import { probeVideo } from "../../tools/ffmpeg.js";
 import type { VodsRepo } from "../../vods/repo.js";
+import { type AccuracyDeps, improveCaptions } from "../accuracy/improve.js";
 import { reactionPeak } from "../polish/plan.js";
 import { checkQuality } from "../polish/quality.js";
 import { preparePolish } from "../polish/run.js";
@@ -38,6 +39,8 @@ export interface RenderDeps {
   /** Final clips go to <mediaDir>/clips, creator frames to <mediaDir>/frames. Nothing else stays. */
   mediaDir: string;
   preset?: string;
+  /** Accurate captions for clips that get posted (better speech-to-text, the correction pass); off without it. */
+  accuracy?: AccuracyDeps;
 }
 
 /**
@@ -74,10 +77,42 @@ export function renderHandler(deps: RenderDeps): JobHandler {
       return { input: await deps.downloader.downloadSection(vod.url, section, tmpDir, signal), section, live: null };
     });
 
-    progress(0.3, "Cutting and adding captions");
     const durationSec = pick.endSec - pick.startSec;
     const offsetSec = pick.startSec - section.startSec;
-    const words = clipWords(vod.words, pick.startSec, pick.endSec);
+    // The section's words in master seconds: the first transcript, then (when set up) the accurate one, corrected.
+    let sectionWords = clipWords(vod.words, section.startSec, section.endSec);
+    let title = pick.title;
+    let hook = pick.hook;
+    let captionFixes: CaptionFix[] = [];
+    let accuracyUsd = 0;
+    const accuracy = deps.accuracy;
+    if (accuracy) {
+      progress(0.2, "Checking the captions");
+      const better = await timed("captions", () =>
+        improveCaptions(accuracy, {
+          input,
+          durationSec: section.endSec - section.startSec,
+          words: sectionWords,
+          creatorName: source.creatorName,
+          texts: [vod.title ?? "", ...source.permissions.map((p) => p.briefRules), ...deps.vods.list().filter((v) => v.sourceId === source.id).map((v) => v.title ?? "")],
+          vodTitle: vod.title,
+          permissions: source.permissions,
+          hook,
+          title,
+          tmpDir,
+          signal,
+        }),
+      );
+      sectionWords = better.words;
+      captionFixes = better.fixes;
+      title = better.title;
+      hook = better.hook;
+      accuracyUsd = better.costUsd;
+      console.log(`[render] clip ${pickId} captions: ${better.notes.join(" ")}`);
+    }
+
+    progress(0.3, "Cutting and adding captions");
+    const words = clipWords(sectionWords, offsetSec, offsetSec + durationSec);
     // The reaction peak: the same loudness and transcript score the picks used, inside this clip.
     const loudness = deps.vods.loudness(pick.vodId).slice(Math.floor(pick.startSec), Math.ceil(pick.endSec));
     const peakSec = reactionPeak(words, loudness, durationSec);
@@ -88,9 +123,9 @@ export function renderHandler(deps: RenderDeps): JobHandler {
       const plan = planLayout(pick.layout, info.width, info.height, source.faceCam);
       plannedLayout = plan.layout;
       const polish = await preparePolish({
-        input, offsetSec, durationSec, effects: DEFAULT_EFFECTS, hook: pick.hook, words, peakSec, hasAudio: info.hasAudio, tmpDir, signal,
+        input, offsetSec, durationSec, effects: DEFAULT_EFFECTS, hook, words, peakSec, hasAudio: info.hasAudio, tmpDir, signal,
       });
-      const ass = buildAss(words, polish.hookCard ? pick.hook : "");
+      const ass = buildAss(words, polish.hookCard ? hook : "");
       await writeFile(join(tmpDir, "captions.ass"), ass);
       await renderClip({
         input,
@@ -104,7 +139,9 @@ export function renderHandler(deps: RenderDeps): JobHandler {
         polish,
         signal,
       });
-      quality = await checkQuality(join(tmpDir, "clip.mp4"), { ass, effects: DEFAULT_EFFECTS, startSec: offsetSec, signal });
+      quality = await checkQuality(join(tmpDir, "clip.mp4"), {
+        ass, effects: DEFAULT_EFFECTS, startSec: offsetSec, signal, text: { words, title, hook, fixes: captionFixes },
+      });
       await grabFrame(join(tmpDir, "clip.mp4"), Math.min(1, durationSec / 2), join(tmpDir, "thumb.jpg"), { signal });
     });
 
@@ -131,15 +168,16 @@ export function renderHandler(deps: RenderDeps): JobHandler {
       deps.clips.create({
         sourceId: pick.sourceId,
         vodId: pick.vodId,
-        title: pick.title,
+        title,
         filePath,
         durationSec: clipDurationSec,
-        hook: pick.hook,
+        hook,
         reason: pick.reason,
         score: pick.score,
         layout: plannedLayout,
         // Timed in master seconds, as the gallery's editor expects.
-        captionWords: clipWords(vod.words, section.startSec, section.endSec),
+        captionWords: sectionWords,
+        captionFixes,
         masterPath,
         masterDurationSec: section.endSec - section.startSec,
         startSec: offsetSec,
@@ -149,7 +187,10 @@ export function renderHandler(deps: RenderDeps): JobHandler {
         live,
       }).id;
     // A pick rendered again keeps its clip; the check applies only while the clip still shows this file.
-    if (pick.clipId && quality && deps.clips.filePath(clipId) === filePath) deps.clips.setQuality(clipId, quality);
+    if (pick.clipId && quality && deps.clips.filePath(clipId) === filePath) {
+      deps.clips.setQuality(clipId, quality);
+      if (accuracy) deps.clips.setCaptions(clipId, { captionWords: sectionWords, captionFixes, title, hook });
+    }
     const saved = deps.picks.saveRender(pickId, {
       filePath,
       thumbPath,
@@ -157,6 +198,7 @@ export function renderHandler(deps: RenderDeps): JobHandler {
       durationSec: clipDurationSec,
       steps,
       clipId,
+      costUsd: accuracyUsd,
     });
     console.log(
       `[render] clip ${pickId} "${saved.title}": ${steps.map((s) => `${s.step} ${s.ms} ms`).join(", ")}, ` +

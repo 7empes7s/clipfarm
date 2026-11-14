@@ -152,6 +152,8 @@ export const api = {
     call<{ clips: Clip[] }>(`/api/clips/${id}/split`, { method: "POST", body: JSON.stringify({ ...edit, atSec }) }),
   restoreVersion: (id: number, versionId: number) => call<Clip>(`/api/clips/${id}/renders/${versionId}/restore`, { method: "POST" }),
   revertClip: (id: number) => call<Clip>(`/api/clips/${id}/revert`, { method: "POST" }),
+  setCaptionFix: (id: number, n: number, applied: boolean) =>
+    call<{ clip: Clip }>(`/api/clips/${id}/caption-fixes/${n}`, { method: "POST", body: JSON.stringify({ applied }) }),
   clipVersions: (id: number) => call<ClipVersion[]>(`/api/clips/${id}/renders`),
   hookIdeas: (id: number, ai: boolean) =>
     call<{ hook: string; title: string }[]>(`/api/clips/${id}/hook-ideas`, { method: "POST", body: JSON.stringify({ ai }) }),

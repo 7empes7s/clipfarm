@@ -79,6 +79,15 @@ export function studioRoutes(deps: StudioDeps): Router {
     res.status(202).json({ clips: made.map((c) => clips.get(c.id)) });
   });
 
+  // A caption fix the correction pass made: undo it (the words as heard come back) or use it again. Export remakes the video.
+  r.post("/clips/:id/caption-fixes/:n", (req, res) => {
+    const n = Number(req.params.n);
+    const applied = (req.body ?? {}).applied;
+    if (!Number.isInteger(n) || n < 0) throw new ValidationError("Invalid fix.");
+    if (typeof applied !== "boolean") throw new ValidationError("Say whether to use the fix (applied: true or false).");
+    res.json({ clip: clips.setFixApplied(idParam(req.params.id), n, applied) });
+  });
+
   r.get("/clips/:id/renders", (req, res) => {
     res.json(clips.versions(idParam(req.params.id)));
   });

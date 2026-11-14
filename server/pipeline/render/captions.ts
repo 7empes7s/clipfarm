@@ -146,5 +146,6 @@ export function clipWords(words: Word[], startSec: number, endSec: number): Word
       word: w.word,
       startSec: r(Math.max(0, w.startSec - startSec)),
       endSec: r(Math.min(endSec, w.endSec) - startSec),
+      ...(w.confidence === undefined ? {} : { confidence: w.confidence }),
     }));
 }

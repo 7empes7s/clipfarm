@@ -73,7 +73,10 @@ async function renderWindow(
   const plan = planRender({ ...input, outPath, srcW: master.width, srcH: master.height, polish, look: input.look ?? undefined });
   if (plan.ass) await writeFile(join(tmpDir, "captions.ass"), plan.ass);
   await run("ffmpeg", plan.args, { signal, cwd: tmpDir });
-  const quality = await checkQuality(outPath, { ass: plan.ass, effects: input.effects, startSec: input.startSec, signal });
+  const quality = await checkQuality(outPath, {
+    ass: plan.ass, effects: input.effects, startSec: input.startSec, signal,
+    text: { words, title: input.title ?? "", hook: input.hook, fixes: input.captionFixes },
+  });
   return { durationSec: (await probeVideo(outPath, signal)).durationSec, quality };
 }
 
