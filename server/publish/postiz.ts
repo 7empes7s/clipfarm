@@ -15,6 +15,11 @@ const IDENTIFIERS: Record<string, Platform> = {
   instagram: "instagram",
   "instagram-standalone": "instagram",
   x: "x",
+  facebook: "facebook",
+  threads: "threads",
+  linkedin: "linkedin",
+  "linkedin-page": "linkedin",
+  bluesky: "bluesky",
 };
 
 interface PostizIntegration {
@@ -188,6 +193,9 @@ export class PostizService implements PostingService {
         return { __type: identifier, post_type: "post", is_trial_reel: false, collaborators: [] };
       case "x":
         return { __type: "x", who_can_reply_post: "everyone" };
+      // Facebook, Threads, LinkedIn and Bluesky need nothing but the provider's own id.
+      default:
+        return { __type: identifier };
     }
   }
 

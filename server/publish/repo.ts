@@ -15,6 +15,7 @@ import { NotFoundError, ValidationError } from "../errors.js";
 import { maskIp } from "../isolation/rules.js";
 import { mergeMetrics, offsetFor, parseMetrics } from "../growth/series.js";
 import { estimateEarnings } from "./earnings.js";
+import type { Booking } from "./planner.js";
 import type { PostUpdate, TrackedPost } from "./types.js";
 
 export const DEFAULT_RULES: PostingRules = { maxPerDay: 3, minGapMinutes: 90 };
@@ -47,6 +48,8 @@ interface PostRow {
   whop_submitted_at: string | null;
   whop_approved_at: string | null;
   whop_paid_at: string | null;
+  whop_rejected_at: string | null;
+  whop_reject_reason: string | null;
   claim_at: string | null;
   removal_at: string | null;
   strike_at: string | null;
@@ -100,6 +103,8 @@ function toPost(r: PostRow): Post {
     whopSubmittedAt: r.whop_submitted_at,
     whopApprovedAt: r.whop_approved_at,
     whopPaidAt: r.whop_paid_at,
+    whopRejectedAt: r.whop_rejected_at,
+    whopRejectReason: r.whop_reject_reason,
     whopPayoutAt: r.whop_approved_at ? new Date(new Date(r.whop_approved_at).getTime() + WHOP_HOLD_DAYS * 86_400_000).toISOString() : null,
     experiment: r.kind === "experiment",
     flags: { claim: r.claim_at, removal: r.removal_at, strike: r.strike_at },
@@ -425,6 +430,83 @@ export class PostsRepo {
     return this.get(id);
   }
 
+  /** Posts that went out in the last two days or are still due: what the platforms' limits count (`except`: post ids left out). */
+  bookings(except: number[] = []): Booking[] {
+    const since = new Date(this.now().getTime() - 2 * 86_400_000).toISOString();
+    return (
+      this.db
+        .prepare("SELECT id, account_id, platform, service, group_id, scheduled_at FROM posts WHERE status != 'failed' AND scheduled_at >= ?")
+        .all(since) as { id: number; account_id: string; platform: Platform; service: PostingServiceName; group_id: number | null; scheduled_at: string }[]
+    )
+      .filter((r) => !except.includes(r.id))
+      .map((r) => ({
+        accountId: r.account_id,
+        platform: r.platform,
+        app: r.service === "direct" ? `group:${r.group_id}` : `service:${r.service}`,
+        at: new Date(r.scheduled_at),
+      }));
+  }
+
+  /** A post that still waits in clipfarm (held for the service, or our own upload), so its time can be changed. */
+  movable(id: number): boolean {
+    return (
+      this.db
+        .prepare("SELECT 1 FROM posts WHERE id = ? AND status = 'scheduled' AND external_id IS NULL AND (held = 1 OR service = 'direct')")
+        .get(id) !== undefined
+    );
+  }
+
+  /** The calendar's posts from `from` to `to`, soonest first, leaving out failed posts that were tried again. */
+  between(from: Date, to: Date): { post: Post; movable: boolean }[] {
+    return (
+      this.db
+        .prepare(
+          `${SELECT.replace("SELECT p.*,", "SELECT p.*, (p.status = 'scheduled' AND p.external_id IS NULL AND (p.held = 1 OR p.service = 'direct')) AS movable,")}
+           WHERE p.scheduled_at >= ? AND p.scheduled_at < ? AND p.retried_by IS NULL ORDER BY p.scheduled_at, p.id`,
+        )
+        .all(from.toISOString(), to.toISOString()) as (PostRow & { movable: number })[]
+    ).map((r) => ({ post: toPost(r), movable: r.movable === 1 }));
+  }
+
+  /** The post a failed post was tried again as, or null. */
+  retriedBy(id: number): number | null {
+    return (this.db.prepare("SELECT retried_by FROM posts WHERE id = ?").pluck().get(id) as number | null | undefined) ?? null;
+  }
+
+  markRetried(id: number, by: number): void {
+    this.db.prepare("UPDATE posts SET retried_by = ? WHERE id = ?").run(by, id);
+  }
+
+  /** The slot planner's settings: whether the TikTok posting app passed TikTok's audit. */
+  plannerSettings(): { tiktokAudited: boolean } {
+    const value = this.db.prepare("SELECT value FROM settings WHERE key = 'planner'").pluck().get() as string | undefined;
+    return { tiktokAudited: false, ...(value ? (JSON.parse(value) as { tiktokAudited?: boolean }) : {}) };
+  }
+
+  savePlannerSettings(s: { tiktokAudited: boolean }): { tiktokAudited: boolean } {
+    this.db
+      .prepare("INSERT INTO settings (key, value) VALUES ('planner', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify({ tiktokAudited: s.tiktokAudited }));
+    return this.plannerSettings();
+  }
+
+  /**
+   * The campaign turned a submitted post down, with its reason (tapped by hand, or null to take it
+   * back). A rejected post is not approved or paid; approving it again clears the rejection.
+   */
+  setWhopRejected(id: number, reason: string | null): Post {
+    const post = this.get(id);
+    if (post.experiment) throw new ValidationError("Experiment posts are never sent to Whop.");
+    if (reason !== null && !post.whopSubmittedAt) throw new ValidationError("Mark it sent to Whop first.");
+    if (reason === null) this.db.prepare("UPDATE posts SET whop_rejected_at = NULL, whop_reject_reason = NULL WHERE id = ?").run(id);
+    else {
+      this.db
+        .prepare("UPDATE posts SET whop_rejected_at = COALESCE(whop_rejected_at, ?), whop_reject_reason = ?, whop_approved_at = NULL, whop_paid_at = NULL WHERE id = ?")
+        .run(this.now().toISOString(), reason, id);
+    }
+    return this.get(id);
+  }
+
   /** Times of the account's posts that went out or are still due (`except`: post ids left out). */
   takenTimes(accountId: string, except: number[] = []): Date[] {
     return (
@@ -492,7 +574,12 @@ export class PostsRepo {
     const value = (s: WhopStep) => (s === step ? (on ? (at[s] ?? now) : null) : on || WHOP_STEPS.indexOf(s) < i ? at[s] : null);
     this.db
       // Marked sent, even late: the manager says it was submitted, so it no longer counts as a missed window.
-      .prepare(`UPDATE posts SET whop_submitted_at = ?, whop_approved_at = ?, whop_paid_at = ?${value("submitted") ? ", submit_missed_at = NULL" : ""} WHERE id = ?`)
+      .prepare(
+        `UPDATE posts SET whop_submitted_at = ?, whop_approved_at = ?, whop_paid_at = ?${value("submitted") ? ", submit_missed_at = NULL" : ""}${
+          // Approved after all, or no longer sent: a rejection no longer stands.
+          (step === "approved" && on) || !value("submitted") ? ", whop_rejected_at = NULL, whop_reject_reason = NULL" : ""
+        } WHERE id = ?`,
+      )
       .run(value("submitted"), value("approved"), value("paid"), id);
     return this.get(id);
   }

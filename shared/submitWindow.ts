@@ -65,7 +65,7 @@ export function clockMinutes(hhmm: unknown): number | null {
 const formats = new Map<string, Intl.DateTimeFormat>();
 
 /** The calendar date and the minutes since midnight that a moment has in a time zone. */
-function localParts(t: number, timeZone: string): { y: number; m: number; d: number; min: number } {
+export function localParts(t: number, timeZone: string): { y: number; m: number; d: number; min: number } {
   let f = formats.get(timeZone);
   if (!f) {
     f = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" });
@@ -83,7 +83,7 @@ function offsetMs(t: number, timeZone: string): number {
 }
 
 /** The moment a zone's clock shows this date and time (`d` and `min` may run over: day 32, minute 1500). */
-function zonedTime(y: number, m: number, d: number, min: number, timeZone: string): number {
+export function zonedTime(y: number, m: number, d: number, min: number, timeZone: string): number {
   const wall = Date.UTC(y, m - 1, d, 0, min);
   // Twice: the first guess can land on the other side of a clock change.
   const first = wall - offsetMs(wall, timeZone);

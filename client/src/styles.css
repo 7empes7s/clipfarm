@@ -3840,6 +3840,363 @@ button.danger {
   list-style: none;
 }
 
+/* Calendar: every scheduled or posted clip across platforms. A scheduled post is a solid card you
+   can pick up and drop on another day or hour; what went out is quieter, a failure is red. */
+.cal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+.cal-seg,
+.cal-step {
+  display: flex;
+  gap: var(--s1);
+}
+.cal-seg button[aria-pressed="true"],
+.ver-tab[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+.cal-step button {
+  min-width: 44px;
+  padding: 0 var(--s3);
+}
+.cal-range {
+  margin: var(--s2) 0 var(--s3);
+}
+.cal-message {
+  margin: var(--s2) 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius-small);
+  background: var(--ok-bg);
+  color: var(--ok);
+  overflow-wrap: anywhere;
+}
+.cal-week {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s2);
+}
+@media (min-width: 960px) {
+  .cal-week {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+.cal-day,
+.cal-hour {
+  display: grid;
+  align-content: start;
+  gap: var(--s1);
+  min-width: 0;
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  transition: background var(--fast), border-color var(--fast);
+}
+@media (min-width: 960px) {
+  .cal-day {
+    min-height: 12rem;
+  }
+}
+.cal-day.today {
+  border-color: var(--accent-strong);
+}
+.drop-over {
+  border-color: var(--second);
+  background: color-mix(in srgb, var(--second) 10%, var(--surface));
+}
+.cal-day-head {
+  margin: 0;
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.cal-free {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+.cal-hours {
+  display: grid;
+  gap: var(--s1);
+}
+.cal-hour {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: start;
+  min-height: 44px;
+}
+.cal-hour-label {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  padding-top: var(--s1);
+}
+.cal-hour-slots {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.cal-list {
+  display: grid;
+  gap: var(--s3);
+}
+.cal-list > div {
+  display: grid;
+  gap: var(--s1);
+}
+.slot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  align-content: start;
+  overflow: hidden;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: var(--s2);
+  text-align: left;
+  font-weight: 400;
+  font-size: var(--t-sm);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-left: 4px solid var(--muted);
+}
+.slot.movable {
+  cursor: grab;
+  background: var(--surface);
+  border-color: var(--line);
+  border-left-color: var(--second);
+  box-shadow: var(--lift-1);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.slot.dragging {
+  position: relative;
+  z-index: 20;
+  cursor: grabbing;
+  pointer-events: none;
+  box-shadow: var(--lift-2);
+  transition: none;
+}
+.slot-posted {
+  border-left-color: var(--ok);
+}
+.slot-failed {
+  border-left-color: var(--bad);
+  background: var(--bad-bg);
+}
+.slot-posting {
+  border-left-color: var(--accent-strong);
+}
+.slot-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1) var(--s2);
+  width: 100%;
+  min-width: 0;
+}
+.slot-time {
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.slot-status {
+  display: inline-block;
+  flex: none;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-size: var(--t-xs);
+  font-weight: 600;
+  padding: 0 var(--s2);
+  border-radius: var(--pill);
+  background: var(--sunk);
+  color: var(--muted);
+}
+.status-posted {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.status-failed {
+  background: var(--surface);
+  color: var(--bad);
+}
+.status-posting {
+  color: var(--accent-strong);
+}
+.slot-where {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+}
+.cal-move {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--s2);
+}
+.cal-caption {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.cal-limits {
+  margin-top: var(--s5);
+}
+.cal-limits summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cal-limits .notes li {
+  overflow-wrap: anywhere;
+}
+.cal-sub {
+  margin: var(--s4) 0 var(--s2);
+  font-size: var(--t-md);
+}
+.cal-best {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-sm);
+}
+.cal-best li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+/* Versions sheet */
+.ver-tab {
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border-radius: var(--pill);
+  font-weight: 600;
+  font-size: var(--t-sm);
+}
+.ver-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.ver-warn {
+  color: var(--bad);
+  font-weight: 800;
+}
+.ver-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--t-xs);
+}
+.ver-count.over {
+  color: var(--bad);
+  font-weight: 700;
+}
+.ver-covers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.ver-cover {
+  display: grid;
+  gap: var(--s1);
+  justify-items: center;
+  cursor: pointer;
+}
+.ver-cover img {
+  width: 4.5rem;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: var(--radius-small);
+  border: 2px solid transparent;
+}
+.ver-cover:has(input:checked) img {
+  border-color: var(--ink);
+}
+.ver-problems {
+  color: var(--bad);
+}
+
+/* Autopilot */
+.ap-rules {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.ap-rule p {
+  overflow-wrap: anywhere;
+}
+.ap-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+.ap-dry {
+  margin-top: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--radius-small);
+  background: var(--sunk);
+}
+.ap-dry h4 {
+  margin: 0 0 var(--s2);
+  font-size: var(--t-sm);
+}
+.ap-steps {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-step {
+  display: grid;
+  gap: 2px;
+  padding-left: var(--s2);
+  border-left: 3px solid var(--muted);
+  overflow-wrap: anywhere;
+}
+.ap-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+}
+.ap-post {
+  border-left-color: var(--ok);
+}
+.ap-wait-approval {
+  border-left-color: var(--accent-strong);
 /* Workspaces: the switcher sits between the logo and Settings on phones, under the logo in the sidebar. */
 .appbar {
   flex-wrap: wrap;

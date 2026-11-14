@@ -2,7 +2,7 @@ import type { ScoreStep, ScoutFacts, ScoutScore } from "../../shared/scout.js";
 import { PLATFORM_LABELS, PLATFORMS, type Platform } from "../../shared/types.js";
 
 /** What a clip gets on each platform when we have too few posts of our own to say. */
-export const DEFAULT_TYPICAL_VIEWS: Record<Platform, number> = { tiktok: 2500, youtube: 1500, instagram: 1200, x: 300 };
+export const DEFAULT_TYPICAL_VIEWS: Record<Platform, number> = { tiktok: 2500, youtube: 1500, instagram: 1200, x: 300, facebook: 800, threads: 200, linkedin: 150, bluesky: 100 };
 /** Our own posts on a platform are used once there are this many with a view count. */
 export const MIN_OWN_POSTS = 5;
 /** Where a page names no platform, the ones we post to. */

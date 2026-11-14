@@ -28,7 +28,10 @@ import { PICKS_JOB, picksHandler } from "./pipeline/picks/job.js";
 import { RENDER_JOB, renderHandler } from "./pipeline/render/job.js";
 import { onRenderFinished, RENDER_CLIP_JOB, renderClipHandler } from "./pipeline/rerender/render.js";
 import { DirectPoster } from "./publish/direct/direct.js";
+import { AutopilotRepo } from "./publish/autopilotRepo.js";
+import { Autopilot } from "./publish/autopilotService.js";
 import { Publisher } from "./publish/publisher.js";
+import { VersionsRepo } from "./publish/versionsRepo.js";
 import { PostsRepo } from "./publish/repo.js";
 import { PoliteFetcher } from "./scout/polite.js";
 import { ScoutRepo } from "./scout/repo.js";
@@ -59,6 +62,7 @@ export interface Runtime {
   clips: ClipsRepo;
   posts: PostsRepo;
   publisher: Publisher;
+  autopilot: Autopilot;
   isolation: Isolation;
   direct: DirectPoster;
   accountStats: AccountStatsStore;
@@ -104,11 +108,15 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     service: config.postingService,
     isolation,
     submitWindow: true,
+    holdLater: true,
+    versions: new VersionsRepo(db),
+    covers: (clipId) => thumbs.listForClip(clipId).map((t) => ({ id: t.id, label: t.label, url: `/api/thumbnails/${t.id}/cover` })),
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
   });
   const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
   publisher.useDirect(direct);
+  const autopilot = new Autopilot({ repo: new AutopilotRepo(db), publisher, clips, sources });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const workspaces = new WorkspacesRepo(db);
@@ -272,6 +280,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     pollMs: opts.pollMs,
   });
   return {
+    autopilot,
     settings,
     config,
     db,

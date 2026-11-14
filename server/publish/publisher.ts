@@ -25,12 +25,16 @@ import { ValidationError } from "../errors.js";
 import type { Isolation } from "../isolation/isolation.js";
 import { isActive, isAttested, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
+import { type BestTimes, bestTimes, type CalendarInfo, type ClipVersions, limitFor, slotStatus } from "../../shared/publishing.js";
 import { buildCaption } from "./caption.js";
 import { type DirectPoster, QUOTA_NOTE } from "./direct/direct.js";
 import { campaignProblems, clipTranscript, problemsLine } from "./compliance.js";
 import { assertCanPost } from "./gate.js";
 import type { PostsRepo } from "./repo.js";
+import { type Booking, planSlot } from "./planner.js";
 import { nextFreeSlot, nextSubmitSlot } from "./spacing.js";
+import { composeCaption, defaultVersion, parseVersion, versionProblems, type VersionContext } from "./versions.js";
+import type { VersionsRepo } from "./versionsRepo.js";
 import type { PostingService, PublishItem, PublishResult } from "./types.js";
 
 /** Platform limits in plain words, shown next to the post button. */
@@ -85,6 +89,16 @@ export interface PublisherDeps {
    * rules), every post goes out by spacing alone.
    */
   submitWindow?: boolean;
+  /**
+   * Every post for later through the posting service waits in clipfarm and is handed over when it
+   * is due, so the calendar can still move it (the slot planner checks each move). The server
+   * turns it on; left out (tests of other rules), only campaign posts that need a submit wait.
+   */
+  holdLater?: boolean;
+  /** Per-platform versions of a clip (title, caption, hashtags, cover); left out: none are saved. */
+  versions?: VersionsRepo;
+  /** The clip's thumbnails, offered as covers. */
+  covers?: (clipId: number) => { id: number; label: string; url: string }[];
   /** The stream a clip was cut from, to match it to an account's niche. */
   vodTitle?: (vodId: number) => string | null;
   /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
@@ -97,6 +111,18 @@ export interface PostVariant {
   title: string;
   hook: string;
   filePath: string;
+}
+
+/** "bestSlot": the next best hour of each platform (autopilot), not just the next free time. */
+export interface PostOptions {
+  bestSlot?: boolean;
+  /** Dry run only: checks a clip that is still waiting as if it were approved (an autopilot rule approves it first). */
+  asApproved?: boolean;
+  /**
+   * Autopilot's burner rules: a clip that still waits for the approve tap may go out, but only to
+   * burner accounts, and it stays waiting in the Inbox. Never used to reach a main account.
+   */
+  burnersOnly?: boolean;
 }
 
 /** The words a post goes out with: the clip's own, or a hook variant's. */
@@ -305,9 +331,11 @@ export class Publisher {
    * A `variant` posts the same cut under another title and hook; every check stays the same, and
    * the campaign's rules are checked on the variant's words.
    */
-  async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant): Promise<PostOutcome> {
+  async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant, opts: PostOptions = {}): Promise<PostOutcome> {
     const { clips, posts, service, isolation } = this.deps;
-    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant);
+    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant, { bestSlot: opts.bestSlot, burnersOnly: opts.burnersOnly });
+    // The words each post goes out with, when they are not the clip's own: a hook variant, or a platform version's title.
+    const wordsOf = (title: string) => (variant ? { title: variant.title, hook: variant.hook } : title !== clip.title ? { title, hook: clip.hook } : undefined);
     // Channels connected here are uploaded by clipfarm, through their group; the rest go to the service.
     // A campaign post for later stays here until it is due, so "I'm busy" can still move it.
     const viaService = planned.filter((p) => !p.account.direct && !p.held);
@@ -339,7 +367,7 @@ export class Publisher {
           postedAt: null,
           groupId,
           note,
-          variant: variant && { title: variant.title, hook: variant.hook },
+          variant: wordsOf(item.title),
           variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
           needsSubmit,
           held: true,
@@ -363,7 +391,7 @@ export class Publisher {
           postedAt: null,
           groupId,
           note,
-          variant: variant && { title: variant.title, hook: variant.hook },
+          variant: wordsOf(item.title),
           // Kept with the post: it may go out later (a set time, a busy account, a full quota).
           variantFile: variant && variant.filePath !== clips.filePath(clip.id) ? variant.filePath : null,
           needsSubmit,
@@ -405,6 +433,194 @@ export class Publisher {
     const hours = this.deps.posts.submitHours();
     const snooze = this.deps.posts.snoozeUntil();
     return (t) => nextSubmitTime(t, hours, snooze);
+  }
+
+  /** The developer app a post goes through: its group's own app for our uploads, else the service's. */
+  private appOf(account: ChannelAccount): string {
+    return account.direct ? `group:${account.groupId}` : `service:${this.deps.service.name}`;
+  }
+
+  /** Each platform's best hours on the manager's clock: the defaults, learned from our posts' views once there are enough. */
+  bestTimes(): BestTimes[] {
+    const timeZone = this.deps.posts.submitHours().timeZone;
+    const seen = this.deps.posts
+      .list()
+      .filter((p) => p.status === "posted")
+      .map((p) => ({ platform: p.platform, at: p.postedAt ?? p.scheduledAt, views: p.views }));
+    return PLATFORMS.map((platform) => bestTimes(platform, seen, timeZone));
+  }
+
+  private bestHours(): (platform: Platform) => { hours: number[]; timeZone: string } {
+    const timeZone = this.deps.posts.submitHours().timeZone;
+    const list = this.bestTimes();
+    return (platform) => ({ hours: list.find((b) => b.platform === platform)!.hours, timeZone });
+  }
+
+  /**
+   * The time a post on this account goes out, from `wanted` on: the account's spacing (and submit
+   * hours), the platform's API limit through the slot planner, and a direct YouTube upload's quota.
+   * `note` keeps the reasons worth showing on the post (limits, submit hours, quota); `reasons` has
+   * every reason it moved, spacing included.
+   */
+  private slotFor(
+    account: ChannelAccount,
+    wanted: Date,
+    o: { needsSubmit: boolean; taken: Date[]; elsewhere: Date[]; bookings: Booking[]; reserved: Map<string, number>; best: ((p: Platform) => { hours: number[]; timeZone: string }) | null },
+  ): { at: Date; note: string | null; reasons: string[] } {
+    const { isolation, posts } = this.deps;
+    const canSubmitAt = this.submitTime();
+    const pace = (from: Date) =>
+      o.needsSubmit ? nextSubmitSlot(o.taken, from, account.pace, o.elsewhere, canSubmitAt) : nextFreeSlot(o.taken, from, account.pace, o.elsewhere);
+    const paceText = `${account.name} posts ${account.pace.maxPerDay} a day, ${account.pace.minGapMinutes} min apart, and one clip goes out on one account at a time`;
+    const { tiktokAudited } = posts.plannerSettings();
+    const slot = (from: Date) =>
+      planSlot({
+        accountId: account.id,
+        accountName: account.name,
+        platform: account.platform,
+        app: this.appOf(account),
+        wanted: from,
+        bookings: o.bookings,
+        pace,
+        paceText,
+        best: o.best?.(account.platform) ?? null,
+        tiktokAudited,
+        // Our own YouTube uploads count their group's real units below.
+        ignoreLimit: isolation !== undefined && account.direct && account.platform === "youtube",
+      });
+    let { at, reasons } = slot(wanted);
+    let note: string | null = o.needsSubmit ? this.waitNote(wanted, at) : null;
+    // A direct YouTube upload costs the group's app 1,600 of its daily units: when the day is
+    // full, the post waits for the reset instead of failing.
+    if (isolation && account.direct && account.platform === "youtube") {
+      for (let open = isolation.uploadSlot(account.groupId, at, o.reserved); open.getTime() !== at.getTime(); open = isolation.uploadSlot(account.groupId, at, o.reserved)) {
+        ({ at, reasons } = slot(open));
+        note = QUOTA_NOTE;
+      }
+      isolation.reserveUpload(o.reserved, account.groupId, at);
+    }
+    const limits = reasons.filter((r) => !r.startsWith(paceText));
+    return { at, note: [note, ...limits].filter(Boolean).join(" ") || null, reasons: note ? [note, ...reasons] : reasons };
+  }
+
+  /**
+   * Drag on the calendar: moves a post that waits in clipfarm to a new time. The slot planner keeps
+   * the account's spacing and the platform's limits, so the post may land later than asked, with the
+   * reasons. The permission must still be in force at the new time.
+   */
+  async reschedule(postId: number, wanted: Date): Promise<{ post: Post; reasons: string[] }> {
+    const { posts, sources, service } = this.deps;
+    const post = posts.get(postId);
+    if (post.status !== "scheduled") throw new ValidationError("Only a post that has not gone out can be moved.");
+    if (!posts.movable(postId)) throw new ValidationError(`It is already queued in ${service.label}, so it can no longer be moved from here.`);
+    const now = this.now();
+    if (new Date(post.scheduledAt).getTime() <= now.getTime()) throw new ValidationError("It is going out right now, so it can no longer be moved.");
+    if (wanted.getTime() < now.getTime() - 60_000) throw new ValidationError("Pick a time in the future.");
+    const account = (await this.knownAccounts()).find((a) => a.id === post.accountId);
+    if (!account) throw new ValidationError(`${post.accountName} is no longer connected.`);
+    const permission = sources.permission(post.permissionId);
+    const needsSubmit = post.submit !== null;
+    const elsewhere = posts.clipTimes(post.clipId, [postId]).filter((c) => c.accountId !== account.id).map((c) => c.at);
+    const from = new Date(Math.max(wanted.getTime(), now.getTime()));
+    const { at, note, reasons } = this.slotFor(account, from, {
+      needsSubmit,
+      taken: posts.takenTimes(account.id, [postId]),
+      elsewhere,
+      bookings: posts.bookings([postId]),
+      reserved: new Map(),
+      best: null,
+    });
+    // The record it goes out under must still be in force then.
+    requireActivePermission(post.creatorName, [permission], at, account.platform, account.role);
+    return { post: posts.postpone(postId, at, note), reasons };
+  }
+
+  /** Retry on a failed post: the clip goes to the same account again, through every check, and the failed post points to the new one. */
+  async retry(postId: number): Promise<PostOutcome> {
+    const { posts } = this.deps;
+    const post = posts.get(postId);
+    if (post.status !== "failed") throw new ValidationError("Only a failed post can be tried again.");
+    if (posts.retriedBy(postId) !== null) throw new ValidationError("It was already tried again.");
+    const words = posts.variantOf(postId);
+    const file = posts.variantFile(postId);
+    // A platform version's title comes back from its saved version; a hook variant needs its own video.
+    const versionTitle = this.deps.versions?.get(post.clipId, post.platform)?.title;
+    if (words && !file && words.title !== versionTitle) throw new ValidationError("It was a hook variant, whose video is not kept here: post the clip again from Approved.");
+    const outcome = await this.post(post.clipId, [post.accountId], null, words && file ? { ...words, filePath: file } : undefined);
+    const fresh = outcome.posts[0];
+    if (fresh) posts.markRetried(postId, fresh.id);
+    return outcome;
+  }
+
+  /** The calendar: every post from `from` to `to` that was not tried again, with what it shows and allows. */
+  calendar(from: Date, to: Date): CalendarInfo {
+    const { posts } = this.deps;
+    const now = this.now();
+    const { tiktokAudited } = posts.plannerSettings();
+    return {
+      items: posts.between(from, to).map(({ post, movable }) => ({
+        post,
+        status: slotStatus(post, now),
+        movable: movable && new Date(post.scheduledAt).getTime() > now.getTime(),
+        retryable: post.status === "failed",
+      })),
+      timeZone: posts.submitHours().timeZone,
+      best: this.bestTimes(),
+      limits: PLATFORMS.flatMap((platform) => {
+        const limit = limitFor(platform, tiktokAudited);
+        return limit ? [{ platform, text: limit.text, source: limit.source }] : [];
+      }),
+      tiktokAudited,
+    };
+  }
+
+  /** What a clip's version on a platform is made from: the campaign that covers that platform, else none. */
+  private versionContext(clip: Clip, source: Source, platform: Platform): VersionContext {
+    const now = this.now();
+    const covering = source.permissions.filter((p) => isActive(p, now) && p.allowedPlatforms.includes(platform));
+    const permission = covering.find((p) => p.kind !== "experiment") ?? covering[0];
+    return {
+      title: clip.title,
+      creatorName: source.creatorName,
+      channelUrl: source.channelUrls[0] ?? null,
+      briefRules: permission?.briefRules ?? "",
+      rules: permission?.rules ?? null,
+      platform,
+    };
+  }
+
+  /** One sheet: the clip's title, caption, hashtags and cover on every platform, saved or made from the clip and its campaign. */
+  versions(clipId: number): ClipVersions {
+    const { clips, sources, versions } = this.deps;
+    const clip = clips.get(clipId);
+    const source = sources.get(clip.sourceId);
+    const list = PLATFORMS.map((platform) => {
+      const ctx = this.versionContext(clip, source, platform);
+      const saved = versions?.get(clipId, platform) ?? null;
+      const fields = saved ?? defaultVersion(ctx);
+      return { platform, ...fields, saved: saved !== null, problems: versionProblems(fields, ctx) };
+    });
+    const requiredTags = [...new Set(PLATFORMS.flatMap((p) => defaultVersion(this.versionContext(clip, source, p)).hashtags))];
+    return { clipId, versions: list, covers: this.deps.covers?.(clipId) ?? [], requiredTags };
+  }
+
+  /** Saves one platform's version when nothing is wrong with it; `null` goes back to the one made from the clip. */
+  saveVersion(clipId: number, platform: Platform, body: unknown | null): ClipVersions {
+    const { clips, sources, versions } = this.deps;
+    if (!versions) throw new ValidationError("Versions are not kept on this server.");
+    const clip = clips.get(clipId);
+    if (body === null) {
+      versions.remove(clipId, platform);
+      return this.versions(clipId);
+    }
+    const fields = parseVersion(body);
+    const problems = versionProblems(fields, this.versionContext(clip, sources.get(clip.sourceId), platform));
+    if (problems.length > 0) throw new ValidationError(problems.join(" "));
+    if (fields.coverId !== null && !(this.deps.covers?.(clipId) ?? []).some((c) => c.id === fields.coverId)) {
+      throw new ValidationError("Pick a cover from this clip's thumbnails.");
+    }
+    versions.save(clipId, platform, fields);
+    return this.versions(clipId);
   }
 
   /** Why a campaign post waits, when the manager's hours or snooze moved it. */
@@ -519,15 +735,16 @@ export class Publisher {
    * What post() would send, after the same checks, without asking the service to post and without
    * storing anything: the end-to-end test's proof that a clip can be queued.
    */
-  async dryRun(clipId: number, accountIds: string[], when: Date | null): Promise<{ wouldPost: PlannedPost[]; skipped: SkippedAccount[] }> {
-    const { planned, skipped } = await this.plan(clipId, accountIds, when);
-    const wouldPost = planned.map(({ item, permission, at }) => ({
+  async dryRun(clipId: number, accountIds: string[], when: Date | null, opts: PostOptions = {}): Promise<{ wouldPost: PlannedPost[]; skipped: SkippedAccount[] }> {
+    const { planned, skipped } = await this.plan(clipId, accountIds, when, undefined, opts);
+    const wouldPost = planned.map(({ item, permission, at, note }) => ({
       accountId: item.account.id,
       accountName: item.account.name,
       platform: item.account.platform,
       permissionId: permission.id,
       caption: item.caption,
       scheduledAt: at.toISOString(),
+      note,
     }));
     return { wouldPost, skipped };
   }
@@ -561,7 +778,7 @@ export class Publisher {
     return result;
   }
 
-  private async plan(clipId: number, accountIds: string[], when: Date | null, variant?: Copy) {
+  private async plan(clipId: number, accountIds: string[], when: Date | null, variant?: Copy, opts: PostOptions = {}) {
     const { clips, sources, posts, service } = this.deps;
     if (accountIds.length === 0) throw new ValidationError("Pick at least one account.");
     if (new Set(accountIds).size !== accountIds.length) throw new ValidationError("Each account can be picked once.");
@@ -571,8 +788,9 @@ export class Publisher {
     const clip = clips.get(clipId);
     const copy: Copy = variant ?? clip;
     const source = sources.get(clip.sourceId);
+    const clipStatus = (opts.asApproved || opts.burnersOnly) && clip.status === "pending" ? "approved" : clip.status;
     // First pass without platforms: refuses missing or expired records before any service call.
-    assertCanPost({ clipStatus: clip.status, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
+    assertCanPost({ clipStatus, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
 
     const known = await this.knownAccounts();
     if (isExperimentOnly(source.permissions, now) && !known.some((a) => a.role === "burner" && a.enabled && !a.disabled)) {
@@ -587,6 +805,10 @@ export class Publisher {
       if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
       return account;
     });
+    // Without the manager's approve tap, a waiting clip only ever reaches burners.
+    if (opts.burnersOnly && clip.status === "pending" && picked.some((a) => a.role !== "burner")) {
+      throw new ValidationError("Approve the clip before posting it to a main account.");
+    }
     const skipped: SkippedAccount[] = [];
     const chosen = picked.filter((account) => {
       const reason = skipReason(account);
@@ -595,7 +817,7 @@ export class Publisher {
     });
     if (chosen.length === 0) throw new ValidationError(`${skipped.map((s) => s.reason).join(" ")} Nothing was posted.`);
     assertCanPost({
-      clipStatus: clip.status,
+      clipStatus,
       creatorName: source.creatorName,
       permissions: source.permissions,
       targets: chosen,
@@ -623,7 +845,9 @@ export class Publisher {
     // Compliance: a clip that breaks its campaign's rules does not go out under that campaign.
     const allowed = routed.filter((account) => {
       const permission = routedAt(account, now)!;
-      const problems = this.rulesBroken(clip, copy, permission, account.platform, this.caption(copy, source, permission, account.platform));
+      const saved = variant ? null : (this.deps.versions?.get(clip.id, account.platform) ?? null);
+      const caption = saved ? composeCaption(saved) : this.caption(copy, source, permission, account.platform);
+      const problems = this.rulesBroken(clip, saved ? { title: saved.title, hook: copy.hook } : copy, permission, account.platform, caption);
       const why = problems.length > 0 ? problemsLine(problems) : (this.deps.campaignLimit?.(permission, clip.id) ?? null);
       if (why) skipped.push({ accountId: account.id, accountName: account.name, reason: `${account.name} was left out. ${why}` });
       return why === null;
@@ -653,40 +877,33 @@ export class Publisher {
     const wantedAt = when ?? now;
     // Where this clip already is, or is about to be: each account keeps its distance from the others.
     const clipTimes = posts.clipTimes(clip.id);
-    const { isolation } = this.deps;
     // YouTube uploads being planned in this go, per group and Pacific day.
     const reserved = new Map<string, number>();
-    const canSubmitAt = this.submitTime();
+    // Every post that went out or is due, plus the ones planned in this go: the platforms' limits.
+    const bookings = posts.bookings();
+    const best = opts.bestSlot ? this.bestHours() : null;
+    // A saved version of the clip for a platform gives its title and caption (not for a hook variant).
+    const version = (platform: Platform) => (variant ? null : (this.deps.versions?.get(clip.id, platform) ?? null));
     const planned = cleared.map((account) => {
       const elsewhere = clipTimes.filter((c) => c.accountId !== account.id).map((c) => c.at);
-      const taken = posts.takenTimes(account.id);
       // A campaign clip that has to be submitted by hand goes out only when the manager can do it.
       const needsSubmit = this.needsSubmit(routedAt(account, now)!);
-      const slot = (from: Date) => (needsSubmit ? nextSubmitSlot(taken, from, account.pace, elsewhere, canSubmitAt) : nextFreeSlot(taken, from, account.pace, elsewhere));
-      let at = slot(wantedAt);
-      let note: string | null = needsSubmit ? this.waitNote(wantedAt, at) : null;
-      // A direct YouTube upload costs the group's app 1,600 of its daily units: when the day is
-      // full, the post waits for the reset instead of failing.
-      if (isolation && account.direct && account.platform === "youtube") {
-        for (let open = isolation.uploadSlot(account.groupId, at, reserved); open.getTime() !== at.getTime(); open = isolation.uploadSlot(account.groupId, at, reserved)) {
-          at = slot(open);
-          note = QUOTA_NOTE;
-        }
-        isolation.reserveUpload(reserved, account.groupId, at);
-      }
+      const { at, note } = this.slotFor(account, wantedAt, { needsSubmit, taken: posts.takenTimes(account.id), elsewhere, bookings, reserved, best });
       clipTimes.push({ accountId: account.id, at });
+      bookings.push({ accountId: account.id, platform: account.platform, app: this.appOf(account), at });
       // The covering permission must still be in force when the post goes out.
       const permission = routedAt(account, at);
       if (!permission) throw new ValidationError(`${routingReason(account, at)} Nothing was posted.`);
+      const saved = version(account.platform);
       const item: PublishItem = {
         account,
-        title: copy.title,
-        caption: this.caption(copy, source, permission, account.platform),
+        title: saved?.title ?? copy.title,
+        caption: saved ? composeCaption(saved) : this.caption(copy, source, permission, account.platform),
         when: when === null && at.getTime() === now.getTime() ? null : at,
         paidPromotion: permission.kind === "whop-campaign",
       };
       // Kept here until it is due when it goes out later through the posting service.
-      const held = needsSubmit && !account.direct && item.when !== null;
+      const held = (needsSubmit || this.deps.holdLater === true) && !account.direct && item.when !== null;
       return { item, account, permission, at, note, held };
     });
 
@@ -725,7 +942,8 @@ export class Publisher {
       now: this.now(),
     });
     const permission = covering!;
-    const caption = this.caption(clip, source, permission, platform);
+    const saved = this.deps.versions?.get(clip.id, platform);
+    const caption = saved ? composeCaption(saved) : this.caption(clip, source, permission, platform);
     const problems = this.rulesBroken(clip, clip, permission, platform, caption);
     if (problems.length > 0) throw new ValidationError(problemsLine(problems));
     return {

@@ -48,6 +48,7 @@ import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/tre
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
 import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 import type { ProofInfo } from "../../shared/proof";
+import type { AutopilotInfo, AutopilotRule, AutopilotStep, CalendarInfo, ClipVersions } from "../../shared/publishing";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
 
 const WS_KEY = "clipfarm.workspace";
@@ -153,6 +154,22 @@ export const api = {
   setViews: (id: number, views: number) => call<Post>(`/api/posts/${id}/views`, { method: "POST", body: JSON.stringify({ views }) }),
   markWhop: (id: number, step: WhopStep, on: boolean) =>
     call<Post>(`/api/posts/${id}/whop`, { method: "POST", body: JSON.stringify({ step, on }) }),
+  rejectWhop: (id: number, reason: string | null) => call<Post>(`/api/posts/${id}/whop-reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  calendar: (from: Date, to: Date) => call<CalendarInfo>(`/api/calendar?${new URLSearchParams({ from: from.toISOString(), to: to.toISOString() })}`),
+  saveCalendarSettings: (tiktokAudited: boolean) =>
+    call<{ tiktokAudited: boolean }>("/api/calendar/settings", { method: "PUT", body: JSON.stringify({ tiktokAudited }) }),
+  reschedule: (id: number, at: Date) =>
+    call<{ post: Post; reasons: string[] }>(`/api/posts/${id}/reschedule`, { method: "POST", body: JSON.stringify({ at: at.toISOString() }) }),
+  retryPost: (id: number) => call<PostOutcome>(`/api/posts/${id}/retry`, { method: "POST" }),
+  versions: (clipId: number) => call<ClipVersions>(`/api/clips/${clipId}/versions`),
+  saveVersion: (clipId: number, platform: Platform, v: { title: string; caption: string; hashtags: string; coverId: number | null }) =>
+    call<ClipVersions>(`/api/clips/${clipId}/versions/${platform}`, { method: "PUT", body: JSON.stringify(v) }),
+  resetVersion: (clipId: number, platform: Platform) => call<ClipVersions>(`/api/clips/${clipId}/versions/${platform}`, { method: "DELETE" }),
+  autopilot: () => call<AutopilotInfo>("/api/autopilot"),
+  saveRule: (id: number | null, rule: Omit<AutopilotRule, "id">) =>
+    call<AutopilotRule>(id === null ? "/api/autopilot/rules" : `/api/autopilot/rules/${id}`, { method: id === null ? "POST" : "PUT", body: JSON.stringify(rule) }),
+  deleteRule: (id: number) => call<unknown>(`/api/autopilot/rules/${id}`, { method: "DELETE" }),
+  dryRunRule: (id: number) => call<AutopilotStep[]>(`/api/autopilot/rules/${id}/dry-run`, { method: "POST" }),
   flagPost: (id: number, flag: PostFlag, on: boolean) =>
     call<Post>(`/api/posts/${id}/flags`, { method: "POST", body: JSON.stringify({ flag, on }) }),
   stats: () => call<Stats>("/api/stats"),
