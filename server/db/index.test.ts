@@ -23,7 +23,7 @@ const SHIPPED_ON_MAIN = [
 ];
 
 /** Everything main ships, proof runs included; the submit window's columns come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 1;
+const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -85,6 +85,8 @@ describe("migrate", () => {
     expect(() => migrate(db)).not.toThrow();
     // A waiting post keeps the video of its hook variant.
     expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at"]));
+    // Campaign payouts (the CSV import) come after the submit window.
+    expect(tables(db)).toContain("campaign_payouts");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

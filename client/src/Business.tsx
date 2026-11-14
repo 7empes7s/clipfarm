@@ -186,7 +186,7 @@ function Board({ board, by, setBy }: { board: BusinessBoard; by: GroupBy; setBy:
           Numbers fill in once posts are out and the platforms report on them.
         </EmptyState>
       ) : (
-        <table className="breakdown" data-testid="breakdown">
+        <table className="breakdown earnings" data-testid="breakdown">
           <thead>
             <tr>
               <th scope="col">{GROUPS.find((g) => g.id === by)!.label}</th>
@@ -271,7 +271,7 @@ function Board({ board, by, setBy }: { board: BusinessBoard; by: GroupBy; setBy:
       {m.byCampaign.length === 0 ? (
         <p className="hint">No campaign post in this range.</p>
       ) : (
-        <table className="breakdown" data-testid="campaign-money">
+        <table className="breakdown earnings" data-testid="campaign-money">
           <thead>
             <tr>
               <th scope="col">Campaign</th>

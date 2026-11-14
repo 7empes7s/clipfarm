@@ -438,7 +438,8 @@ textarea {
   color: inherit;
 }
 button,
-a.button {
+a.button,
+label.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
