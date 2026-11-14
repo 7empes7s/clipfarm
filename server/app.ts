@@ -31,6 +31,9 @@ import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import type { DirectPoster } from "./publish/direct/direct.js";
 import { scoutRoutes } from "./scout/routes.js";
+import { clipAiGate, studioRoutes } from "./studio/routes.js";
+import type { TemplatesRepo } from "./studio/templates.js";
+import type { ChatClient } from "./pipeline/picks/llm.js";
 import type { Scout } from "./scout/service.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import { buildChecklist } from "./settings/checklist.js";
@@ -86,6 +89,9 @@ export interface AppDeps {
   growth?: GrowthLab;
   /** The campaign scout: "Campaigns for you" and auto mode. */
   scout?: Scout;
+  /** Studio: brand templates per channel (Settings), and the AI writer for hook ideas. */
+  templates?: TemplatesRepo;
+  aiChat?: () => ChatClient | null;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -146,6 +152,8 @@ export function createApp({
   hookLab,
   growth,
   scout,
+  templates,
+  aiChat,
   seedDemoClip,
   clientDir,
   deployStatusFile,
@@ -305,7 +313,7 @@ export function createApp({
     const clip = clips.review(idParam(req.params.id), "approve");
     // Thumbnail options are made once, as soon as a clip is approved, while Google is connected and switched on.
     if (google?.auto && google.ai.available() && google.ai.settings().thumbnails && google.thumbs.listForClip(clip.id).length === 0) {
-      queueThumbs(clip.id, queue);
+      queueThumbs(clip.id, queue, clipAiGate(clip.id, { clips, sources }).banned);
     }
     res.json(clip);
   });
@@ -325,6 +333,8 @@ export function createApp({
     const job = queue.enqueue(RENDER_CLIP_JOB, { clipId: clip.id }, { clipId: clip.id, maxAttempts: 2 });
     res.status(202).json({ clip: updated, job });
   });
+
+  app.use("/api", studioRoutes({ clips, sources, queue, templates, aiChat, accounts: () => publisher.accounts.list() }));
 
   // The Fix button on a quality warning: applies the suggested change and remakes the clip.
   app.post("/api/clips/:id/fix", (req, res) => {
@@ -617,7 +627,8 @@ export function createApp({
     app.post("/api/clips/:id/thumbnails", (req, res) => {
       const id = idParam(req.params.id);
       clips.get(id);
-      queueThumbs(id, queue);
+      // A campaign that bans AI content gets a frame of the clip, never an AI picture.
+      queueThumbs(id, queue, clipAiGate(id, { clips, sources }).banned);
       res.status(202).json(clipThumbs(id, { thumbs, google: ai, queue }));
     });
 

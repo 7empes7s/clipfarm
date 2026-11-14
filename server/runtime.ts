@@ -1,4 +1,6 @@
 import { AccountStatsStore } from "./accounts/stats.js";
+import { templateForAccount } from "../shared/studio.js";
+import { TemplatesRepo } from "./studio/templates.js";
 import { ClipsRepo } from "./clips/repo.js";
 import { type Config, loadConfig, openSettings } from "./config.js";
 import { type Db, openDb } from "./db/index.js";
@@ -45,6 +47,8 @@ export interface Runtime {
   settings: Settings;
   config: Config;
   db: Db;
+  /** Studio brand templates (their hashtags go into captions by account). */
+  templates: TemplatesRepo;
   sources: SourcesRepo;
   vods: VodsRepo;
   picks: PicksRepo;
@@ -86,10 +90,12 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   posts.submitDefaults = config.submitHours;
   const thumbs = new ThumbsRepo(db);
   const isolation = new Isolation({ db, settings, transport: config.direct.transport, ipEchoUrl: config.direct.endpoints.ipEcho, publicUrl: config.publicUrl });
+  const templates = new TemplatesRepo(db);
   const publisher = new Publisher({
     sources,
     clips,
     posts,
+    brandTags: (accountId) => templateForAccount(templates.list(), accountId)?.hashtags ?? [],
     service: config.postingService,
     isolation,
     submitWindow: true,
@@ -244,6 +250,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     settings,
     config,
     db,
+    templates,
     sources,
     vods,
     picks,
