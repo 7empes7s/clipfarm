@@ -75,6 +75,9 @@ export interface RenderInput {
   endSec: number;
   layout: ClipLayout;
   hook: string;
+  /** For the caption accuracy check: the title, and the misheard words already fixed. */
+  title?: string;
+  captionFixes?: CaptionFix[];
   captionWords: Word[];
   effects: ClipEffects;
   /** Master seconds; null when the peak was never measured. */
@@ -347,6 +350,8 @@ export class ClipsRepo {
       endSec: clip.endSec,
       layout: r.layout,
       hook: r.hook,
+      title: r.title,
+      captionFixes: clip.captionFixes,
       captionWords: clip.captionWords,
       effects: clip.effects,
       peakSec: r.peak_sec,

@@ -80,6 +80,8 @@ export interface Config {
   trendSource: () => TrendSource;
   /** The cloud AI model that tags trends and writes hook variants; null without a key (and in demo mode). */
   aiChat: () => ChatClient | null;
+  /** The most accurate speech-to-text (OpenAI, word timings), for the captions of clips that get posted; null without a key (and in demo mode). */
+  accurateTranscriber: () => Transcriber | null;
   /** Platform APIs asked about our posts directly, on top of the posting service. */
   platformStats: PlatformStatsSource[];
   /** What an hour of this server costs (USD), for a clip's compute cost. */
@@ -335,6 +337,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, settings: Setti
     postingService: fakes ? new FakePostingService() : livePostingService(settings),
     trendSource: fakes ? () => new FakeTrendSource() : liveTrendSource(settings),
     aiChat: fakes ? () => null : liveCloudChat(settings),
+    accurateTranscriber: fakes ? () => null : liveCloudTranscriber(settings),
     postingRefreshMinutes: Math.max(5, Number(env.POSTING_REFRESH_MINUTES) || 60),
     submitHours: { ...DEFAULT_SUBMIT_HOURS, enabled: env.SUBMIT_HOURS !== "off" },
     watchClients: fakes

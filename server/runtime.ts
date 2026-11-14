@@ -229,6 +229,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         liveCut: liveCutter(liveRepo, config.renderPreset),
         mediaDir,
         preset: config.renderPreset,
+        accuracy: { transcriber: config.accurateTranscriber, chat: config.aiChat },
       }),
       [LIVE_SEGMENT_JOB]: liveSegmentHandler({
         repo: liveRepo,
