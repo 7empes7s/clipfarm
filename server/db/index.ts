@@ -726,6 +726,10 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- Accurate captions: the misheard words the correction pass fixed, each one undoable in the Studio.
+  ALTER TABLE clips ADD COLUMN caption_fixes TEXT NOT NULL DEFAULT '[]';
+  `,
+  `
   -- Operations: the switches the manager flips in the app (worker paused, publishing paused, last rollback seen),
   -- and who did what there.
   CREATE TABLE ops_state (

@@ -97,6 +97,7 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   endSec: 25,
   masterDurationSec: 25,
   captionWords: [],
+  captionFixes: [],
   cuts: [],
   look: DEFAULT_LOOK,
   postCount: 0,

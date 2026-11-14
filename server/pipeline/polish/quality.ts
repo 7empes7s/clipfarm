@@ -1,7 +1,8 @@
-import type { ClipEffects, ClipFix, ClipQuality, QualityIssue } from "../../../shared/types.js";
+import type { CaptionFix, ClipEffects, ClipFix, ClipQuality, QualityIssue, Word } from "../../../shared/types.js";
 import { CLIP_MAX_SEC, CLIP_MIN_SEC } from "../../../shared/types.js";
 import { run } from "../../tools/exec.js";
 import { probeVideo, type VideoInfo } from "../../tools/ffmpeg.js";
+import { copyProblems, UNSURE_CONFIDENCE } from "../accuracy/correct.js";
 import { MAX_TRUE_PEAK, TARGET_LUFS } from "./plan.js";
 
 // The automatic check after each render: plain ffmpeg detectors and arithmetic, no AI.
@@ -123,8 +124,39 @@ function stretch(what: string, list: Span[]): string {
   return `${what} ${list.length} times (${total.toFixed(1)} s in all), first at ${at(first.startSec)}.`;
 }
 
+/** More unsure caption words than this hold the clip for review. */
+export const MAX_UNSURE_WORDS = 3;
+
+/** The words on screen the speech-to-text was guessing at (the Studio marks them). */
+export function unsureWords(words: Word[]): Word[] {
+  return words.filter((w) => typeof w.confidence === "number" && w.confidence < UNSURE_CONFIDENCE);
+}
+
+/** The words, title and hook of a clip, for the caption accuracy check. */
+export interface ClipText {
+  words: Word[];
+  title: string;
+  hook: string;
+  fixes?: CaptionFix[];
+}
+
+/** The caption accuracy check: too many unsure words, or a misheard word in the title or hook. */
+export function accuracyIssues(t: ClipText): QualityIssue[] {
+  const issues: QualityIssue[] = [];
+  const unsure = unsureWords(t.words);
+  if (unsure.length > MAX_UNSURE_WORDS) {
+    const list = [...new Set(unsure.map((w) => `“${w.word.replace(/[^\p{L}\p{N}'-]+$/u, "")}”`))].slice(0, 5).join(", ");
+    issues.push({ code: "accuracy", reason: `${unsure.length} caption words may be misheard (${list}). Check them in the Studio before posting.` });
+  }
+  for (const [what, text] of [["title", t.title], ["hook", t.hook]] as const) {
+    const problems = text ? copyProblems(text, t.words, t.fixes ?? []) : [];
+    if (problems.length > 0) issues.push({ code: "accuracy", reason: `The ${what} may have a misheard word: ${problems.join("; ")}. Fix it in Edit.` });
+  }
+  return issues;
+}
+
 /** Turns the measurements into the list of problems, each with a plain reason. */
-export function judgeQuality(o: { info: VideoInfo; detected: Detected; ass: string | null }): QualityIssue[] {
+export function judgeQuality(o: { info: VideoInfo; detected: Detected; ass: string | null } & Partial<ClipText>): QualityIssue[] {
   const { info, detected: d } = o;
   const issues: QualityIssue[] = [];
   if (info.width !== OUT_W || info.height !== OUT_H) {
@@ -148,6 +180,7 @@ export function judgeQuality(o: { info: VideoInfo; detected: Detected; ass: stri
   }
   const captions = o.ass ? captionProblem(o.ass) : null;
   if (captions) issues.push({ code: "captions", reason: captions });
+  if (o.words) issues.push(...accuracyIssues({ words: o.words, title: o.title ?? "", hook: o.hook ?? "", fixes: o.fixes }));
   return issues;
 }
 
@@ -186,11 +219,11 @@ export function suggestFix(o: { issues: QualityIssue[]; detected: Detected; star
 /** Runs the check on a finished clip. `ass` is the caption file it was rendered with. */
 export async function checkQuality(
   file: string,
-  o: { ass: string | null; effects: ClipEffects; startSec: number; signal?: AbortSignal },
+  o: { ass: string | null; effects: ClipEffects; startSec: number; signal?: AbortSignal; text?: ClipText },
 ): Promise<ClipQuality> {
   const info = await probeVideo(file, o.signal);
   const { stderr } = await run("ffmpeg", detectArgs(file, info.hasAudio), { signal: o.signal });
   const detected = parseDetected(stderr, info.durationSec);
-  const issues = judgeQuality({ info, detected, ass: o.ass });
+  const issues = judgeQuality({ info, detected, ass: o.ass, ...o.text });
   return { issues, fix: suggestFix({ issues, detected, startSec: o.startSec, durationSec: info.durationSec, effects: o.effects }) };
 }

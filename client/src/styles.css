@@ -4175,6 +4175,45 @@ button.timeline-handle::after {
 .word.now {
   box-shadow: inset 0 -3px 0 var(--second);
 }
+.word.unsure {
+  text-decoration: underline wavy var(--bad);
+  text-underline-offset: 4px;
+}
+.caption-fixes {
+  margin-bottom: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.caption-fixes h3 {
+  margin: 0 0 var(--s2);
+  font-size: var(--t-sm);
+}
+.caption-fixes ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s2);
+}
+.caption-fixes li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-width: 0;
+}
+.caption-fix-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.caption-fixes s {
+  color: var(--muted);
+}
+.caption-fixes li.undone strong {
+  color: var(--muted);
+}
 .transcript button.word.selected {
   background: var(--accent);
   color: var(--accent-ink);

@@ -115,4 +115,10 @@ describe("assTime and clipWords", () => {
       { word: "edge", startSec: 19.8, endSec: 20 },
     ]);
   });
+
+  it("keeps how sure the speech-to-text was of each word", () => {
+    expect(clipWords([{ word: "Margaret", startSec: 11, endSec: 11.5, confidence: 0.38 }], 10, 30)).toEqual([
+      { word: "Margaret", startSec: 1, endSec: 1.5, confidence: 0.38 },
+    ]);
+  });
 });

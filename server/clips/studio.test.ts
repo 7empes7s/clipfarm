@@ -19,6 +19,9 @@ import { TemplatesRepo } from "../studio/templates.js";
 import { VodsRepo } from "../vods/repo.js";
 import { ClipsRepo } from "./repo.js";
 import { scoreBreakdown } from "./studio.js";
+import { applyFixes } from "../pipeline/accuracy/correct.js";
+
+const w = (word: string, startSec: number, endSec: number): Word => ({ word, startSec, endSec });
 
 const dir = mkdtempSync(join(tmpdir(), "clipfarm-studio-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -144,6 +147,30 @@ describe("Studio export", () => {
     const res = await request(app).post(`/api/clips/${clip.id}/studio`).send(edit());
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/already posted/);
+  });
+});
+
+describe("caption fixes in the Studio", () => {
+  it("undoes and redoes a fix the correction pass made; the captions change, the fix is kept as a suggestion", async () => {
+    const { app, clips, source } = setup();
+    const heard = [w("I", 1, 1.2), w("for", 1.2, 1.4), w("God,", 1.4, 1.8), w("market", 1.9, 2.4), w("opens", 2.4, 2.8)];
+    const fixed = applyFixes(heard, [{ first: 1, last: 2, to: "forgot,", why: "sounds like it" }]);
+    const clip = clips.create({
+      sourceId: source.id, vodId: null, title: "t", hook: "", filePath: file(`fix-${Math.random()}.mp4`), durationSec: 30,
+      captionWords: fixed.words, captionFixes: fixed.fixes, startSec: 0, endSec: 30,
+    });
+    expect(clips.get(clip.id).captionFixes).toEqual(fixed.fixes);
+
+    const undone = await request(app).post(`/api/clips/${clip.id}/caption-fixes/0`).send({ applied: false }).expect(200);
+    expect(undone.body.clip.captionWords.map((x: Word) => x.word).join(" ")).toBe("I for God, market opens");
+    expect(undone.body.clip.captionFixes[0]).toMatchObject({ from: "for God,", to: "forgot,", applied: false });
+
+    const redone = await request(app).post(`/api/clips/${clip.id}/caption-fixes/0`).send({ applied: true }).expect(200);
+    expect(redone.body.clip.captionWords.map((x: Word) => x.word).join(" ")).toBe("I forgot, market opens");
+    expect(redone.body.clip.captionFixes[0].applied).toBe(true);
+
+    await request(app).post(`/api/clips/${clip.id}/caption-fixes/5`).send({ applied: false }).expect(404);
+    await request(app).post(`/api/clips/${clip.id}/caption-fixes/0`).send({ applied: "no" }).expect(400);
   });
 });
 

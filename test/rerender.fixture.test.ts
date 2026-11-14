@@ -63,7 +63,10 @@ describe("re-render an edited clip (real ffmpeg on a generated sample)", () => {
     const faceCam = { x: 0.7, y: 0.05, w: 0.25, h: 0.3 };
 
     const withCaptions = join(dir, "with.mp4");
-    const { durationSec: duration } = await renderClip({ ...base, captionWords: WORDS, faceCam }, withCaptions, dir);
+    // "actually" was a guess of the speech-to-text, and the title repeats it: the check holds the clip.
+    const unsure = WORDS.map((w) => (w.word === "actually" ? { ...w, confidence: 0.2 } : w));
+    const { durationSec: duration, quality } = await renderClip({ ...base, title: "He actually landed that", captionWords: unsure, faceCam }, withCaptions, dir);
+    expect(quality.issues).toEqual([{ code: "accuracy", reason: expect.stringContaining("“actually” may be misheard") }]);
     const info = await probe(withCaptions);
     expect(info).toMatchObject({ width: 1080, height: 1920, hasAudio: true });
     expect(Math.abs(info.duration - 3.5)).toBeLessThanOrEqual(0.1);

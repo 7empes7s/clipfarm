@@ -107,7 +107,12 @@ export function readMoonshineJson(json: string): StepResult {
     }
     for (const w of said) {
       const startSec = Math.max(0, w.start!);
-      words.push({ word: w.word!.trim(), startSec: round(startSec), endSec: round(Math.max(w.end!, startSec + 0.02)) });
+      words.push({
+        word: w.word!.trim(),
+        startSec: round(startSec),
+        endSec: round(Math.max(w.end!, startSec + 0.02)),
+        ...(typeof w.confidence === "number" ? { confidence: w.confidence } : {}),
+      });
       confidence += typeof w.confidence === "number" ? w.confidence : 1;
     }
   }

@@ -107,6 +107,8 @@ describe("migrate", () => {
     expect(db.prepare("SELECT name FROM pragma_table_info('jobs')").pluck().all()).toContain("workspace_id");
     // The streamer registry.
     expect(tables(db)).toContain("streamer_registry");
+    // Accurate captions: the correction pass's fixes, kept per clip.
+    expect(db.prepare("SELECT name FROM pragma_table_info('clips')").pluck().all()).toContain("caption_fixes");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

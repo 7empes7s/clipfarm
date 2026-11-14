@@ -44,6 +44,16 @@ describe("OpenAiTranscriber", () => {
     expect(result.model).toBe("whisper-1");
   });
 
+  it("passes the source's glossary as the prompt, so names and domain words come out right", async () => {
+    const file = join(dir, "a.mp3");
+    await writeFile(file, "small");
+    const api = fakeApi();
+    await new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl: api.fetchImpl }).transcribe(file, { durationSec: 60, tmpDir: dir, prompt: "TJR, market, NQ, ES." });
+    expect(api.calls[0]!.form.get("prompt")).toBe("TJR, market, NQ, ES.");
+    await new OpenAiTranscriber({ apiKey: "sk-test", fetchImpl: api.fetchImpl }).transcribe(file, { durationSec: 60, tmpDir: dir });
+    expect(api.calls[1]!.form.get("prompt")).toBeNull();
+  });
+
   it("asks gpt-transcribe unless told otherwise, and keeps it while it sends word timings", async () => {
     const file = join(dir, "a.mp3");
     await writeFile(file, "small");
