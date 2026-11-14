@@ -503,7 +503,7 @@ export function DigestCard({ refreshKey }: { refreshKey: string }) {
         ))}
       </ul>
       <p className="hint">
-        <a href="#dashboard/earnings">Money</a> · <a href="#dashboard/health">Health</a>
+        <a href="#dashboard/earnings">Money and costs</a> · <a href="#dashboard/health">Pipeline health</a>
       </p>
     </div>
   );

@@ -50,7 +50,7 @@ export const DASH_VIEWS = [
   { id: "progress", label: "Progress" },
   { id: "outputs", label: "Outputs" },
   { id: "accounts", label: "Accounts" },
-  { id: "earnings", label: "Money" },
+  { id: "earnings", label: "Earnings" },
   { id: "health", label: "Health" },
   { id: "experiment", label: "Experiment" },
   { id: "trends", label: "Trends" },
