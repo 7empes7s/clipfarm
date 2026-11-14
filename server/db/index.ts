@@ -513,6 +513,53 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN submit_reminded_at TEXT;
   ALTER TABLE posts ADD COLUMN submit_missed_at TEXT;
   `,
+  `
+  -- Creator mode. Workspaces: "Me" and each client, with their own sources, accounts and brand.
+  CREATE TABLE workspaces (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    brand TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+  );
+  INSERT INTO workspaces (id, name, created_at) VALUES (1, 'Me', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  ALTER TABLE sources ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE posting_accounts ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE watchlist ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  CREATE INDEX sources_workspace ON sources(workspace_id);
+  -- "own-content": who owns the videos, and when the manager ticked "I own these videos or have the owner's OK".
+  ALTER TABLE permissions ADD COLUMN owner_name TEXT;
+  ALTER TABLE permissions ADD COLUMN attested_at TEXT;
+  -- Video files sent from the phone or computer, in pieces, so a dropped connection resumes.
+  CREATE TABLE uploads (
+    id INTEGER PRIMARY KEY,
+    workspace_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    received_bytes INTEGER NOT NULL DEFAULT 0,
+    path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'receiving',
+    vod_id INTEGER,
+    created_at TEXT NOT NULL
+  );
+  -- The other formats made from one long video: square and wide cuts, a best-of, audiograms.
+  CREATE TABLE outputs (
+    id INTEGER PRIMARY KEY,
+    vod_id INTEGER NOT NULL REFERENCES vods(id) ON DELETE CASCADE,
+    source_id INTEGER NOT NULL REFERENCES sources(id),
+    format TEXT NOT NULL,
+    ranges TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting',
+    error TEXT,
+    file_path TEXT,
+    thumb_path TEXT,
+    duration_sec REAL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    chapters TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX outputs_vod ON outputs(vod_id);
+  `,
 ];
 
 export function migrate(db: Db): void {

@@ -9,6 +9,8 @@ const source = (id: number, minViews: number | null, cpm = 1.5): Source => ({
   id,
   creatorName: `Streamer ${id}`,
   channelUrls: [],
+  workspaceId: 1,
+  aiAllowed: true,
   bannedContent: "",
   faceCam: null,
   createdAt: "2026-11-01T00:00:00.000Z",

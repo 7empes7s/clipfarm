@@ -205,6 +205,10 @@ function banTerms(rest: string): string[] {
 
 const NO_SUBMIT = /\bno (?:manual )?(?:submission|submit)s? (?:is |are )?(?:needed|required|necessary)\b|\b(?:submitted|tracked|counted) automatically\b|\bautomatic(?:ally)? (?:submission|tracking|tracked|submitted)\b|\bno need to submit\b/i;
 
+/** "No AI content", "AI-generated clips are not allowed": the campaign bans AI-made content. */
+export const AI_BAN =
+  /\bno ai\b|\bai[- ](?:generated|made|content|voices?|edits?|edited|clips?|videos?)\b.{0,40}\b(?:not allowed|banned|prohibited|forbidden|not accepted|rejected)\b|\b(?:not allowed|banned|prohibited|forbidden)\b.{0,30}\bai[- ](?:generated|made|content|voices?|edits?)\b/i;
+
 function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } {
   const rules: CampaignRules = { ...NO_CAMPAIGN_RULES, requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: [] };
   const brief: string[] = [];
@@ -240,6 +244,10 @@ function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } 
     }
     // Clips the program tracks by itself need no submit by hand (the default for Whop / Content Rewards is that they do).
     if (NO_SUBMIT.test(line)) rules.manualSubmit = false;
+    if (AI_BAN.test(line)) {
+      rules.aiBanned = true;
+      ruled = true;
+    }
     if (ruled) brief.push(line);
   }
   rules.requiredTags = unique(rules.requiredTags);
@@ -419,6 +427,7 @@ export async function fillWithChat(facts: CampaignFacts, raw: string, chat: Chat
     maxSec: facts.rules.maxSec ?? said.rules.maxSec ?? null,
     budgetLeftUsd: facts.rules.budgetLeftUsd ?? said.rules.budgetLeftUsd ?? null,
     manualSubmit: facts.rules.manualSubmit,
+    aiBanned: facts.rules.aiBanned,
   };
   return {
     ...facts,

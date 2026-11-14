@@ -5,6 +5,8 @@ import { demoClipSeeder } from "./dev/seed.js";
 import { ENGINE_SETUP_JOB } from "./engine/engine.js";
 import { SubmitWatch } from "./publish/submitWatch.js";
 import { openRuntime } from "./runtime.js";
+import { fakeFeedFetcher, httpFeedFetcher } from "./creator/links.js";
+import { Creator } from "./creator/service.js";
 import { Campaigns } from "./sources/campaign/service.js";
 import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
@@ -36,6 +38,9 @@ const {
   thumbs,
   live,
   proof,
+  workspaces,
+  uploads,
+  outputs,
 } = openRuntime();
 const mediaDir = config.mediaDir;
 
@@ -48,7 +53,22 @@ if (config.proofFetcher instanceof FakeProofFetcher) {
 const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
 const campaigns = new Campaigns({ sources, fetcher: config.campaignFetcher, chat: config.campaignChat });
 const lookLive = () => void live.sync().catch((err: unknown) => console.error("Live mode check failed:", err));
-const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled: lookLive });
+let creator: Creator | null = null;
+const onPolled = () => {
+  lookLive();
+  // Podcast feeds of your own shows are read with every watchlist check.
+  void creator?.checkFeeds().catch((err: unknown) => console.error("Feed check failed:", err));
+};
+const poller = new WatchlistPoller({ repo: watchRepo, sources, vods, queue, clients: config.watchClients, onPolled });
+creator = new Creator({
+  sources,
+  vods,
+  queue,
+  uploads,
+  readFeed: config.fakes ? fakeFeedFetcher : httpFeedFetcher,
+  watchlist: watchRepo,
+  pollCreator: (id) => void poller.pollCreator(id).catch((err: unknown) => console.error("Watchlist check failed:", err)),
+});
 // A key saved in Settings is tried at once, not after the next wait.
 settings.onChange(() => {
   poller.retryNow();
@@ -94,6 +114,8 @@ const app = createApp({
   deployStatusFile: join(dirname(config.dbFile), "deploy-status.json"),
   supportEmail: config.supportEmail,
   access: config.access ?? undefined,
+  workspaces,
+  creator: { service: creator, uploads, outputs },
 });
 
 queue.start();
