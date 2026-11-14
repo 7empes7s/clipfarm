@@ -11,6 +11,8 @@ import { FakeTranscriber } from "../server/pipeline/transcript/fake.js";
 import type { Transcriber } from "../server/pipeline/transcript/types.js";
 import { SourcesRepo } from "../server/sources/repo.js";
 import { VodsRepo } from "../server/vods/repo.js";
+import { FakeChatSource } from "../server/pipeline/chat/fake.js";
+import type { ChatSource } from "../server/pipeline/chat/types.js";
 import { allowanceInput, campaignInput } from "./helpers.js";
 
 let tmpRoot: string;
@@ -21,12 +23,12 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-function setup(transcriber: Transcriber, now = () => new Date()) {
+function setup(transcriber: Transcriber, now = () => new Date(), chat?: ChatSource) {
   const db = openDb(":memory:");
   const sources = new SourcesRepo(db, now);
   const vods = new VodsRepo(db, now);
   const queue = new JobQueue(db, {
-    handlers: { [INGEST_JOB]: ingestHandler({ sources, vods, downloader: new FakeDownloader(10), transcriber }) },
+    handlers: { [INGEST_JOB]: ingestHandler({ sources, vods, downloader: new FakeDownloader(10), transcriber, chat }) },
     tmpRoot,
     onFinished: onIngestFinished(vods),
   });
@@ -65,6 +67,27 @@ describe("ingest (real ffmpeg on a generated 10 s sample)", () => {
       expect(stored.words[i]!.startSec).toBeGreaterThan(stored.words[i - 1]!.startSec);
     }
     // Audio and sample lived only in the job's temp folder.
+    expect(await readdir(tmpRoot)).toEqual([]);
+  });
+
+  it("stores the VOD's chat in 10 s buckets, and goes on without it when it cannot be read", async () => {
+    const url = "https://www.twitch.tv/videos/1";
+    const chat = new FakeChatSource({ [url]: { messages: [{ sec: 2, user: "a", text: "KEKW" }, { sec: 12, user: "b", text: "no way" }], clips: [] } });
+    const ok = setup(new FakeTranscriber(), undefined, chat);
+    const vod = ok.vods.create(ok.sources.create(campaignInput()).id, url);
+    ok.queue.enqueue(INGEST_JOB, { vodId: vod.id }, { vodId: vod.id });
+    await ok.queue.idle();
+    expect(chat.calls).toEqual([url]);
+    expect(ok.vods.chat(vod.id)).toMatchObject({ bucketSec: 10, messages: [1, 1], emotes: [1, 0], keywords: [0, 1] });
+
+    const broken: ChatSource = { name: "broken", fetch: () => Promise.reject(new Error("Twitch chat could not be reached.")) };
+    const down = setup(new FakeTranscriber(), undefined, broken);
+    const other = down.vods.create(down.sources.create(campaignInput()).id, url);
+    const job = down.queue.enqueue(INGEST_JOB, { vodId: other.id }, { vodId: other.id });
+    await down.queue.idle();
+    expect(down.queue.get(job.id)).toMatchObject({ status: "done", error: null });
+    expect(down.vods.detail(other.id)).toMatchObject({ status: "ready" });
+    expect(down.vods.chat(other.id)).toBeNull();
     expect(await readdir(tmpRoot)).toEqual([]);
   });
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Word } from "../../../shared/types.js";
+import { bucketChat } from "../chat/buckets.js";
+import { seededChat } from "../chat/fake.js";
 import { toSentences } from "./sentences.js";
 import { candidateWindows, isHypeWord, parseEbur128, secondScores } from "./signals.js";
 
@@ -47,11 +49,14 @@ describe("secondScores and candidateWindows", () => {
     expect(isHypeWord("table")).toBe(false);
   });
 
-  it("uses chat spikes when there is a chat replay", () => {
-    const chat = new Array<number>(duration).fill(1);
-    chat[250] = 80;
-    const scores = secondScores(duration, talk(duration), { loudness: quiet, chat });
-    expect(Math.abs(scores.indexOf(Math.max(...scores)) - 250)).toBeLessThanOrEqual(1);
+  it("uses chat spikes when there is a chat replay, opening the window ~30 s before the spike", () => {
+    const chat = bucketChat(seededChat(duration, [{ atSec: 250, messages: 60, emote: "KEKW" }]), duration);
+    const words = talk(duration);
+    const scores = secondScores(duration, words, { loudness: quiet, chat });
+    expect(Math.abs(scores.indexOf(Math.max(...scores)) - 228)).toBeLessThanOrEqual(1);
+    const [top] = candidateWindows(scores, toSentences(words), { count: 1 });
+    expect(Math.abs(top!.startSec - 220)).toBeLessThanOrEqual(5);
+    expect(top!.endSec).toBeGreaterThanOrEqual(245);
   });
 
   it("turns peaks into separate, sentence-aligned windows that open just before the peak", () => {

@@ -110,7 +110,6 @@ function describe(input: PickInput, c: Candidate): string {
   if (usual !== undefined && peak !== undefined && peak - usual >= 3) whys.push(`${Math.round(peak - usual)} dB louder than usual`);
   if (hype > 0) whys.push(`${hype} hype word${hype === 1 ? "" : "s"}`);
   if (overall > 0 && rate > overall * 1.2) whys.push("fast talking");
-  if (input.signals.chat) whys.push("chat spike");
   return `Peak at ${clock(c.peakSec)}: ${whys.length > 0 ? whys.join(", ") : "the most going on in this stretch"}.`;
 }
 

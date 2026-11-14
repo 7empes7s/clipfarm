@@ -14,7 +14,7 @@ const MASTER_SEC = 16;
 
 /** Ten demo picks: [start, end] in the master, score, title, hook, why. */
 const PICKS: [number, number, number, string, string, string][] = [
-  [1, 6, 94, "He actually landed the jump", "WAIT FOR IT", "Loud spike and chat laughing right after the landing."],
+  [1, 6, 94, "He actually landed the jump", "WAIT FOR IT", "Loud spike right after the landing. Chat 6× normal, KEKW burst."],
   [3, 8, 88, "The getaway car flips twice", "NO WAY 😭", "Big reaction, short setup, ends on the laugh."],
   [6, 11, 81, "Chat called it before he did", "CHAT KNEW", "Fast speech and a clear payoff line."],
   [2, 7, 77, "Worst parking job in Vice City", "HOW?!", "Shouting words and a loudness peak."],

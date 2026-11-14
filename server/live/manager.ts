@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import type { LiveCreatorStatus, LiveInfo, LiveNow, WatchedCreator } from "../../shared/types.js";
 import { ValidationError } from "../errors.js";
 import type { JobQueue } from "../jobs/queue.js";
+import { bucketChat } from "../pipeline/chat/buckets.js";
+import type { LiveChatTap } from "../pipeline/chat/types.js";
 import { Backoff } from "../sources/watchlist/backoff.js";
 import type { WatchlistRepo } from "../sources/watchlist/repo.js";
 import type { SourcesRepo } from "../sources/repo.js";
@@ -36,6 +38,8 @@ export interface LiveManagerDeps {
   vods: VodsRepo;
   queue: JobQueue;
   capturer: LiveCapturer;
+  /** Listens to the stream's chat while each segment records, for chat-spike picks; left out, picks go on without chat. */
+  chatTap?: LiveChatTap;
   system: SystemProbe;
   notifier: Notifier;
   /** Segments are kept under <mediaDir>/live until they are too old. */
@@ -266,6 +270,9 @@ export class LiveManager {
     const dir = this.dir(capture.id);
     let file: string;
     let durationSec: number;
+    // The chat is heard for as long as the segment records, on the segment's clock.
+    const heard = new AbortController();
+    const chat = this.deps.chatTap?.listen({ platform: capture.platform, handle: capture.handle }, heard.signal).catch(() => null);
     try {
       await mkdir(dir, { recursive: true });
       const full = guardReason({ freeDiskBytes: await this.deps.system.freeDiskBytes(dir) }, this.limits);
@@ -293,8 +300,15 @@ export class LiveManager {
       backoff.fail(this.now(), `The stream could not be recorded (${message})`);
       await this.end(capture, backoff.lastError!, false);
       return;
+    } finally {
+      heard.abort();
     }
     this.backoffs.get(capture.creatorId)?.succeed();
+    const log = await chat;
+    if (log && log.messages.length > 0) {
+      const onStream = { messages: log.messages.map((m) => ({ ...m, sec: m.sec + seg.startSec })), clips: [] };
+      this.deps.vods.mergeLiveChat(capture.vodId, seg.startSec, bucketChat(onStream, seg.startSec + durationSec));
+    }
     repo.segmentRecorded(seg.id, file, durationSec);
     const job = this.deps.queue.enqueue(
       LIVE_SEGMENT_JOB,
