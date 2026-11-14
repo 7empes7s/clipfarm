@@ -50,9 +50,10 @@ test("a VOD becomes a ranked 9:16 clip to play and review, and the face cam is s
   await expect(camSheet).toBeHidden();
   await expect(campaign.getByText("Face cam set")).toBeVisible();
 
-  // The rendered clip waits in the Inbox for review, with the pick's hook, reason and score.
+  // The rendered clip waits in the Inbox for review, with the pick's hook, reason and score; the fake
+  // chat replay spikes on this pick, so its score of 80 is lifted to 99.
   const clips = (await (await request.get("/api/clips")).json()) as { title: string; status: string; hook: string; score: number }[];
-  expect(clips.find((c) => c.title === "Clip Streamer moment 1")).toMatchObject({ status: "pending", hook: "Wait for it", score: 80 });
+  expect(clips.find((c) => c.title === "Clip Streamer moment 1")).toMatchObject({ status: "pending", hook: "Wait for it", score: 99 });
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(390);
