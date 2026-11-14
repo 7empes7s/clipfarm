@@ -113,6 +113,24 @@ export const INTEGRATIONS: IntegrationDef[] = [
       plain("UPLOAD_POST_PLATFORMS", "Platforms on that profile (optional)", "tiktok,youtube,instagram", false),
     ],
   },
+  {
+    id: "stripe",
+    label: "Stripe",
+    purpose:
+      "Payments for the clipping service: creators pay their plan through Stripe Checkout and manage it in Stripe's billing page. Paste the secret key; IT's Stripe setup (npm run ops -- stripe-setup) makes the products, prices and webhook from it.",
+    fields: [key("STRIPE_SECRET_KEY", "Secret key", "sk_live_… or sk_test_…")],
+  },
+  {
+    id: "client-signin",
+    label: "Client sign-in",
+    purpose: "How creators sign in to the client portal: email links sent through Resend, and \"Sign in with Google\" (optional).",
+    fields: [
+      key("RESEND_API_KEY", "Resend API key", "re_…"),
+      plain("SERVICE_EMAIL_FROM", "Send emails from", "clipfarm <hello@your-domain.com>", true),
+      plain("CLIENT_GOOGLE_CLIENT_ID", "Google OAuth client ID (optional)", "….apps.googleusercontent.com", false),
+      key("CLIENT_GOOGLE_CLIENT_SECRET", "Google OAuth client secret (optional)", "Paste it here", false),
+    ],
+  },
 ];
 
 /** Every setting this screen owns → whether it is a key (never shown, scrubbed from messages). */

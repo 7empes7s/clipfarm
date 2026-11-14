@@ -16,6 +16,8 @@ import { openRuntime, type Runtime } from "../runtime.js";
 import { INTEGRATIONS, isConfigured } from "../settings/integrations.js";
 import { testIntegration } from "../settings/keyTests.js";
 import { Settings } from "../settings/store.js";
+import { WEBHOOK_SECRET_NAME } from "../service/routes.js";
+import { setUpStripe } from "../service/stripeSetup.js";
 import { parseNewSource } from "../sources/repo.js";
 import allowanceSeed from "../sources/seed/public-allowance.json" with { type: "json" };
 import { addSuggested, parseSuggested } from "../sources/suggested.js";
@@ -33,6 +35,8 @@ export interface OpsIo {
   signal?: AbortSignal;
   /** Tests: where `notify` sends, instead of the push services. */
   notifier?: Notifier;
+  /** Tests: where `stripe-setup` sends its calls, instead of Stripe. */
+  fetch?: typeof fetch;
 }
 
 const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
@@ -69,7 +73,11 @@ const USAGE = `clipfarm-ops: run clipfarm on the box, without a browser.
       the drill, the TJR clips with hooks and titles, one PRIVATE test upload to the channel, and what is
       left before a public post. Exits 1 with a "Missing:" line for each thing still missing.
   clipfarm-ops notify <title> <text>
-      Sends a push notification to every phone that turned notifications on (auto-deploy uses it).`;
+      Sends a push notification to every phone that turned notifications on (auto-deploy uses it).
+  clipfarm-ops stripe-setup
+      Sets up Stripe for the clipping service from the secret key alone (Settings, Stripe, or
+      STRIPE_SECRET_KEY): VAT, a price per plan, the views meter, the billing page and the webhook.
+      Safe to run again. Exits 1 with a "NOT OK:" line for each thing that did not work.`;
 
 /** A mistake in how the command was typed (exit code 2). */
 export class UsageError extends Error {}
@@ -472,7 +480,11 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
   let scrub = (line: string) => line;
   try {
     if (command === "test-keys" && args.length === 0) return await testKeys(io);
-    if (!["source", "run", "clips", "status", "proof", "drill", "notify", "golive"].includes(command) || (command === "status" && args.length > 0) || (command === "notify" && args.length !== 2)) {
+    if (
+      !["source", "run", "clips", "status", "proof", "drill", "notify", "golive", "stripe-setup"].includes(command) ||
+      ((command === "status" || command === "stripe-setup") && args.length > 0) ||
+      (command === "notify" && args.length !== 2)
+    ) {
       throw new UsageError(`Unknown command "${argv.join(" ")}".\n\n${USAGE}`);
     }
     rt = openRuntime(io.env, { pollMs: io.pollMs });
@@ -484,6 +496,19 @@ export async function runOps(argv: string[], io: OpsIo): Promise<number> {
     if (command === "proof") return await proofCommand(rt, safe, args);
     if (command === "drill") return await drillCommand(rt, safe, args);
     if (command === "golive") return await golive(rt, safe, args);
+    if (command === "stripe-setup") {
+      const settings = rt.settings;
+      const result = await setUpStripe({
+        key: settings.get("STRIPE_SECRET_KEY") ?? "",
+        plans: rt.clientService.plans,
+        publicUrl: rt.config.publicUrl,
+        hasWebhookSecret: !!settings.secret(WEBHOOK_SECRET_NAME),
+        saveWebhookSecret: (secret) => settings.setSecret(WEBHOOK_SECRET_NAME, secret),
+        fetch: io.fetch,
+      });
+      for (const line of result.lines) safe.out(line);
+      return result.ok ? 0 : 1;
+    }
     if (command === "notify") {
       const phones = rt.liveRepo.pushSubscriptions().length;
       await (io.notifier ?? rt.notifier).notify({ title: scrub(args[0]!), body: scrub(args[1]!), url: "/#dashboard" });

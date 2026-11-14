@@ -153,6 +153,19 @@ describe("Cloudflare Access gate (CLIPFARM_REQUIRE_ACCESS=1)", () => {
     expect((await request(app).get("/icons/../api/clips")).status).toBe(403);
   });
 
+  it("lets the clipping service's pages and client portal through (they sign clients in themselves), and nothing that looks like them", async () => {
+    const app = await appFor(fakeAccess().verifier);
+    for (const path of ["/service", "/pricing", "/service-terms", "/portal", "/portal/auth/verify?token=x", "/api/portal/me", "/assets/index-abc123.js"]) {
+      expect((await request(app).get(path)).status, path).not.toBe(403);
+    }
+    expect((await request(app).post("/api/stripe/webhook").send("{}")).status).not.toBe(403);
+    // The admin's side of the service, and look-alikes, keep the sign-in.
+    for (const path of ["/api/admin/clients", "/portalx", "/api/portalx", "/api/portal", "/assets/../api/clips", "/api/stripe/webhook/x"]) {
+      expect((await request(app).get(path)).status, path).toBe(403);
+    }
+    expect((await request(app).post("/api/admin/clients/1/support-view")).status).toBe(403);
+  });
+
   it("is off unless asked for, so dev and the preview work without Cloudflare", async () => {
     const app = await appFor();
     expect((await request(app).get("/api/clips")).status).toBe(200);

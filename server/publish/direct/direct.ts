@@ -21,6 +21,8 @@ export interface DirectDeps {
   sources: SourcesRepo;
   settings: Settings;
   endpoints: Endpoints;
+  /** Moves a channel connected from the client portal into that client's workspace. */
+  assignWorkspace?: (accountId: string, workspaceId: number) => void;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -37,7 +39,7 @@ export const QUOTA_NOTE = "YouTube quota full until midnight Pacific time, so it
 export class DirectPoster {
   /** How the last "Connect channel" ended, for the screen the browser lands on. */
   lastConnect: IsolationInfo["lastConnect"] = null;
-  private states = new Map<string, { groupId: number; platform: DirectPlatform; expires: number }>();
+  private states = new Map<string, { groupId: number; platform: DirectPlatform; expires: number; workspaceId?: number }>();
   private running = false;
   /** Posts being uploaded right now: "Post now" and the timer never send the same one twice. */
   private sending = new Set<number>();
@@ -71,7 +73,7 @@ export class DirectPoster {
   }
 
   /** "Connect channel": the platform's sign-in page for this group's app, coming back to our callback. */
-  async connectUrl(groupId: number, platform: DirectPlatform): Promise<string> {
+  async connectUrl(groupId: number, platform: DirectPlatform, opts: { workspaceId?: number } = {}): Promise<string> {
     const { isolation } = this.deps;
     const group = isolation.get(groupId);
     if (!isolation.app(group.id, platform)) throw new ValidationError(`Paste the ${PLATFORM_CLIENTS[platform].label} app keys of “${group.name}” first.`);
@@ -80,8 +82,13 @@ export class DirectPoster {
     const t = this.now().getTime();
     for (const [key, s] of this.states) if (s.expires < t) this.states.delete(key);
     const state = randomBytes(24).toString("base64url");
-    this.states.set(state, { groupId, platform, expires: t + STATE_TTL_MS });
+    this.states.set(state, { groupId, platform, expires: t + STATE_TTL_MS, workspaceId: opts.workspaceId });
     return PLATFORM_CLIENTS[platform].authorizeUrl(this.ctx(group, platform), state);
+  }
+
+  /** The workspace a pending sign-in was started for (the client portal's "Connect"); null for the team's own. */
+  workspaceOfState(state: unknown): number | null {
+    return (typeof state === "string" ? this.states.get(state)?.workspaceId : undefined) ?? null;
   }
 
   /**
@@ -117,6 +124,8 @@ export class DirectPoster {
       for (const c of found) {
         accounts.connectDirect({ id: c.accountId, platform, name: c.name, handle: c.handle, avatarUrl: c.avatarUrl, disabled: false }, group, c.tokens.expiresAt);
         this.saveTokens(c.accountId, c.tokens);
+        // Connected from the client portal: the channel posts that client's clips only.
+        if (started.workspaceId !== undefined) this.deps.assignWorkspace?.(c.accountId, started.workspaceId);
       }
       const names = found.map((c) => c.name).join(", ");
       return done(true, `${names} ${found.length === 1 ? "is" : "are"} connected to “${group.name}”.`);
