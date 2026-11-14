@@ -90,7 +90,7 @@ describe("POST /api/campaigns/read (paste a campaign link)", () => {
     expect(res.body.check).toEqual(["minViews", "budgetLeftUsd", "requiredLinks", "requiredText", "bannedWords", "expiresAt"]);
   });
 
-  it("takes only whop.com and contentrewards.com links, and never fetches anything else", async () => {
+  it("takes only clipping-program links, and never fetches anything else", async () => {
     const { app, fetcher } = setup();
     let fetched = 0;
     const real = fetcher.fetchPage.bind(fetcher);
@@ -98,7 +98,9 @@ describe("POST /api/campaigns/read (paste a campaign link)", () => {
     for (const url of ["https://example.com/campaign", "http://127.0.0.1/whop.com", "", undefined]) {
       const res = await request(app).post("/api/campaigns/read").send({ url });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe("Paste a campaign link from whop.com or contentrewards.com (starting with https://).");
+      expect(res.body.error).toBe(
+        "Paste a campaign link from Whop, Content Rewards, Vyro or Clipping.net, or a Discord payroll invite (starting with https://).",
+      );
     }
     expect(fetched).toBe(0);
   });
@@ -260,7 +262,7 @@ describe("the daily re-check", () => {
     for (const s of [direct, elsewhere]) {
       const res = await request(app).post(`/api/permissions/${s.permissions[0]!.id}/check`);
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe("Only a campaign with a whop.com or contentrewards.com link has a page to check.");
+      expect(res.body.error).toBe("Only a campaign with a public page (Whop, Content Rewards, Vyro, Clipping.net) has a page to check.");
     }
   });
 });

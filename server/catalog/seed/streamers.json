@@ -1,0 +1,74 @@
+{
+  "about": "The streamer registry's starting list: creators who publicly pay for or allow clipping (with the page that shows it), and big creators for whom no program was found (their clips never go to main accounts). Every entry is checked again every 7 days. Names, links and short quotes only. Edit freely: an entry needs name, status, checkedOn and, for \"program\", a proofUrl.",
+  "compiledOn": "2026-11-14",
+  "streamers": [
+    {
+      "name": "TJR",
+      "status": "program",
+      "program": "Reach weekly campaign on Content Rewards: $23.1k a week, $5 cap per clip, original content only, caption tag required, no AI content",
+      "proofUrl": "https://contentrewards.com/discover/0d921575-0f7b-4082-a7a9-79a9dcc72dba",
+      "proofQuote": null,
+      "checkedOn": "2026-11-14",
+      "note": "AI content is banned: one strike and you are out."
+    },
+    {
+      "name": "IShowSpeed",
+      "status": "program",
+      "program": "Expedia campaign through Reach: $1 per 1,000 views on TikTok, Instagram and YouTube",
+      "proofUrl": "https://contentrewards.com/discover/87327901-f300-46d9-89eb-3418efa9e3a0",
+      "proofQuote": null,
+      "checkedOn": "2026-11-14",
+      "note": "Two listings carry his name; check this is his before joining."
+    },
+    {
+      "name": "Lacy",
+      "status": "program",
+      "program": "Reach pool campaign",
+      "proofUrl": "https://reachclipping.com/Lacy",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring Lacy",
+      "checkedOn": "2026-11-14",
+      "note": ""
+    },
+    {
+      "name": "JasonTheWeen",
+      "status": "program",
+      "program": "Reach pool campaign",
+      "proofUrl": "https://reachclipping.com/JasonTheWeen",
+      "proofQuote": "Content must be sourced from any video/stream/clip featuring JasonTheWeen",
+      "checkedOn": "2026-11-14",
+      "note": ""
+    },
+    {
+      "name": "CORE",
+      "status": "program",
+      "program": "Pool campaign on Content Rewards",
+      "proofUrl": "https://contentrewards.com/blog/get-paid-clip-streamers",
+      "proofQuote": null,
+      "checkedOn": "2026-11-14",
+      "note": "Listed in Content Rewards' guide to streamers who pay for clips."
+    },
+    {
+      "name": "N3on",
+      "status": "program",
+      "program": "Discord payroll: paid 303 clippers over $1.4M in five weeks",
+      "proofUrl": "https://ground.news/article/kick-gambling-streamer-n3on-is-spending-millions-on-his-army-of-clippers",
+      "proofQuote": null,
+      "checkedOn": "2026-11-14",
+      "note": "Kick gambling streamer: check each clip has no gambling the platforms refuse."
+    },
+    {
+      "name": "Clavicular",
+      "status": "program",
+      "program": "Clips promoted by Kick",
+      "proofUrl": "https://www.dexerto.com/kick/clavicular-says-kick-spent-nearly-700000-promoting-his-clips-in-a-single-month-3393030/",
+      "proofQuote": null,
+      "checkedOn": "2026-11-14",
+      "note": "He says Kick paid to promote his clips; how clippers join is not public."
+    },
+    { "name": "Kai Cenat", "status": "no-program", "program": null, "proofUrl": null, "proofQuote": null, "checkedOn": "2026-11-14", "note": "No official clipping program found." },
+    { "name": "Adin Ross", "status": "no-program", "program": null, "proofUrl": null, "proofQuote": null, "checkedOn": "2026-11-14", "note": "No official clipping program found." },
+    { "name": "xQc", "status": "no-program", "program": null, "proofUrl": null, "proofQuote": null, "checkedOn": "2026-11-14", "note": "No official clipping program found." },
+    { "name": "Alex Hormozi", "status": "no-program", "program": null, "proofUrl": null, "proofQuote": null, "checkedOn": "2026-11-14", "note": "No official clipping program found." },
+    { "name": "Andrew Huberman", "status": "no-program", "program": null, "proofUrl": null, "proofQuote": null, "checkedOn": "2026-11-14", "note": "No official clipping program found." }
+  ]
+}

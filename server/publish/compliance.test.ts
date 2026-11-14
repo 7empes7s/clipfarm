@@ -66,6 +66,18 @@ describe("campaignProblems", () => {
     // Part of another word is not the banned word.
     expect(campaignProblems({ ...base, transcript: "the gamblingest man alive" })).toEqual([]);
   });
+
+  it("names AI-made parts under an AI ban, a clip that went out elsewhere under original-only, and a full day", () => {
+    const strict = { ...base, rules: { ...base.rules, aiBanned: true, originalOnly: true, maxClipsPerDay: 3 } };
+    expect(campaignProblems({ ...strict, aiMade: [], postedElsewhere: false, clipsToday: 2 })).toEqual([]);
+    expect(campaignProblems({ ...strict, aiMade: ["the chosen thumbnail"], postedElsewhere: true, clipsToday: 3 })).toEqual([
+      "the chosen thumbnail is made by AI, and the campaign bans AI content",
+      "the clip already went out under another campaign, and this one takes original clips only",
+      "3 clips went out under the campaign today, and it takes 3 a day at most",
+    ]);
+    // Without those rules, the same clip passes.
+    expect(campaignProblems({ ...base, aiMade: ["the chosen thumbnail"], postedElsewhere: true, clipsToday: 9 })).toEqual([]);
+  });
 });
 
 describe("the campaign's rules in captions and picks", () => {
@@ -90,15 +102,16 @@ describe("earnings on a Whop campaign", () => {
   });
 });
 
-function setup(campaignRules: Partial<CampaignRules>, clip: { title?: string; durationSec?: number; said?: string } = {}) {
-  const now = new Date("2026-11-19T12:00:00.000Z");
+function setup(campaignRules: Partial<CampaignRules>, clip: { title?: string; durationSec?: number; said?: string } = {}, aiMade: string[] = []) {
+  let now = new Date("2026-11-19T12:00:00.000Z");
   const clock = () => now;
   const db = openDb(":memory:");
   const sources = new SourcesRepo(db, clock);
   const clips = new ClipsRepo(db, clock);
   const posts = new PostsRepo(db, clock);
   const service = new FakePostingService();
-  const publisher = new Publisher({ sources, clips, posts, service, now: clock });
+  service.today = clock;
+  const publisher = new Publisher({ sources, clips, posts, service, now: clock, aiMade: () => aiMade });
   const queue = new JobQueue(db, { handlers: {} });
   queue.stop();
   const app = createApp({ sources, vods: new VodsRepo(db, clock), picks: new PicksRepo(db), queue, clips, posts, publisher });
@@ -114,7 +127,7 @@ function setup(campaignRules: Partial<CampaignRules>, clip: { title?: string; du
     captionWords: (clip.said ?? "oh my god he landed it").split(" ").map((word, i) => ({ word, startSec: i, endSec: i + 1 })),
   });
   clips.setStatus(made.id, "approved");
-  return { app, service, sources, source, permission: source.permissions[0]!, clip: made };
+  return { app, service, sources, clips, source, permission: source.permissions[0]!, clip: made, setNow: (iso: string) => (now = new Date(iso)) };
 }
 
 describe("the compliance check before posting to the Whop channel", () => {
@@ -170,6 +183,42 @@ describe("the compliance check before posting to the Whop channel", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Not marked as sent. The clip breaks the campaign's rules (the caption is missing the required tag #ad).");
     expect((await request(app).get("/api/posts")).body[0].whopSubmittedAt).toBeNull();
+  });
+});
+
+describe("a campaign's machine rules in the publisher (TJR: AI ban, 3 clips a day, submit within 30 minutes)", () => {
+  it("blocks a clip with an AI thumbnail under an AI ban, posting nothing, and says why", async () => {
+    const { app, service, clip } = setup({ aiBanned: true }, {}, ["the chosen thumbnail"]);
+    const res = await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("the chosen thumbnail is made by AI, and the campaign bans AI content");
+    expect(service.calls.filter((c) => c === "publish")).toEqual([]);
+    const choices = (await request(app).get(`/api/clips/${clip.id}/accounts`)).body as { account: { id: string }; canPost: boolean; note: string }[];
+    expect(choices.find((c) => c.account.id === YT)).toMatchObject({ canPost: false, note: expect.stringContaining("made by AI") });
+  });
+
+  it("refuses to mark a post submitted once the campaign's own submit window has passed", async () => {
+    const { app, clip, setNow } = setup({ submitWithinMin: 30 });
+    const [post] = (await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201)).body.posts;
+    setNow("2026-11-19T12:29:00.000Z");
+    expect((await request(app).post(`/api/posts/${post.id}/whop`)).body.whopSubmittedAt).toBe("2026-11-19T12:29:00.000Z");
+    await request(app).post(`/api/posts/${post.id}/whop`).send({ step: "submitted", on: false }).expect(200);
+    setNow("2026-11-19T12:45:00.000Z");
+    const res = await request(app).post(`/api/posts/${post.id}/whop`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("the campaign takes a clip only within 30 minutes of posting, and this one went live 45 minutes ago");
+  });
+
+  it("takes no more clips a day than the campaign allows", async () => {
+    const { app, clips, source, clip } = setup({ maxClipsPerDay: 1 });
+    await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [YT] }).expect(201);
+    // The same clip may still go to another account; a second clip may not.
+    expect((await request(app).post(`/api/clips/${clip.id}/posts`).send({ accountIds: [TT] })).status).toBe(201);
+    const second = clips.create({ sourceId: source.id, vodId: null, title: "Another jump", filePath: videoPath, durationSec: 24, endSec: 24, captionWords: [] });
+    clips.setStatus(second.id, "approved");
+    const res = await request(app).post(`/api/clips/${second.id}/posts`).send({ accountIds: [YT] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("1 clip went out under the campaign today, and it takes 1 a day at most");
   });
 });
 

@@ -15,6 +15,8 @@ import { WatchlistPoller } from "./sources/watchlist/poller.js";
 import { FakeGoogleSignIn, FakeMailer, HttpGoogleSignIn, ResendMailer } from "./service/auth.js";
 import { DEMO_WEBHOOK_SECRET, WEBHOOK_SECRET_NAME } from "./service/routes.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
+import streamerSeed from "./catalog/seed/streamers.json" with { type: "json" };
+import { parseSeedStreamers, RegistryRepo } from "./catalog/registry.js";
 
 const {
   settings,
@@ -33,6 +35,7 @@ const {
   growth,
   business,
   scout,
+  registry,
   queue,
   watchRepo,
   radar,
@@ -56,6 +59,12 @@ const suggested = parseSuggested(allowanceSeed.creators);
 // With fakes on, the starter list's proof pages say what the list quotes (no network).
 if (config.proofFetcher instanceof FakeProofFetcher) {
   for (const c of suggested) config.proofFetcher.set(c.proofUrl, { status: 200, text: `<p>${c.proofQuote}</p>` });
+}
+const streamers = parseSeedStreamers(streamerSeed.streamers);
+new RegistryRepo(db).seed(streamers);
+// With fakes on, the registry's proof pages answer with what the list quotes (no network).
+if (config.proofFetcher instanceof FakeProofFetcher) {
+  for (const s of streamers) if (s.proofUrl) config.proofFetcher.set(s.proofUrl, { status: 200, text: `<p>${s.proofQuote ?? s.program ?? s.name}</p>` });
 }
 const allowance = new AllowanceChecker({ sources, fetcher: config.proofFetcher });
 const campaigns = new Campaigns({ sources, fetcher: config.campaignFetcher, chat: config.campaignChat });
@@ -118,6 +127,7 @@ const app = createApp({
   growth,
   business,
   scout,
+  registry,
   templates,
   aiChat: config.aiChat,
   seedDemoClip,
@@ -197,6 +207,8 @@ allowance.start(6 * 3600_000);
 campaigns.start(3600_000);
 // Looks every hour whether the daily campaign scout is due. Public pages only, one every five seconds.
 scout.start(3600_000);
+// The streamer registry: each entry is checked again every 7 days; the timer only looks for due ones.
+registry.start(6 * 3600_000);
 const server = app.listen({ port: config.port, host: config.host }, () => {
   console.log(
     `clipfarm on http://${config.host ?? "localhost"}:${config.port} (access gate: ${config.requireAccess ? "on" : "off"}, downloader: ${config.downloader.name}, transcriber: ${config.transcriber.name}, picker: ${config.picker.name}, posting: ${config.postingService.name})`,

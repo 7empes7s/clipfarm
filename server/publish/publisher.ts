@@ -105,6 +105,8 @@ export interface PublisherDeps {
   brandTags?: (accountId: string) => string[];
   /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
   campaignLimit?: (permission: Permission, clipId: number) => string | null;
+  /** Parts of a clip made by AI ("the chosen thumbnail"): a campaign that bans AI does not take them. */
+  aiMade?: (clipId: number) => string[];
   now?: () => Date;
 }
 
@@ -215,6 +217,9 @@ export class Publisher {
    */
   private rulesBroken(clip: Clip, copy: Copy, permission: Permission, platform: Platform, caption: string): string[] {
     if (permission.kind !== "whop-campaign" || !permission.rules) return [];
+    const { posts } = this.deps;
+    const today = permission.rules.maxClipsPerDay ? posts.clipsTodayUnder(permission.id).filter((id) => id !== clip.id).length : 0;
+    const postedElsewhere = permission.rules.originalOnly === true && posts.list().some((p) => p.clipId === clip.id && p.permissionId !== permission.id && p.status !== "failed");
     return campaignProblems({
       rules: permission.rules,
       allowedPlatforms: permission.allowedPlatforms,
@@ -224,6 +229,9 @@ export class Publisher {
       hook: copy.hook,
       transcript: clipTranscript(clip),
       durationSec: clip.durationSec,
+      aiMade: this.deps.aiMade?.(clip.id) ?? [],
+      postedElsewhere,
+      clipsToday: today,
     });
   }
 
@@ -237,7 +245,14 @@ export class Publisher {
     if (on && step === "submitted" && !post.experiment) {
       const clip = clips.get(post.clipId);
       // A hook variant is checked on the title and hook it was posted with, not the clip's own.
-      const problems = this.rulesBroken(clip, posts.variantOf(postId) ?? clip, sources.permission(post.permissionId), post.platform, post.caption);
+      const permission = sources.permission(post.permissionId);
+      const problems = this.rulesBroken(clip, posts.variantOf(postId) ?? clip, permission, post.platform, post.caption);
+      // The campaign's own submit window, when its brief names one.
+      const within = permission.rules?.submitWithinMin ?? null;
+      const liveAt = post.submit?.liveAt ?? post.postedAt;
+      if (within !== null && liveAt && this.now().getTime() - new Date(liveAt).getTime() > within * 60_000) {
+        problems.push(`the campaign takes a clip only within ${within} minutes of posting, and this one went live ${Math.round((this.now().getTime() - new Date(liveAt).getTime()) / 60_000)} minutes ago`);
+      }
       if (problems.length > 0) throw new ValidationError(`Not marked as sent. ${problemsLine(problems)}`);
     }
     return posts.setWhopStep(postId, step, on);

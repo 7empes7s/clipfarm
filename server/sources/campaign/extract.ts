@@ -1,20 +1,30 @@
 import type { CampaignDraft, CampaignField, CampaignRules, Platform } from "../../../shared/types.js";
 import { NO_CAMPAIGN_RULES, PLATFORMS } from "../../../shared/types.js";
 import type { ChatClient } from "../../pipeline/picks/llm.js";
+import { programOf } from "../../catalog/programs.js";
 import { decodeEntities } from "../proof.js";
 
-const CAMPAIGN_HOSTS = ["whop.com", "contentrewards.com"];
+/** Program sites with public campaign pages we read. Discord servers have none: their rules are pasted. */
+const CAMPAIGN_HOSTS = ["whop.com", "contentrewards.com", "reachclipping.com", "vyro.com", "clipping.net"];
 
-/** A campaign link we read pages from: https on whop.com or contentrewards.com. */
-export function isCampaignUrl(raw: string): boolean {
-  let u: URL;
+function httpsHost(raw: string): string | null {
   try {
-    u = new URL(raw);
+    const u = new URL(raw);
+    return u.protocol === "https:" ? u.hostname.toLowerCase() : null;
   } catch {
-    return false;
+    return null;
   }
-  const host = u.hostname.toLowerCase();
-  return u.protocol === "https:" && CAMPAIGN_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/** A campaign link we read pages from: https on a program's site (Whop, Content Rewards, Reach, Vyro, Clipping.net). */
+export function isCampaignUrl(raw: string): boolean {
+  const host = httpsHost(raw);
+  return host !== null && CAMPAIGN_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/** A campaign link that can be imported: a program's page, or a Discord payroll invite (whose rules are pasted). */
+export function isImportUrl(raw: string): boolean {
+  return httpsHost(raw) !== null && programOf(raw) !== null;
 }
 
 /** The same campaign whatever the query, hash, "www." or trailing slash on its link. */
@@ -214,6 +224,21 @@ const NO_SUBMIT = /\bno (?:manual )?(?:submission|submit)s? (?:is |are )?(?:need
 export const AI_BAN =
   /\bno ai\b|\bai[- ](?:generated|made|content|voices?|edits?|edited|clips?|videos?)\b.{0,40}\b(?:not allowed|banned|prohibited|forbidden|not accepted|rejected)\b|\b(?:not allowed|banned|prohibited|forbidden)\b.{0,30}\bai[- ](?:generated|made|content|voices?|edits?)\b/i;
 
+/** "Original content only", "No reuploads": clips must be the clipper's own. */
+export const ORIGINAL_ONLY =
+  /\boriginal\s+(?:content|clips?|videos?|edits?)\s+only\b|\bonly\s+original\b|\bmust\s+be\s+(?:your\s+own\s+)?original\b|\bno\s+(?:re-?uploads?|reposts?|reposted|stolen)\b/i;
+
+const NUM = "(\\d[\\d,]*(?:\\.\\d+)?)\\s?([km])?";
+/** "$5 cap per clip", "capped at $5 per clip", "Max payout: $1,000 per post". */
+const CAP = new RegExp(
+  `\\$\\s?${NUM}\\s*(?:max(?:imum)?|cap)\\b[^.\\n]{0,15}?\\b(?:per|a|each)\\s+(?:clip|post|video)|(?:cap(?:ped)?|max(?:imum)?(?:\\s+payout)?)\\s*(?:of|at|is|:)?\\s*\\$\\s?${NUM}\\s*(?:per|a|each)\\s+(?:clip|post|video)`,
+  "i",
+);
+/** "Max 3 clips per day", "up to 5 posts a day". */
+const PER_DAY = /\b(?:max(?:imum)?(?:\s+of)?|up\s+to|no\s+more\s+than|at\s+most|limit(?:\s+of)?)\s*(\d{1,3})\s*(?:clips?|posts?|videos?|submissions?)\s*(?:per|a|each)\s*day\b/i;
+/** "Submit within 30 minutes of posting", "submitted within 24 hours". */
+const SUBMIT_WITHIN = /\bsubmit(?:ted|ting)?\b[^.\n]{0,40}?\bwithin\s*(\d{1,3})\s*(minutes?|mins?|hours?|hrs?|h)\b/i;
+
 function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } {
   const rules: CampaignRules = { ...NO_CAMPAIGN_RULES, requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: [] };
   const brief: string[] = [];
@@ -251,6 +276,25 @@ function rulesOf(lines: string[]): { rules: CampaignRules; briefRules: string } 
     if (NO_SUBMIT.test(line)) rules.manualSubmit = false;
     if (AI_BAN.test(line)) {
       rules.aiBanned = true;
+      ruled = true;
+    }
+    if (ORIGINAL_ONLY.test(line)) {
+      rules.originalOnly = true;
+      ruled = true;
+    }
+    const cap = CAP.exec(line);
+    if (cap) {
+      rules.payoutCapUsd = cap[1] ? amount(cap[1], cap[2]) : amount(cap[3]!, cap[4]);
+      ruled = true;
+    }
+    const perDay = PER_DAY.exec(line);
+    if (perDay) {
+      rules.maxClipsPerDay = Number(perDay[1]);
+      ruled = true;
+    }
+    const within = SUBMIT_WITHIN.exec(line);
+    if (within) {
+      rules.submitWithinMin = Number(within[1]) * (/^h/i.test(within[2]!) ? 60 : 1);
       ruled = true;
     }
     if (ruled) brief.push(line);
@@ -334,6 +378,11 @@ export const CAMPAIGN_SCHEMA = {
     "min_seconds",
     "max_seconds",
     "end_date",
+    "ai_banned",
+    "original_only",
+    "payout_cap_usd",
+    "max_clips_per_day",
+    "submit_within_minutes",
   ],
   properties: {
     creator_name: nullable("string"),
@@ -349,6 +398,11 @@ export const CAMPAIGN_SCHEMA = {
     min_seconds: nullable("number"),
     max_seconds: nullable("number"),
     end_date: nullable("string"),
+    ai_banned: { type: "boolean" },
+    original_only: { type: "boolean" },
+    payout_cap_usd: nullable("number"),
+    max_clips_per_day: nullable("number"),
+    submit_within_minutes: nullable("number"),
   },
 } as const;
 
@@ -358,7 +412,10 @@ Use only what the page says, in the page's own words and numbers. When the page 
 - budget_left_usd: the budget still left, only when the page states it.
 - platforms: where clips may be posted. required_tags: hashtags and @mentions a caption must carry. required_links: links a caption must carry. required_caption_text: other words a caption must say.
 - banned_words: single words or short topics the campaign forbids. min_seconds / max_seconds: the clip length it takes.
-- end_date: the campaign's last day as YYYY-MM-DD. channel_urls: the creator's Twitch, Kick or YouTube channel links.`;
+- end_date: the campaign's last day as YYYY-MM-DD. channel_urls: the creator's Twitch, Kick or YouTube channel links.
+- ai_banned: true only when the page forbids AI-made content. original_only: true only when it takes original clips only (no reuploads).
+- payout_cap_usd: the most one clip or post can earn. max_clips_per_day: the most clips one clipper may post a day.
+- submit_within_minutes: how soon after posting a clip must be submitted, in minutes.`;
 
 function has(text: string, value: string): boolean {
   return text.includes(value.trim().toLowerCase().replace(/\s+/g, " "));
@@ -411,6 +468,16 @@ export function parseChatCampaign(content: string, pageWords: string): Partial<C
       budgetLeftUsd: num(body.budget_left_usd, 1e9),
       // Read from the page's own words only (rulesOf), never guessed by the model.
       manualSubmit: true,
+      // A yes only counts when the page talks about it at all.
+      aiBanned: body.ai_banned === true && /\bai\b|artificial/.test(text),
+      originalOnly: body.original_only === true && /original|re-?upload|repost/.test(text),
+      payoutCapUsd: num(body.payout_cap_usd, 1e6),
+      maxClipsPerDay: num(body.max_clips_per_day, 1_000),
+      submitWithinMin:
+        typeof body.submit_within_minutes === "number" && body.submit_within_minutes > 0 && body.submit_within_minutes <= 10_080 && /submit/.test(text) &&
+        (hasNumber(text, body.submit_within_minutes) || hasNumber(text, body.submit_within_minutes / 60))
+          ? body.submit_within_minutes
+          : null,
     },
   };
 }
@@ -432,7 +499,12 @@ export async function fillWithChat(facts: CampaignFacts, raw: string, chat: Chat
     maxSec: facts.rules.maxSec ?? said.rules.maxSec ?? null,
     budgetLeftUsd: facts.rules.budgetLeftUsd ?? said.rules.budgetLeftUsd ?? null,
     manualSubmit: facts.rules.manualSubmit,
-    aiBanned: facts.rules.aiBanned,
+    aiBanned: facts.rules.aiBanned || said.rules.aiBanned || undefined,
+    originalOnly: facts.rules.originalOnly || said.rules.originalOnly || undefined,
+    payoutCapUsd: facts.rules.payoutCapUsd ?? said.rules.payoutCapUsd ?? null,
+    maxClipsPerDay: facts.rules.maxClipsPerDay ?? said.rules.maxClipsPerDay ?? null,
+    submitWithinMin: facts.rules.submitWithinMin ?? said.rules.submitWithinMin ?? null,
+    program: facts.rules.program,
   };
   return {
     ...facts,

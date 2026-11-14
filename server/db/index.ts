@@ -712,6 +712,20 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE jobs ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
   `,
   `
+  -- The streamer registry: who publicly pays for or allows clipping (with proof), and who has no program.
+  CREATE TABLE streamer_registry (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    status TEXT NOT NULL,
+    program TEXT,
+    proof_url TEXT,
+    proof_quote TEXT,
+    checked_at TEXT NOT NULL,
+    next_check_at TEXT NOT NULL,
+    last_result TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT ''
+  );
+  `,
+  `
   -- Accurate captions: the misheard words the correction pass fixed, each one undoable in the Studio.
   ALTER TABLE clips ADD COLUMN caption_fixes TEXT NOT NULL DEFAULT '[]';
   `,

@@ -147,6 +147,11 @@ describe("a chat model's reading of the page", () => {
         platforms: ["tiktok"],
         required_tags: ["#ad"],
         channel_urls: ["https://kick.com/nightowlradio"],
+        ai_banned: true,
+        original_only: true,
+        payout_cap_usd: 5,
+        max_clips_per_day: 3,
+        submit_within_minutes: 30,
       }),
       page,
     );
@@ -157,7 +162,21 @@ describe("a chat model's reading of the page", () => {
       minViews: 5000,
       allowedPlatforms: [],
       expiresAt: "2026-12-12T23:59:59.000Z",
-      rules: { requiredTags: [], requiredLinks: [], requiredText: [], bannedWords: ["betting"], minSec: null, maxSec: null, budgetLeftUsd: 2000, manualSubmit: true },
+      rules: {
+        requiredTags: [],
+        requiredLinks: [],
+        requiredText: [],
+        bannedWords: ["betting"],
+        minSec: null,
+        maxSec: null,
+        budgetLeftUsd: 2000,
+        manualSubmit: true,
+        aiBanned: false,
+        originalOnly: false,
+        payoutCapUsd: null,
+        maxClipsPerDay: null,
+        submitWithinMin: null,
+      },
     });
   });
 

@@ -3,7 +3,9 @@ import { HttpError, ValidationError } from "../../errors.js";
 import type { ChatClient } from "../../pipeline/picks/llm.js";
 import type { CheckResult, ProofFetcher } from "../proof.js";
 import type { SourcesRepo } from "../repo.js";
-import { type CampaignFacts, extractCampaign, fieldsToCheck, fillWithChat, isCampaignUrl } from "./extract.js";
+import { programOf } from "../../catalog/programs.js";
+import { extractScouted } from "../../scout/extract.js";
+import { type CampaignFacts, extractCampaign, fieldsToCheck, fillWithChat, isCampaignUrl, isImportUrl } from "./extract.js";
 
 /** A campaign is read again once a day. */
 export const CAMPAIGN_RECHECK_HOURS = 24;
@@ -40,12 +42,19 @@ export class Campaigns {
    */
   async read(rawUrl: unknown, pastedText?: unknown): Promise<CampaignDraft> {
     const campaignUrl = typeof rawUrl === "string" ? rawUrl.trim() : "";
-    if (!isCampaignUrl(campaignUrl)) {
-      throw new ValidationError("Paste a campaign link from whop.com or contentrewards.com (starting with https://).");
+    if (!isImportUrl(campaignUrl)) {
+      throw new ValidationError(
+        "Paste a campaign link from Whop, Content Rewards, Vyro or Clipping.net, or a Discord payroll invite (starting with https://).",
+      );
     }
     const pasted = typeof pastedText === "string" ? pastedText.trim().slice(0, 200_000) : "";
+    // A Discord server has no public page: its rules are pasted.
+    if (!pasted && !isCampaignUrl(campaignUrl)) throw new CampaignUnreadError("a Discord server has no public page");
     const raw = pasted || (await this.page(campaignUrl));
     let facts: CampaignFacts = extractCampaign(raw);
+    facts.rules.program = programOf(campaignUrl);
+    // The most a clip earns, from the page's payout table when the brief does not say it.
+    facts.rules.payoutCapUsd ??= extractScouted(raw).payoutMaxUsd;
     const chat = this.deps.chat?.();
     if (chat) {
       try {
@@ -76,7 +85,7 @@ export class Campaigns {
   async check(permissionId: number): Promise<CheckResult> {
     const permission = this.deps.sources.permission(permissionId);
     if (permission.kind !== "whop-campaign" || !permission.campaignUrl || !isCampaignUrl(permission.campaignUrl)) {
-      throw new ValidationError("Only a campaign with a whop.com or contentrewards.com link has a page to check.");
+      throw new ValidationError("Only a campaign with a public page (Whop, Content Rewards, Vyro, Clipping.net) has a page to check.");
     }
     return this.recheck(permission);
   }
