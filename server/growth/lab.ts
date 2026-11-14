@@ -9,7 +9,7 @@ import {
   NO_METRICS,
 } from "../../shared/growth.js";
 import { dayOf } from "../../shared/metrics.js";
-import type { ChannelAccount, Clip, Post } from "../../shared/types.js";
+import { type ChannelAccount, type Clip, type Platform, type Post, PLATFORM_LABELS } from "../../shared/types.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { HttpError, ValidationError } from "../errors.js";
 import type { Notifier } from "../live/notify.js";
@@ -18,7 +18,8 @@ import type { PostsRepo } from "../publish/repo.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildDigest, digestDue } from "./digest.js";
 import { chooseVariant, clipFits, slotsForDay, slotTime } from "./plan.js";
-import type { PlatformStatsSource } from "./platformStats.js";
+import { type PlatformStatsSource, STATS_CAPABILITIES, statsCalls } from "./platformStats.js";
+import { statsCallAllowed } from "../../shared/business.js";
 import { awaitingMetric, buildReport, compareCampaigns, progressOf, recommendationFor, type ReportRow, toCsv, variantComparisons, viewsGainedOn } from "./report.js";
 import type { GrowthRepo } from "./repo.js";
 
@@ -47,6 +48,8 @@ export interface GrowthLabDeps {
   notifier?: Notifier;
   /** What an hour of this server costs, for a clip's compute cost. */
   computeUsdPerHour?: number;
+  /** More digest lines: what posted, earned and failed yesterday, and what's next. */
+  digestLines?: () => string[];
   now?: () => Date;
 }
 
@@ -60,6 +63,8 @@ export class GrowthLab {
   private now: () => Date;
   private running: Promise<void> = Promise.resolve();
   lastStatsError: string | null = null;
+  /** The last error of each platform's stats API, until it answers again. */
+  readonly statsErrors = new Map<Platform, string>();
 
   constructor(private deps: GrowthLabDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -67,6 +72,10 @@ export class GrowthLab {
 
   get repo(): GrowthRepo {
     return this.deps.repo;
+  }
+
+  get statsSources(): PlatformStatsSource[] {
+    return this.deps.platformStats ?? [];
   }
 
   create(input: GrowthCampaignInput): GrowthCampaign {
@@ -313,6 +322,7 @@ export class GrowthLab {
         .filter((c) => c.status === "running")
         .map((c) => ({ name: c.name, progress: progressOf(c, this.rowsOf(c, shared), now) })),
       recommendation: repo.recommendations().find((r) => r.status === "open")?.text ?? null,
+      more: this.deps.digestLines?.() ?? [],
     });
   }
 
@@ -352,18 +362,33 @@ export class GrowthLab {
     this.lastStatsError = null;
     for (const source of platformStats) {
       if (!source.ready()) continue;
-      const mine = posts
+      const recent = posts
         .list()
         .filter((p) => p.status === "posted" && p.platform === source.platform && p.url && new Date(p.postedAt ?? p.scheduledAt).getTime() >= since)
+        // Newest first: when the day's budget runs short, the posts still growing are read.
+        .sort((a, b) => (b.postedAt ?? b.scheduledAt).localeCompare(a.postedAt ?? a.scheduledAt))
         .map((p) => ({ id: p.id, url: p.url! }));
-      if (mine.length === 0) continue;
+      if (recent.length === 0) continue;
+      const day = dayOf(this.now());
+      const { batch, callsPerDay } = STATS_CAPABILITIES[source.platform];
+      const used = this.deps.repo.statsCalls(day)[source.platform] ?? 0;
+      if (!statsCallAllowed(used, callsPerDay)) {
+        this.lastStatsError = `Today's stats budget for ${PLATFORM_LABELS[source.platform]} is used up (${callsPerDay} calls). It starts again at midnight UTC.`;
+        this.statsErrors.set(source.platform, this.lastStatsError);
+        continue;
+      }
+      const mine = recent.slice(0, (callsPerDay - used) * batch);
+      // Counted before the call, so a failed call still counts against the budget.
+      this.deps.repo.spendStatsCalls(day, source.platform, statsCalls(source.platform, mine.length));
       try {
         for (const [postId, metrics] of await source.stats(mine)) {
           posts.addReading(postId, metrics);
           updated++;
         }
+        this.statsErrors.delete(source.platform);
       } catch (err) {
         this.lastStatsError = (err as Error).message;
+        this.statsErrors.set(source.platform, this.lastStatsError);
       }
     }
     return updated;

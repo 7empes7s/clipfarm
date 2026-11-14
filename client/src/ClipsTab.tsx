@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Clip, Post, PostingInfo, Source, WhopStep } from "../../shared/types";
 import { noAccountReason } from "../../shared/routing";
-import { submitCountdown, submitTarget } from "./submitFormat";
+import { clipTarget, submitCountdown, submitTarget } from "./submitFormat";
 import { PLATFORM_LABELS, REJECT_REASON_LABELS, WHOP_FEE, WHOP_HOLD_DAYS, WHOP_STEPS } from "../../shared/types";
 import { api } from "./api";
 import { ExperimentBadge } from "./Experiment";
@@ -111,7 +111,8 @@ export function ClipsTab({
   const closeVersions = useCallback(() => setVersionsOf(null), []);
   const closeThumbs = useCallback(() => setThumbsOf(null), []);
   const target = submitTarget(focus);
-  const targetClip = posts.find((p) => p.id === target)?.clipId;
+  // "#posted/clip-12" (a tap on the dashboard) opens clip 12 first.
+  const targetClip = posts.find((p) => p.id === target)?.clipId ?? clipTarget(focus);
   // The clip a push opened comes first.
   const clips = filterClips(allClips, view).sort((a, b) => Number(b.id === targetClip) - Number(a.id === targetClip));
 

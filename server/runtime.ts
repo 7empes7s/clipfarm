@@ -9,6 +9,8 @@ import { engineSetupHandler } from "./engine/setup.js";
 import { proxyMaker, videoReranker } from "./google/rerank.js";
 import { THUMBS_JOB, thumbsHandler, ThumbsRepo } from "./google/thumbs.js";
 import { Isolation } from "./isolation/isolation.js";
+import { BusinessRepo } from "./business/repo.js";
+import { BusinessService } from "./business/service.js";
 import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
 import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
@@ -68,6 +70,7 @@ export interface Runtime {
   direct: DirectPoster;
   accountStats: AccountStatsStore;
   growth: GrowthLab;
+  business: BusinessService;
   scout: Scout;
   /** The streamer registry: who pays for or allows clipping, re-checked weekly. */
   registry: StreamerRegistry;
@@ -171,6 +174,22 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     platformStats: config.platformStats,
     notifier,
     computeUsdPerHour: config.computeUsdPerHour,
+    digestLines: () => business.digestLines(),
+  });
+  const business: BusinessService = new BusinessService({
+    repo: new BusinessRepo(db),
+    clips,
+    posts,
+    sources,
+    // The queue is made further down (its jobs need the growth lab).
+    jobs: () => queue.list(500),
+    publisher,
+    isolation,
+    growth,
+    eurPerUsd: config.google.eurPerUsd,
+    computeUsdPerHour: config.computeUsdPerHour,
+    demo: config.fakes,
+    workspaceNames: () => new Map(workspaces.list().map((w) => [w.id, w.name])),
   });
   const scout: Scout = new Scout({
     repo: new ScoutRepo(db),
@@ -310,6 +329,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     direct,
     accountStats,
     growth,
+    business,
     scout,
     registry,
     queue,
