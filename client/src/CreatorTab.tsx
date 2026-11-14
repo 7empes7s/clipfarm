@@ -92,9 +92,9 @@ export function CreatorTab({ sources, vods, onAdded }: { sources: Source[]; vods
         </EmptyState>
       ) : (
         [...byVod.entries()].map(([vodId, outs]) => (
-          <div key={vodId} className="output-group">
+          <div key={vodId} className="fmt-group">
             <h4>{vods.find((v) => v.id === vodId)?.title ?? `Video ${vodId}`}</h4>
-            <ul className="outputs">
+            <ul className="fmt-list">
               {outs.map((o) => (
                 <OutputCard key={o.id} output={o} />
               ))}
@@ -200,7 +200,7 @@ function AddVideo({ own, onAdded }: { own: Source[]; onAdded: () => void }) {
         Who owns the videos
         <input name="ownerName" required autoComplete="name" placeholder="You, or your client's name" />
       </label>
-      <label className="switch attest">
+      <label className="attest">
         <input type="checkbox" name="attested" required />
         I own these videos, or have the owner's OK to clip and post them.
       </label>
@@ -286,19 +286,19 @@ function OutputCard({ output: o }: { output: Output }) {
   const [copied, setCopied] = useState(false);
   const text = [o.title, o.description].filter(Boolean).join("\n\n");
   return (
-    <li className={`card output output-${o.format}`}>
-      <div className="output-media">
-        {o.thumbUrl ? <img src={o.thumbUrl} alt="" loading="lazy" /> : <div className="output-wait">{o.status === "failed" ? "Failed" : "Making…"}</div>}
-        <span className="output-format">{OUTPUT_FORMAT_LABELS[o.format]}</span>
+    <li className={`card fmt fmt-${o.format}`}>
+      <div className="fmt-media">
+        {o.thumbUrl ? <img src={o.thumbUrl} alt="" loading="lazy" /> : <div className="fmt-wait">{o.status === "failed" ? "Failed" : "Making…"}</div>}
+        <span className="fmt-label">{OUTPUT_FORMAT_LABELS[o.format]}</span>
       </div>
-      <div className="output-body">
+      <div className="fmt-body">
         <strong>{o.title || OUTPUT_FORMAT_LABELS[o.format]}</strong>
         <span className="meta">{o.status === "done" ? duration(o.durationSec) : o.status === "failed" ? o.error : "Being made"}</span>
         {o.status === "done" && (
           <>
             <details>
               <summary>Description{o.chapters.length > 0 ? " and chapters" : ""}</summary>
-              <p className="output-desc">{o.description}</p>
+              <p className="fmt-desc">{o.description}</p>
               {o.chapters.length > 0 && (
                 <ol className="chapters">
                   {o.chapters.map((c) => (
@@ -309,7 +309,7 @@ function OutputCard({ output: o }: { output: Output }) {
                 </ol>
               )}
             </details>
-            <div className="output-actions">
+            <div className="fmt-actions">
               <a className="button" href={o.videoUrl!} download={`${o.format}-${o.id}.mp4`}>
                 Download
               </a>

@@ -3927,7 +3927,9 @@ button.danger {
   outline: 2px solid var(--focus);
 }
 .form label.attest {
+  display: flex;
   align-items: start;
+  gap: var(--s3);
   font-weight: 400;
 }
 .form label.attest input {
@@ -3962,15 +3964,15 @@ button.danger {
 .url {
   overflow-wrap: anywhere;
 }
-.output-group {
+.fmt-group {
   margin-bottom: var(--s5);
 }
-.output-group h4 {
+.fmt-group h4 {
   margin: 0 0 var(--s3);
   font-size: var(--t-md);
   overflow-wrap: anywhere;
 }
-.outputs {
+.fmt-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -3978,16 +3980,16 @@ button.danger {
   gap: var(--s3);
 }
 @media (min-width: 640px) {
-  .outputs {
+  .fmt-list {
     grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
   }
 }
-.output {
+.fmt {
   display: grid;
   gap: var(--s3);
   padding: var(--s3);
 }
-.output-media {
+.fmt-media {
   position: relative;
   display: grid;
   place-items: center;
@@ -3997,12 +3999,12 @@ button.danger {
   color: var(--well-ink);
   overflow: hidden;
 }
-.output-media img {
+.fmt-media img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-.output-format {
+.fmt-label {
   position: absolute;
   left: var(--s2);
   top: var(--s2);
@@ -4013,15 +4015,15 @@ button.danger {
   font-size: var(--t-xs);
   font-weight: 700;
 }
-.output-body {
+.fmt-body {
   display: grid;
   gap: var(--s1);
   min-width: 0;
 }
-.output-body strong {
+.fmt-body strong {
   overflow-wrap: anywhere;
 }
-.output-desc {
+.fmt-desc {
   white-space: pre-line;
   overflow-wrap: anywhere;
   font-size: var(--t-sm);
@@ -4031,7 +4033,7 @@ button.danger {
   padding-left: var(--s4);
   font-size: var(--t-sm);
 }
-.output-actions {
+.fmt-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
