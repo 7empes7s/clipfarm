@@ -55,6 +55,16 @@ export interface CampaignRules {
   manualSubmit: boolean;
   /** The campaign bans AI-made content (AI hooks, titles, thumbnails, voices): clipfarm's AI features stay off for it. */
   aiBanned?: boolean;
+  /** Original clips only: a clip that already went out under another campaign is not taken. */
+  originalOnly?: boolean;
+  /** The most one clip can earn (a cap per post), in dollars. */
+  payoutCapUsd?: number | null;
+  /** The most clips one clipper may post a day under the campaign. */
+  maxClipsPerDay?: number | null;
+  /** Minutes after posting within which a clip must be submitted; null: the usual 30. */
+  submitWithinMin?: number | null;
+  /** The clipping program the campaign runs on (Content Rewards, Vyro, Clipping.net, a Discord payroll). */
+  program?: string | null;
 }
 
 export const NO_CAMPAIGN_RULES: CampaignRules = {

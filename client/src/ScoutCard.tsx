@@ -144,6 +144,10 @@ export function ScoutCard({ refreshKey, onJoined }: { refreshKey: string; onJoin
                   <a className="button primary" href={c.url} target="_blank" rel="noreferrer" onClick={() => change(() => api.scoutMark(c.id, "opened"))}>
                     Join
                   </a>
+                  {/* One tap: the campaign's page is read into the form, its rules ready for one check. */}
+                  <button type="button" disabled={reading !== null} onClick={() => joined(c)}>
+                    {reading === c.id ? "Reading…" : "Import"}
+                  </button>
                   <button type="button" onClick={() => change(() => api.scoutMark(c.id, "hidden"))}>
                     Not interested
                   </button>

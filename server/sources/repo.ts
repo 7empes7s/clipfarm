@@ -4,6 +4,7 @@ import type { CampaignRules, FaceCam, NewPermissionInput, NewSourceInput, Permis
 import { ALLOWANCE_VALID_DAYS, EXPERIMENT_DAYS, NO_CAMPAIGN_RULES, PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { campaignKey } from "./campaign/extract.js";
+import { PROGRAM_IDS, type ProgramId } from "../../shared/catalog.js";
 import { aiAllowed, permissionState, requireActivePermission } from "./permission.js";
 
 interface PermissionRow {
@@ -111,6 +112,11 @@ export function parseCampaignRules(body: unknown): CampaignRules {
     budgetLeftUsd: optionalNumber(r.budgetLeftUsd, "The budget left"),
     manualSubmit: r.manualSubmit !== false,
     aiBanned: r.aiBanned === true,
+    originalOnly: r.originalOnly === true,
+    payoutCapUsd: optionalNumber(r.payoutCapUsd, "The most a clip can earn"),
+    maxClipsPerDay: optionalNumber(r.maxClipsPerDay, "The clips a day"),
+    submitWithinMin: optionalNumber(r.submitWithinMin, "The submit window"),
+    program: typeof r.program === "string" && PROGRAM_IDS.includes(r.program as ProgramId) ? r.program : null,
   };
 }
 

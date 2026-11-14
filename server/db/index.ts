@@ -560,6 +560,20 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX outputs_vod ON outputs(vod_id);
   `,
+  `
+  -- The streamer registry: who publicly pays for or allows clipping (with proof), and who has no program.
+  CREATE TABLE streamer_registry (
+    name TEXT PRIMARY KEY COLLATE NOCASE,
+    status TEXT NOT NULL,
+    program TEXT,
+    proof_url TEXT,
+    proof_quote TEXT,
+    checked_at TEXT NOT NULL,
+    next_check_at TEXT NOT NULL,
+    last_result TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT ''
+  );
+  `,
 ];
 
 export function migrate(db: Db): void {

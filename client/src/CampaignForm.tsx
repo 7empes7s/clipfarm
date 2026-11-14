@@ -9,6 +9,7 @@ import {
   PLATFORM_LABELS,
   PLATFORMS,
 } from "../../shared/types";
+import { PROGRAM_NAMES, type ProgramId } from "../../shared/catalog";
 import { api } from "./api";
 
 interface Props {
@@ -59,6 +60,11 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
       budgetLeftUsd: numberOrNull(text("budgetLeftUsd")),
       manualSubmit: f.get("manualSubmit") === "on",
       aiBanned: f.get("aiBanned") === "on",
+      originalOnly: f.get("originalOnly") === "on",
+      payoutCapUsd: numberOrNull(text("payoutCapUsd")),
+      maxClipsPerDay: numberOrNull(text("maxClipsPerDay")),
+      submitWithinMin: numberOrNull(text("submitWithinMin")),
+      program: draft?.rules.program ?? null,
     };
     const input: NewSourceInput = {
       creatorName: text("creatorName"),
@@ -257,8 +263,9 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
             <fieldset className="campaign-rules">
               <legend>Campaign rules</legend>
               <p className="hint">
-                Checked before every post: a clip that breaks one is not posted under this campaign, and you are told why. Required tags,
-                links and words are added to the caption for you.
+                Checked before every post and every submit: a clip that breaks one is not posted under this campaign, and you are told why.
+                Required tags, links and words are added to the caption for you.
+                {r?.program && ` Read from a ${PROGRAM_NAMES[r.program as ProgramId] ?? r.program} campaign: check these once before saving.`}
               </p>
               <label>
                 Tags the caption must carry <span className="hint">like #ad @theirname</span> {check("requiredTags")}
@@ -290,13 +297,31 @@ export function CampaignForm({ source, draft, onClose, onSaved }: Props) {
                 Budget left ($) <span className="hint">if the page shows it</span> {check("budgetLeftUsd")}
                 <input name="budgetLeftUsd" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={r?.budgetLeftUsd ?? ""} />
               </label>
+              <div className="row">
+                <label>
+                  Most a clip earns ($) <span className="hint">cap per post</span>
+                  <input name="payoutCapUsd" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={r?.payoutCapUsd ?? ""} />
+                </label>
+                <label>
+                  Clips a day <span className="hint">at most</span>
+                  <input name="maxClipsPerDay" type="number" min="1" step="1" inputMode="numeric" defaultValue={r?.maxClipsPerDay ?? ""} />
+                </label>
+              </div>
               <label className="switch">
                 <input type="checkbox" role="switch" name="manualSubmit" defaultChecked={r?.manualSubmit ?? true} />
-                Submit each clip by hand within 30 minutes
+                Submit each clip by hand after posting
+              </label>
+              <label>
+                Submit within (minutes) <span className="hint">empty: 30</span>
+                <input name="submitWithinMin" type="number" min="1" step="1" inputMode="numeric" defaultValue={r?.submitWithinMin ?? ""} />
               </label>
               <label className="switch">
                 <input type="checkbox" role="switch" name="aiBanned" defaultChecked={r?.aiBanned ?? false} />
-                The campaign bans AI content (AI hooks, titles and thumbnails stay off)
+                The campaign bans AI content (AI hooks, titles and thumbnails stay off, and an AI thumbnail blocks the post)
+              </label>
+              <label className="switch">
+                <input type="checkbox" role="switch" name="originalOnly" defaultChecked={r?.originalOnly ?? false} />
+                Original clips only (a clip posted under another campaign is not sent)
               </label>
             </fieldset>
           )}

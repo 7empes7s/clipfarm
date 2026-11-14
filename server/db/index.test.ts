@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships, proof runs included; the submit window's columns come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 2;
+/** Everything main ships, proof runs included; the submit window's columns, creator mode and the streamer registry come after those. */
+const ALL_OF_MAIN = MIGRATIONS.length - 3;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -92,6 +92,8 @@ describe("migrate", () => {
     for (const t of ["sources", "posting_accounts", "watchlist"]) {
       expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
     }
+    // The streamer registry.
+    expect(tables(db)).toContain("streamer_registry");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });

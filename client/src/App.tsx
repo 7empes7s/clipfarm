@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import type { CampaignDraft, CampaignRules, Clip, Job, Pick, Source, Vod, VodDetail } from "../../shared/types";
 import { PERMISSION_KIND_LABELS, PLATFORM_LABELS } from "../../shared/types";
 import { CampaignForm } from "./CampaignForm";
+import { CatalogCard } from "./CatalogCard";
 import { CampaignImport } from "./CampaignImport";
 import { CampaignsTab } from "./CampaignsTab";
 import { ClipsTab } from "./ClipsTab";
@@ -238,6 +239,7 @@ export function App() {
             </button>
           </p>
           <CampaignImport onDraft={setDraft} />
+          <CatalogCard />
           {waiting ? (
             <Skeleton shape="card" count={2} />
           ) : sources.length === 0 ? (
@@ -541,8 +543,26 @@ function CampaignRulesRows({ rules }: { rules: CampaignRules }) {
       )}
       <div className="wide">
         <dt>Submit</dt>
-        <dd>{rules.manualSubmit ? "By hand, within 30 minutes of posting" : "Not needed"}</dd>
+        <dd>{rules.manualSubmit ? `By hand, within ${rules.submitWithinMin ?? 30} minutes of posting` : "Not needed"}</dd>
       </div>
+      {(rules.aiBanned || rules.originalOnly) && (
+        <div className="wide">
+          <dt>Only</dt>
+          <dd>{[rules.aiBanned && "No AI content (AI features are off)", rules.originalOnly && "Original clips (never one posted under another campaign)"].filter(Boolean).join(". ")}</dd>
+        </div>
+      )}
+      {rules.maxClipsPerDay != null && (
+        <div>
+          <dt>Clips a day</dt>
+          <dd>{rules.maxClipsPerDay} at most</dd>
+        </div>
+      )}
+      {rules.payoutCapUsd != null && (
+        <div>
+          <dt>Most per clip</dt>
+          <dd>{usd(rules.payoutCapUsd)}</dd>
+        </div>
+      )}
       {rules.bannedWords.length > 0 && (
         <div className="wide">
           <dt>Banned</dt>

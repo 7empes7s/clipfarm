@@ -63,6 +63,43 @@ function round(n: number, places = 4): number {
 }
 
 /**
+ * What one clip should earn over a campaign's platforms: the pay per 1,000 views times our typical
+ * views there (capped at the most one clip can earn) times the chance of reaching the views it takes
+ * to be paid at all. One step of working per platform.
+ */
+export function platformEarnings(
+  rate: number,
+  campaignPlatforms: Platform[],
+  needed: number,
+  capUsd: number | null,
+  ourViews: ScoreContext["ourViews"],
+): { perClip: number; steps: ScoreStep[] } {
+  const steps: ScoreStep[] = [];
+  const platforms = campaignPlatforms.length > 0 ? campaignPlatforms : ASSUMED_PLATFORMS;
+  let perClip = 0;
+  for (const p of PLATFORMS.filter((x) => platforms.includes(x))) {
+    const own = ourViews[p] ?? [];
+    const ours = own.length >= MIN_OWN_POSTS;
+    const typical = ours ? median(own) : DEFAULT_TYPICAL_VIEWS[p];
+    const chance = needed <= 0 ? 1 : ours ? own.filter((v) => v >= needed).length / own.length : typical / (typical + needed);
+    const pay = Math.min((rate * typical) / 1000, capUsd ?? Infinity);
+    const earns = pay * chance;
+    perClip += earns;
+    const capped = capUsd !== null && pay === capUsd ? `, capped at ${dollars(capUsd)} a clip` : "";
+    steps.push({
+      label: PLATFORM_LABELS[p],
+      value: dollars(earns),
+      why:
+        `${dollars(rate)} per 1,000 views × ${Math.round(typical).toLocaleString("en")} views (${ours ? "the middle of our own posts" : "a starting guess until we have 5 posts there"})${capped}` +
+        (needed > 0
+          ? ` × ${Math.round(chance * 100)}% chance of reaching the ${Math.round(needed).toLocaleString("en")} views it takes to be paid`
+          : ""),
+    });
+  }
+  return { perClip, steps };
+}
+
+/**
  * Scores one campaign, with its working shown line by line:
  *
  *   score = expected earnings per clip × budget left × niche fit × source availability
@@ -81,27 +118,9 @@ export function scoreCampaign(f: ScoutFacts, ctx: ScoreContext): ScoutScore {
 
   // Views a clip needs before it pays: the campaign's minimum, or enough to reach the least it pays out.
   const needed = Math.max(f.minViews ?? 0, f.payoutMinUsd !== null && rate > 0 ? (f.payoutMinUsd / rate) * 1000 : 0);
-  const platforms = f.platforms.length > 0 ? f.platforms : ASSUMED_PLATFORMS;
-  let perClip = 0;
-  for (const p of PLATFORMS.filter((x) => platforms.includes(x))) {
-    const own = ctx.ourViews[p] ?? [];
-    const ours = own.length >= MIN_OWN_POSTS;
-    const typical = ours ? median(own) : DEFAULT_TYPICAL_VIEWS[p];
-    const chance = needed <= 0 ? 1 : ours ? own.filter((v) => v >= needed).length / own.length : typical / (typical + needed);
-    const pay = Math.min((rate * typical) / 1000, f.payoutMaxUsd ?? Infinity);
-    const earns = pay * chance;
-    perClip += earns;
-    const capped = f.payoutMaxUsd !== null && pay === f.payoutMaxUsd ? `, capped at ${dollars(f.payoutMaxUsd)} a clip` : "";
-    steps.push({
-      label: PLATFORM_LABELS[p],
-      value: dollars(earns),
-      why:
-        `${dollars(rate)} per 1,000 views × ${Math.round(typical).toLocaleString("en")} views (${ours ? "the middle of our own posts" : "a starting guess until we have 5 posts there"})${capped}` +
-        (needed > 0
-          ? ` × ${Math.round(chance * 100)}% chance of reaching the ${Math.round(needed).toLocaleString("en")} views it takes to be paid`
-          : ""),
-    });
-  }
+  const earned = platformEarnings(rate, f.platforms, needed, f.payoutMaxUsd, ctx.ourViews);
+  const perClip = earned.perClip;
+  steps.push(...earned.steps);
   steps.push({
     label: "Expected earnings per clip",
     value: dollars(perClip),

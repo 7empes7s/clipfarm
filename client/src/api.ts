@@ -46,6 +46,7 @@ import type { ClipThumbs, GoogleSettings, GoogleStatus } from "../../shared/goog
 import type { HookLabInfo, HookLabSettings, TrendReport } from "../../shared/trends";
 
 import type { CampaignComparison, CampaignReport, GrowthCampaign, GrowthCampaignInput, GrowthInfo } from "../../shared/growth";
+import type { CatalogInfo } from "../../shared/catalog";
 import type { ScoutInfo, ScoutStatus } from "../../shared/scout";
 import type { ProofInfo } from "../../shared/proof";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
@@ -215,6 +216,8 @@ export const api = {
   recommendation: (id: number, action: "apply" | "undo" | "dismiss") =>
     call<GrowthInfo>(`/api/growth/recommendations/${id}/${action}`, { method: "POST" }),
   setDigestZone: (zone: string) => call<GrowthInfo>("/api/growth/digest-zone", { method: "PUT", body: JSON.stringify({ zone }) }),
+  catalog: () => call<CatalogInfo>("/api/catalog"),
+  checkStreamer: (name: string) => call<CatalogInfo>(`/api/catalog/streamers/${encodeURIComponent(name)}/check`, { method: "POST" }),
   scout: () => call<ScoutInfo>("/api/scout"),
   scoutNow: () => call<ScoutInfo>("/api/scout/run", { method: "POST" }),
   scoutMark: (id: number, status: ScoutStatus) =>
