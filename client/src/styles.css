@@ -5022,3 +5022,154 @@ ul.biz-list > li {
   margin: 0 0 var(--s2);
   padding-left: var(--s4);
 }
+
+/* Operations: status at a glance, then the controls. Red, amber and green come from the tokens. */
+.ops .ops-h {
+  margin: var(--s6) 0 var(--s3);
+}
+.ops-status {
+  border-width: 2px;
+}
+.ops-status.level-ok,
+.ops-status.level-off {
+  border-color: var(--ok);
+}
+.ops-status.level-warn {
+  border-color: var(--accent-strong);
+}
+.ops-status.level-down {
+  border-color: var(--bad);
+  background: var(--bad-bg);
+}
+.ops-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 0 var(--s2);
+  font-family: var(--font-head);
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+.ops-dot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: var(--pill);
+  background: var(--muted);
+}
+.level-ok > .ops-dot,
+.level-ok .ops-banner .ops-dot {
+  background: var(--ok);
+}
+.level-warn > .ops-dot,
+.level-warn .ops-banner .ops-dot {
+  background: var(--accent);
+}
+.level-down > .ops-dot,
+.level-down .ops-banner .ops-dot {
+  background: var(--bad);
+}
+.ops-checks h3,
+.ops-account h3 {
+  margin: var(--s4) 0 var(--s2);
+  font-size: var(--t-sm);
+  color: var(--muted);
+  font-weight: 700;
+}
+.ops-checks ul,
+.ops-list,
+.ops-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ops-check {
+  display: grid;
+  grid-template-columns: auto minmax(6rem, auto) 1fr;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) 0;
+  font-size: var(--t-sm);
+}
+.ops-check-label {
+  font-weight: 600;
+}
+.ops-check-detail {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.ops-check.level-down .ops-check-detail {
+  color: var(--bad);
+}
+.ops-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--line);
+}
+.ops-list > .ops-row:first-child {
+  border-top: 0;
+}
+ul.card.ops-list {
+  padding-top: var(--s1);
+  padding-bottom: var(--s1);
+}
+.ops-row-main {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+  flex: 1 1 14rem;
+  overflow-wrap: anywhere;
+}
+.ops-what {
+  color: var(--muted);
+  font-weight: 400;
+}
+.ops-live {
+  color: var(--live);
+}
+.ops-err {
+  color: var(--bad);
+  font-size: var(--t-sm);
+}
+.ops-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.ops-status > .ops-actions {
+  margin-top: var(--s4);
+}
+.ops-confirm {
+  justify-content: flex-end;
+  margin-top: var(--s4);
+}
+.ops .card-head {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ops .card-head p {
+  margin: 0;
+  flex: 1 1 14rem;
+}
+.ops-paused {
+  border-color: var(--accent-strong);
+}
+.ops-notice {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border-radius: var(--radius-small);
+  padding: var(--s2) var(--s3);
+}
+.ops-activity li {
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.ops-activity li:first-child {
+  border-top: 0;
+}
