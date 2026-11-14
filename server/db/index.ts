@@ -643,6 +643,10 @@ export const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  -- Accurate captions: the misheard words the correction pass fixed, each one undoable in the Studio.
+  ALTER TABLE clips ADD COLUMN caption_fixes TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function migrate(db: Db): void {

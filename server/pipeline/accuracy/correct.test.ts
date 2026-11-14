@@ -99,19 +99,14 @@ describe("the glossary and diff logic", () => {
     expect(text(setFixApplied(undone, fixes[0]!, true))).toBe("I forgot, market opens at ten thirty");
   });
 
-  it("matches two transcripts of the same audio by time and lists where they read differently", () => {
-    const better: Word[] = [
-      { word: "I", startSec: 10.0, endSec: 10.2 },
-      { word: "forgot,", startSec: 10.21, endSec: 10.79 },
-      { word: "market", startSec: 10.9, endSec: 11.4 },
-      { word: "opens", startSec: 11.4, endSec: 11.8 },
-    ];
-    const changes = changesBetween(HEARD.slice(0, 5), better);
-    expect(changes.map((c) => [c.from, c.to])).toEqual([
-      ["for God,", "forgot,"],
-      ["Margaret", "market"],
-    ]);
-    expect(fixText("I for God, Margaret opens", changes)).toBe("I forgot, market opens");
+  it("lines up two transcripts of the same audio by their words (timings may drift) and lists where they read differently", () => {
+    // The accurate engine's times run 0.3 s early.
+    const better: Word[] = "I forgot, Margaret opens at ten thirty".split(" ").map((word, i) => ({ word, startSec: 9.7 + i * 0.5, endSec: 10.1 + i * 0.5 }));
+    const changes = changesBetween(HEARD, better);
+    expect(changes.map((c) => [c.from, c.to])).toEqual([["for God,", "forgot,"]]);
+    expect(fixText("I for God, Margaret opens", changes)).toBe("I forgot, Margaret opens");
+    // A stretch that does not sound alike is not the same speech heard better.
+    expect(changesBetween(HEARD.slice(0, 4), [HEARD[0]!, { word: "banana", startSec: 10.2, endSec: 11.4 }])).toEqual([]);
   });
 
   it("builds the title and hook from the corrected words", () => {

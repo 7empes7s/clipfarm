@@ -13,6 +13,7 @@ import { INGEST_JOB, ingestHandler } from "../server/pipeline/ingest/ingest.js";
 import { FakeChatClient } from "../server/pipeline/picks/fake.js";
 import { PICKS_JOB, picksHandler } from "../server/pipeline/picks/job.js";
 import { LlmPicker } from "../server/pipeline/picks/llm.js";
+import { NO_FLAGS } from "../server/pipeline/picks/types.js";
 import { buildAss, CAPTION_FONT_SIZE, SAFE } from "../server/pipeline/render/captions.js";
 import { RENDER_JOB, renderHandler } from "../server/pipeline/render/job.js";
 import { OUT_H, planLayout } from "../server/pipeline/render/layout.js";
@@ -153,6 +154,61 @@ describe("render (real ffmpeg on a generated 10 s sample)", () => {
     expect(review.quality).toEqual({ issues: [], fix: null });
     expect(clips.renderInput(review.id).masterPath).toBe(join(mediaDir, "clips", `pick-${good!.id}-master.mp4`));
     // Section downloads, audio and captions lived only in the jobs' temp folders.
+    expect(await readdir(jobsDir)).toEqual([]);
+  });
+});
+
+describe("accurate captions for a rendered clip (real ffmpeg, faked speech-to-text and model)", () => {
+  it("re-transcribes the section with the glossary, fixes misheard words, and builds the title and hook from the fixed words", { timeout: 120_000 }, async () => {
+    const db = openDb(":memory:");
+    const sources = new SourcesRepo(db);
+    const vods = new VodsRepo(db);
+    const picks = new PicksRepo(db);
+    const clips = new ClipsRepo(db);
+    const mediaDir = join(tmpRoot, "media");
+    const jobsDir = join(tmpRoot, "jobs");
+    await run("mkdir", [jobsDir]);
+    const source = sources.create({ ...campaignInput({ briefRules: "Clip TJR's day trading streams of NQ futures." }), creatorName: "TJR" });
+    const vod = vods.create(source.id, "https://www.youtube.com/watch?v=tjr");
+    const said = (text: string, from: number, confidence?: number): Word[] =>
+      text.split(" ").map((word, i) => ({ word, startSec: from + i * 0.5, endSec: from + i * 0.5 + 0.45, ...(confidence === undefined ? {} : { confidence }) }));
+    // Moonshine's first pass, timed in VOD seconds: the pick runs 10-32 s.
+    vods.saveTranscript(vod.id, [...said("I for God, Margaret opens at ten thirty", 11, 0.4), ...said("so we wait for the open", 20, 0.9)], "local", 0);
+    const [pick] = picks.replaceForVod(vod.id, source.id, [
+      { startSec: 10, endSec: 32, title: 'TJR: "I for God, Margaret opens at ten thirty"', hook: "I for God, Margaret opens", score: 70, reason: "r", flags: NO_FLAGS, dropReason: null, layout: "center", costUsd: 0.001, steps: [] },
+    ]);
+    const prompts: (string | undefined)[] = [];
+    // The accurate engine hears the section (7-35 s of the VOD: 3 s padding) with master times; "forgot" right, "Margaret" still wrong.
+    const accurate = { name: "fake-accurate", transcribe: async (_a: string, o: { prompt?: string }) => {
+      prompts.push(o.prompt);
+      return { words: [...said("I forgot, Margaret opens at ten thirty", 4), ...said("so we wait for the open", 13)], costUsd: 0.0028, model: "gpt-transcribe" };
+    } };
+    const chat = new FakeChatClient(() => ({ fixes: [{ first: 2, last: 2, to: "market", why: "glossary word: a trader says the market opens" }] }));
+    const queue = new JobQueue(db, {
+      handlers: {
+        [RENDER_JOB]: renderHandler({
+          sources, vods, picks, clips, downloader: new FakeSectionDownloader(), mediaDir, preset: "ultrafast",
+          accuracy: { transcriber: () => accurate, chat: () => chat },
+        }),
+      },
+      tmpRoot: jobsDir,
+    });
+    const job = queue.enqueue(RENDER_JOB, { pickId: pick!.id });
+    await queue.idle();
+    expect(queue.get(job.id)).toMatchObject({ status: "done", error: null });
+
+    expect(prompts[0]).toContain("market");
+    const clip = clips.get(picks.get(pick!.id).clipId!);
+    expect(clip.captionWords.map((w) => w.word).join(" ")).toBe("I forgot, market opens at ten thirty so we wait for the open");
+    // Timed in master seconds, as the accurate engine heard them.
+    expect(clip.captionWords[2]).toEqual({ word: "market", startSec: 5, endSec: 5.45 });
+    expect(clip.captionFixes).toEqual([expect.objectContaining({ from: "Margaret", to: "market", startSec: 5, endSec: 5.45, applied: true })]);
+    expect(clip.title).toBe('TJR: "I forgot, market opens at ten thirty"');
+    expect(clip.hook).toBe("I forgot, market opens");
+    expect(clip.quality?.issues).toEqual([]);
+    // What the accurate engine and the correction cost goes on the clip's cost.
+    expect(picks.get(pick!.id).costUsd).toBeCloseTo(0.001 + 0.0028, 6);
+    expect(picks.get(pick!.id).steps.map((s) => s.step)).toEqual(["download", "captions", "render"]);
     expect(await readdir(jobsDir)).toEqual([]);
   });
 });

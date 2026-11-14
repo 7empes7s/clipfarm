@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import type { Db } from "../db/index.js";
 import { DEFAULT_CAPTION_STYLE, DEFAULT_LOOK, type ClipLook, type EditWindow, type TimeRange } from "../../shared/studio.js";
-import type { Clip, ClipEditInput, ClipEffects, ClipLayout, ClipQuality, ClipStatus, ClipVersion, RejectReason, StudioEditInput, Word } from "../../shared/types.js";
+import type { CaptionFix, Clip, ClipEditInput, ClipEffects, ClipLayout, ClipQuality, ClipStatus, ClipVersion, RejectReason, StudioEditInput, Word } from "../../shared/types.js";
 import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { retimeCaptions } from "./edit.js";
@@ -20,6 +20,7 @@ interface ClipRow {
   reject_reason: RejectReason | null;
   layout: ClipLayout;
   caption_words: string;
+  caption_fixes?: string;
   master_path: string | null;
   master_duration_sec: number | null;
   start_sec: number;
@@ -51,6 +52,8 @@ export interface NewClip {
   layout?: ClipLayout;
   /** Timed in master seconds. */
   captionWords?: Word[];
+  /** Misheard words the correction pass fixed. */
+  captionFixes?: CaptionFix[];
   /** The longer source section the clip was cut from; without it the clip file is its own master. */
   masterPath?: string | null;
   masterDurationSec?: number | null;
@@ -135,6 +138,7 @@ function toClip(r: ClipRow): Clip {
     endSec: r.end_sec ?? r.start_sec + r.duration_sec,
     masterDurationSec: r.master_duration_sec ?? r.duration_sec,
     captionWords: JSON.parse(r.caption_words) as Word[],
+    captionFixes: JSON.parse(r.caption_fixes ?? "[]") as CaptionFix[],
     cuts: JSON.parse(r.cuts ?? "[]") as TimeRange[],
     look: parseLook(r.look),
     effects: { ...DEFAULT_EFFECTS, ...(JSON.parse(r.effects) as Partial<ClipEffects>) },
@@ -173,8 +177,8 @@ export class ClipsRepo {
       .prepare(
         `INSERT INTO clips (source_id, vod_id, title, file_path, duration_sec, hook, reason, score, layout, caption_words,
            master_path, master_duration_sec, start_sec, end_sec, peak_sec, quality,
-           live_stream_sec, live_moment_at, live_latency_sec, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           live_stream_sec, live_moment_at, live_latency_sec, created_at, caption_fixes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         c.sourceId,
@@ -198,6 +202,7 @@ export class ClipsRepo {
         // Moment to Inbox: the clip exists (and shows in the Inbox) from this insert on.
         c.live ? Math.max(0, Math.round((now.getTime() - new Date(c.live.momentAt).getTime()) / 1000)) : null,
         now.toISOString(),
+        JSON.stringify(c.captionFixes ?? []),
       );
     return this.get(Number(lastInsertRowid));
   }
@@ -533,6 +538,13 @@ export class ClipsRepo {
   /** Stores the result of the automatic check on the clip's current render. */
   setQuality(id: number, quality: ClipQuality): void {
     this.db.prepare("UPDATE clips SET quality = ? WHERE id = ?").run(JSON.stringify(quality), id);
+  }
+
+  /** A pick rendered again: its clip takes the new, checked captions and the title and hook built from them. */
+  setCaptions(id: number, c: { captionWords: Word[]; captionFixes: CaptionFix[]; title: string; hook: string }): void {
+    this.db
+      .prepare("UPDATE clips SET caption_words = ?, caption_fixes = ?, title = ?, hook = ? WHERE id = ?")
+      .run(JSON.stringify(c.captionWords), JSON.stringify(c.captionFixes), c.title, c.hook, id);
   }
 
   /** When each approve or reject still in force was made, oldest first (review speed on the dashboard). */

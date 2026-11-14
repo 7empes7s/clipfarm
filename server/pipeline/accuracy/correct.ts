@@ -189,37 +189,47 @@ export function setFixApplied(words: Word[], fix: CaptionFix, applied: boolean):
 }
 
 /**
- * Where two transcripts of the same audio differ, matched by time: each group of words that overlap
- * in time and read differently becomes a change ("for God," → "forgot,"). Used to carry what the
+ * Where two transcripts of the same audio differ: the words are lined up (longest common run of
+ * the same words, so engines whose timings drift still line up), and each stretch that reads
+ * differently between two shared words becomes a change ("for God," → "forgot,"). A stretch that
+ * does not sound alike is left out: it is not the same speech heard better. Used to carry what the
  * accurate engine heard into a title or hook written from the first transcript.
  */
 export function changesBetween(before: Word[], after: Word[]): CaptionFix[] {
-  const overlaps = (a: Word, b: Word) => a.startSec < b.endSec && b.startSec < a.endSec;
+  const a = before.map((w) => core(w.word));
+  const b = after.map((w) => core(w.word));
+  // lcs[i][j]: how many words a[i..] and b[j..] share in order.
+  const lcs = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) lcs[i]![j] = a[i] === b[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
+  }
   const out: CaptionFix[] = [];
   let i = 0;
   let j = 0;
-  while (i < before.length && j < after.length) {
-    if (!overlaps(before[i]!, after[j]!)) {
-      if (before[i]!.endSec <= after[j]!.startSec) i++;
-      else j++;
-      continue;
+  let gapI = 0;
+  let gapJ = 0;
+  const close = () => {
+    const old = before.slice(gapI, i);
+    const now = after.slice(gapJ, j);
+    if (old.length > 0 && now.length > 0) {
+      const from = old.map((w) => w.word).join(" ");
+      const to = now.map((w) => w.word).join(" ");
+      if (soundsLike(from, to) >= MIN_SOUNDS_LIKE) out.push({ startSec: old[0]!.startSec, endSec: old.at(-1)!.endSec, from, to, fromWords: old, why: "", applied: true });
     }
-    // Grow the group while the next word on either side still overlaps the other side's last one.
-    let bi = i + 1;
-    let aj = j + 1;
-    for (let grew = true; grew; ) {
-      grew = false;
-      if (bi < before.length && overlaps(before[bi]!, after[aj - 1]!)) (bi++, (grew = true));
-      if (aj < after.length && overlaps(after[aj]!, before[bi - 1]!)) (aj++, (grew = true));
-    }
-    const old = before.slice(i, bi);
-    const now = after.slice(j, aj);
-    const from = old.map((w) => w.word).join(" ");
-    const to = now.map((w) => w.word).join(" ");
-    if (core(from) !== core(to)) out.push({ startSec: old[0]!.startSec, endSec: old.at(-1)!.endSec, from, to, fromWords: old, why: "", applied: true });
-    i = bi;
-    j = aj;
+  };
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      close();
+      i++;
+      j++;
+      gapI = i;
+      gapJ = j;
+    } else if (lcs[i + 1]![j]! >= lcs[i]![j + 1]!) i++;
+    else j++;
   }
+  i = a.length;
+  j = b.length;
+  close();
   return out;
 }
 

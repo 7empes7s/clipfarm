@@ -50,6 +50,8 @@ export interface RenderOutput {
   steps: StepTime[];
   /** The review/posting clip made from this render. */
   clipId: number;
+  /** What the render itself paid for (accurate captions), added to the pick's cost. */
+  costUsd?: number;
 }
 
 function toPick(r: PickRow): Pick {
@@ -177,9 +179,9 @@ export class PicksRepo {
     this.db
       .prepare(
         `UPDATE picks SET status = 'rendered', error = NULL, file_path = ?, thumb_path = ?, size_bytes = ?,
-           duration_sec = ?, steps = ?, clip_id = ? WHERE id = ?`,
+           duration_sec = ?, steps = ?, clip_id = ?, cost_usd = cost_usd + ? WHERE id = ?`,
       )
-      .run(out.filePath, out.thumbPath, out.sizeBytes, out.durationSec, JSON.stringify(out.steps), out.clipId, id);
+      .run(out.filePath, out.thumbPath, out.sizeBytes, out.durationSec, JSON.stringify(out.steps), out.clipId, out.costUsd ?? 0, id);
     return this.get(id);
   }
 }
