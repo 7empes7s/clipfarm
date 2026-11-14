@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { submitCountdown, submitTarget } from "./submitFormat";
+import { clipTarget, submitCountdown, submitTarget } from "./submitFormat";
 
 const live = "2026-11-19T12:00:00.000Z";
 const post = (o: { missedAt?: string | null; whopSubmittedAt?: string | null; lostEarningsUsd?: number } = {}) => ({
@@ -37,5 +37,13 @@ describe("submitTarget", () => {
     expect(submitTarget("submit-12")).toBe(12);
     expect(submitTarget("submit-x")).toBeNull();
     expect(submitTarget(undefined)).toBeNull();
+  });
+});
+
+describe("clipTarget", () => {
+  it("reads the clip a dashboard row opens from the address", () => {
+    expect(clipTarget("clip-7")).toBe(7);
+    expect(clipTarget("submit-7")).toBeNull();
+    expect(clipTarget(undefined)).toBeNull();
   });
 });

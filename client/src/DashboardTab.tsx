@@ -1,5 +1,6 @@
 import { BusyCard } from "./SubmitWindow";
 import type { WorkspaceSummary } from "../../shared/creator";
+import { DigestCard, HealthView, MoneyView } from "./Business";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AccountCard,
@@ -50,6 +51,7 @@ export const DASH_VIEWS = [
   { id: "outputs", label: "Outputs" },
   { id: "accounts", label: "Accounts" },
   { id: "earnings", label: "Earnings" },
+  { id: "health", label: "Health" },
   { id: "experiment", label: "Experiment" },
   { id: "trends", label: "Trends" },
   { id: "hooklab", label: "Hook lab" },
@@ -114,7 +116,7 @@ export function DashboardTab({
         </p>
       )}
       {view === "today" && <Setup refreshKey={`${clips.length}:${posts.length}:${sources.length}`} />}
-      {!dash && !error && (view === "today" || view === "earnings") && <Skeleton shape="tiles" />}
+      {!dash && !error && view === "today" && <Skeleton shape="tiles" />}
       {!dash && !error && (view === "progress" || view === "experiment") && <Skeleton shape="card" count={2} />}
       {view === "today" && <LaunchCard refreshKey={`${sources.length}:${clips.length}`} />}
       {view === "today" && <ProofCard clips={clips} refreshKey={`${sources.length}:${clips.length}:${clips.filter((c) => c.status !== "pending").length}`} />}
@@ -126,7 +128,9 @@ export function DashboardTab({
       {dash && view === "progress" && <Progress dash={dash} />}
       {view === "outputs" && <Outputs clips={clips} posts={posts} sources={sources} />}
       {view === "accounts" && <Accounts sources={sources} />}
+      {view === "earnings" && <MoneyView refreshKey={`${posts.length}:${clips.length}`} />}
       {dash && view === "earnings" && <Earnings dash={dash} />}
+      {view === "health" && <HealthView refreshKey={jobsKey} />}
       {dash && view === "experiment" && <ExperimentView report={dash.experiment} posts={posts} onChange={load} />}
       {view === "trends" && <TrendsView />}
       {view === "hooklab" && <HookLabView />}
@@ -188,6 +192,7 @@ function Today({ dash, jobs, onLoaded, children }: { dash: Dashboard; jobs: Job[
         <Tile label="Cost per approved clip" value={t.costPerApprovedClipUsd === null ? "None yet" : usd(t.costPerApprovedClipUsd)} />
       </dl>
       <BusyCard />
+      <DigestCard refreshKey={`${t.postedToday}:${t.waiting}`} />
       {children}
       {(dash.growth.campaigns.length > 0 || dash.growth.recommendations.length > 0) && (
         <div className="card dash-campaigns" data-testid="dash-campaigns">
@@ -1094,6 +1099,7 @@ function Earnings({ dash }: { dash: Dashboard }) {
   const { rows, weekUsd, totalUsd } = dash.earnings;
   return (
     <>
+      <h3 className="sub">Whop payouts by campaign and platform</h3>
       <dl className="tiles">
         <Tile label="This week (estimate)" value={usd(weekUsd)} />
         <Tile label="All time (estimate)" value={usd(totalUsd)} />

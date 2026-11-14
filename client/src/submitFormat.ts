@@ -26,6 +26,12 @@ export function submitTarget(sub: string | undefined): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** "clip-12" → 12: the clip a dashboard row opens. */
+export function clipTarget(sub: string | undefined): number | null {
+  const m = /^clip-(\d+)$/.exec(sub ?? "");
+  return m ? Number(m[1]) : null;
+}
+
 /** "today 15:00", "tomorrow 08:00", "Sat 08:00", on the phone's clock. */
 export function whenShort(iso: string, now: number): string {
   const at = new Date(iso);
