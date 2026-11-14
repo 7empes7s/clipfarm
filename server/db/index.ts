@@ -725,6 +725,26 @@ export const MIGRATIONS: string[] = [
     note TEXT NOT NULL DEFAULT ''
   );
   `,
+  `
+  -- Operations: the switches the manager flips in the app (worker paused, publishing paused, last rollback seen),
+  -- and who did what there.
+  CREATE TABLE ops_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE ops_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    who TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX ops_activity_at ON ops_activity(at);
+  ALTER TABLE posts ADD COLUMN skipped_at TEXT;
+  ALTER TABLE watchlist ADD COLUMN paused INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function migrate(db: Db): void {

@@ -45,6 +45,7 @@ import { INTEGRATIONS, isConfigured } from "./settings/integrations.js";
 import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
 import { SourcesRepo } from "./sources/repo.js";
+import { OpsState } from "./ops/state.js";
 import { TrendRadar } from "./trends/radar.js";
 import { VodsRepo } from "./vods/repo.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
@@ -96,6 +97,8 @@ export interface Runtime {
   /** Clipping as a service: clients, plans, billing. */
   clientService: ClientService;
   stripe: StripeApi;
+  /** Operations' switches (worker and publishing paused) and its Activity list. */
+  opsState: OpsState;
 }
 
 /**
@@ -106,6 +109,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const settings = openSettings(env);
   const config = loadConfig(env, settings);
   const db = openDb(config.dbFile);
+  const opsState = new OpsState(db);
   config.engine.bind(db);
   config.google.bind(db);
   const sources = new SourcesRepo(db);
@@ -143,7 +147,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     assignWorkspace: (accountId, workspaceId) => workspaces.assignAccount(accountId, workspaceId),
   });
   publisher.useDirect(direct);
-  const autopilot = new Autopilot({ repo: new AutopilotRepo(db), publisher, clips, sources });
+  const autopilot = new Autopilot({ repo: new AutopilotRepo(db), publisher, clips, sources, paused: () => opsState.isOn("publishing_paused") });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
   const workspaces = new WorkspacesRepo(db);
@@ -291,6 +295,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
       liveFinished(job, payload);
     },
     pollMs: opts.pollMs,
+    paused: () => opsState.isOn("worker_paused"),
   });
   const live = new LiveManager({
     repo: liveRepo,
@@ -373,6 +378,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     outputs,
     clientService,
     stripe,
+    opsState,
   };
 }
 

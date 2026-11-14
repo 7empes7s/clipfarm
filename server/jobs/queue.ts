@@ -29,6 +29,8 @@ export interface JobQueueOptions {
   pollMs?: number;
   /** How long a worker may stay silent before another process takes the queue over. */
   leaseMs?: number;
+  /** While this says true, no new job starts (Operations' "Pause the worker"); a running job finishes. */
+  paused?: () => boolean;
 }
 
 interface JobRow {
@@ -238,6 +240,16 @@ export class JobQueue {
     return this.get(id);
   }
 
+  /** "Move to top": a waiting job runs next, ahead of every other waiting job. */
+  moveToTop(id: number): Job {
+    const job = this.get(id);
+    if (job.status !== "queued") throw new ValidationError("Only a waiting job can be moved to the top.");
+    const { top } = this.db.prepare("SELECT MAX(priority) AS top FROM jobs WHERE status = 'queued' AND id <> ?").get(id) as { top: number | null };
+    // Among equals the oldest runs first, so it needs a priority above every other waiting job.
+    if (top !== null && job.priority <= top) this.db.prepare("UPDATE jobs SET priority = ?, updated_at = ? WHERE id = ?").run(top + 1, this.now().toISOString(), id);
+    return this.get(id);
+  }
+
   /** Puts a failed or cancelled job back in the queue with fresh tries. */
   retry(id: number): Job {
     const job = this.get(id);
@@ -288,6 +300,7 @@ export class JobQueue {
 
   /** The next job to run: highest priority first, then fair share between workspaces (see pickFair). */
   private nextJob(): JobRow | undefined {
+    if (this.opts.paused?.()) return undefined;
     const top = this.db
       .prepare("SELECT * FROM jobs WHERE status = 'queued' AND priority = (SELECT MAX(priority) FROM jobs WHERE status = 'queued') ORDER BY id LIMIT 500")
       .all() as JobRow[];
