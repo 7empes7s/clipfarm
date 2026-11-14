@@ -37,7 +37,7 @@ export function parseSupportEmail(raw: string | undefined): string | null {
 
 /* The app's design tokens (client/src/styles.css), by the same names and values: publicPages.test.ts
    fails when one drifts. Fonts fall back to the system's: these pages load nothing but themselves. */
-const STYLE = `
+export const STYLE = `
 :root {
   --paper: #f5f2fa;
   --surface: #ffffff;
@@ -212,7 +212,7 @@ footer p {
 }
 `;
 
-const LOGO = `<svg width="32" height="32" viewBox="0 0 512 512" aria-hidden="true"><rect class="logo-tile" width="512" height="512"/><g class="logo-mark"><rect x="108" y="128" width="48" height="256" rx="24"/><rect x="356" y="128" width="48" height="256" rx="24"/><path d="M218 208v96a14 14 0 0 0 21 12l72-48a14 14 0 0 0 0-24l-72-48a14 14 0 0 0-21 12z"/></g></svg>`;
+export const LOGO = `<svg width="32" height="32" viewBox="0 0 512 512" aria-hidden="true"><rect class="logo-tile" width="512" height="512"/><g class="logo-mark"><rect x="108" y="128" width="48" height="256" rx="24"/><rect x="356" y="128" width="48" height="256" rx="24"/><path d="M218 208v96a14 14 0 0 0 21 12l72-48a14 14 0 0 0 0-24l-72-48a14 14 0 0 0-21 12z"/></g></svg>`;
 
 /** A link to another site. */
 const out = (url: string, text: string = url) => `<a href="${url}" rel="noopener">${text}</a>`;

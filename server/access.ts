@@ -20,6 +20,26 @@ export const OAUTH_CALLBACK_PATHS = ["/oauth/youtube/callback", "/oauth/tiktok/c
  */
 export const PUBLIC_PAGE_PATHS = ["/home", "/privacy", "/terms"] as const;
 
+/** The clipping service's public pages: landing, pricing and its terms (service/pages.ts). */
+export const SERVICE_PAGE_PATHS = ["/service", "/pricing", "/service-terms"] as const;
+
+/**
+ * The client portal has its own sign-in (service/routes.ts), so Cloudflare Access lets it through
+ * (ops/clipfarm/public-pages.ts): the portal page and its sign-in, its API (each call checks the
+ * client's session), Stripe's webhook (only signed events count) and the built page files, which
+ * hold no data. Everything else stays behind Access.
+ */
+export function isClientServicePath(path: string): boolean {
+  return (
+    (SERVICE_PAGE_PATHS as readonly string[]).includes(path) ||
+    path === "/portal" ||
+    path.startsWith("/portal/") ||
+    path.startsWith("/api/portal/") ||
+    path === "/api/stripe/webhook" ||
+    /^\/assets\/[\w.-]+$/.test(path)
+  );
+}
+
 /**
  * Paths that answer without the header: the health check (deploy.sh and clipfarm:check call it on
  * the box) and the files a phone fetches to install the app, which hold nothing private.
@@ -33,7 +53,8 @@ function isOpenPath(path: string): boolean {
     // Access lets these three through (the sign-in pages cannot carry its token); the handler
     // only acts on a one-time state it handed out itself.
     OAUTH_CALLBACK_PATHS.includes(path) ||
-    (PUBLIC_PAGE_PATHS as readonly string[]).includes(path)
+    (PUBLIC_PAGE_PATHS as readonly string[]).includes(path) ||
+    isClientServicePath(path)
   );
 }
 

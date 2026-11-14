@@ -53,6 +53,7 @@ import type { BrandTemplate, BrandTemplateInput } from "../../shared/studio";
 import type { ClipVersion, StudioEditInput, StudioInfo } from "../../shared/types";
 import type { AutopilotInfo, AutopilotRule, AutopilotStep, CalendarInfo, ClipVersions } from "../../shared/publishing";
 import type { Brand, CreatorInfo, Upload, Workspace, WorkspaceSummary } from "../../shared/creator";
+import type { AdminClients } from "../../shared/service";
 
 const WS_KEY = "clipfarm.workspace";
 
@@ -92,6 +93,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  clients: () => call<AdminClients>("/api/admin/clients"),
+  savePlan: (plan: unknown, id?: string) =>
+    call<AdminClients>(id ? `/api/admin/plans/${encodeURIComponent(id)}` : "/api/admin/plans", { method: id ? "PUT" : "POST", body: JSON.stringify(plan) }),
+  supportView: (clientId: number) => call<{ url: string }>(`/api/admin/clients/${clientId}/support-view`, { method: "POST", body: "{}" }),
   workspaces: () => call<WorkspaceSummary[]>("/api/workspaces"),
   addWorkspace: (name: string) => call<Workspace>("/api/workspaces", { method: "POST", body: JSON.stringify({ name }) }),
   saveWorkspace: (id: number, name: string, brand: Brand) =>

@@ -3,6 +3,7 @@ import type { CreatorInfo, Output } from "../../shared/creator";
 import { OUTPUT_FORMAT_LABELS } from "../../shared/creator";
 import type { Source, Vod, WatchedCreator } from "../../shared/types";
 import { WATCH_PLATFORM_LABELS } from "../../shared/types";
+import { ClientsAdmin } from "./ClientsAdmin";
 import { api } from "./api";
 import { EmptyState } from "./ui";
 import { sendFile } from "./upload";
@@ -102,6 +103,8 @@ export function CreatorTab({ sources, vods, onAdded }: { sources: Source[]; vods
           </div>
         ))
       )}
+
+      <ClientsAdmin />
     </section>
   );
 }

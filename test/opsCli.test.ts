@@ -70,6 +70,8 @@ describe("clipfarm-ops test-keys", () => {
       "YouTube: Not set",
       "Postiz: Not set",
       "Upload-Post: Not set",
+      "Stripe: Not set",
+      "Client sign-in: Not set",
     ]);
     expect(err).toEqual(["clipfarm-ops: 1 of 2 connections failed."]);
     expect(code).toBe(1);
