@@ -223,7 +223,7 @@ describe("autopilot", () => {
   });
 
   it("a rule that is on posts matching clips at the next best slot; a main account waits for the approve tap", async () => {
-    const { app, publisher, makeClip, autopilot, service, posts } = setup();
+    const { app, publisher, makeClip, autopilot, service, posts, clips } = setup();
     await publisher.syncAccounts();
     const approved = makeClip({ score: 90 });
     const waiting = makeClip({ title: "Waiting", score: 95, approved: false });
