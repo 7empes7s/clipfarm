@@ -607,6 +607,21 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN retried_by INTEGER;
   `,
   `
+  -- Campaign payouts read from a campaign's CSV export (Content Rewards has no clipper API): the views
+  -- it counted, approved or rejected (with its reason) and what it paid, matched to our post by link.
+  CREATE TABLE campaign_payouts (
+    link_key TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    post_id INTEGER REFERENCES posts(id) ON DELETE SET NULL,
+    views_counted INTEGER,
+    status TEXT NOT NULL,
+    payout_usd REAL,
+    reason TEXT NOT NULL DEFAULT '',
+    imported_at TEXT NOT NULL
+  );
+  CREATE INDEX campaign_payouts_post ON campaign_payouts(post_id);
+  `,
+  `
   -- Clipping as a service: plans, outside creators (one workspace each), their sign-ins, Stripe's
   -- events (each applied once) and invoices. Jobs carry their workspace, for the fair-share queue.
   CREATE TABLE service_plans (

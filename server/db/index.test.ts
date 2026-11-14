@@ -22,8 +22,8 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables and the client service come after those. */
-const ALL_OF_MAIN = MIGRATIONS.length - 4;
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables, the campaign payouts and the client service come after those. */
+const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
@@ -95,6 +95,8 @@ describe("migrate", () => {
     for (const t of ["sources", "posting_accounts", "watchlist"]) {
       expect(db.prepare(`SELECT name FROM pragma_table_info('${t}')`).pluck().all()).toContain("workspace_id");
     }
+    // Campaign payouts (the CSV import) come after the submit window.
+    expect(tables(db)).toContain("campaign_payouts");
     // Clipping as a service: plans, clients and their sign-ins, Stripe's events and invoices; jobs know their workspace.
     expect(tables(db)).toEqual(expect.arrayContaining(["service_plans", "clients", "client_sessions", "client_login_links", "stripe_events", "client_invoices"]));
     expect(db.prepare("SELECT name FROM pragma_table_info('jobs')").pluck().all()).toContain("workspace_id");

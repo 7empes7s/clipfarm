@@ -58,7 +58,7 @@ export class GoogleAi {
   private db: Db | null = null;
   private readonly creditEur: number;
   private readonly expiresAt: string;
-  private readonly eurPerUsd: number;
+  readonly eurPerUsd: number;
   private readonly now: () => Date;
 
   constructor(private opts: GoogleAiOptions) {
