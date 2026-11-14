@@ -65,8 +65,9 @@ test("open a clip in the Studio, cut words, drag a handle, apply a template, exp
   // Drag the end handle to the right: it snaps to a word end and the clip gets longer.
   const cutLength = await lengthOf(page);
   const handle = page.getByRole("button", { name: /^Drag the end/ });
-  // On the phone the timeline sits under the tall 9:16 preview, below the fold: mouse coordinates only hit what is on screen.
-  await handle.scrollIntoViewIfNeeded();
+  // On the phone the timeline sits under the tall 9:16 preview, below the fold, and a plain scroll leaves it under the
+  // sticky Studio bar: put it mid-screen, where a thumb would grab it, since mouse coordinates hit whatever is on top.
+  await handle.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const box = (await handle.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
