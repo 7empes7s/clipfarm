@@ -10,6 +10,8 @@ export interface PublishItem {
   when: Date | null;
   /** A paid campaign: flagged as branded content where the platform asks (TikTok). */
   paidPromotion: boolean;
+  /** "private": seen only by the channel's owner (the go-live test post). Left out: public. */
+  privacy?: "private";
 }
 
 export interface PublishResult {

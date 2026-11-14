@@ -91,6 +91,17 @@ describe("PostizService", () => {
     expect(body.posts[1]!.settings).toMatchObject({ __type: "tiktok", content_posting_method: "DIRECT_POST", brand_content_toggle: true });
   });
 
+  it("a private item goes to YouTube as a private video", async () => {
+    const { fn, calls } = fakeFetch([
+      [/GET .*\/integrations$/, 200, fixture("postiz/integrations.json")],
+      [/POST .*\/upload$/, 200, fixture("postiz/upload.json")],
+      [/POST .*\/posts$/, 200, JSON.stringify([{ postId: "p", integration: "int-yt" }])],
+    ]);
+    await new PostizService({ url: base, apiKey: "k", fetch: fn }).publish(video, [{ ...item(yt), privacy: "private" }]);
+    const body = calls.find((c) => c.url.endsWith("/posts"))!.body as { posts: { settings: Record<string, unknown> }[] };
+    expect(body.posts[0]!.settings).toMatchObject({ __type: "youtube", type: "private" });
+  });
+
   it("sends scheduled posts at different times as separate requests", async () => {
     const { fn, calls } = fakeFetch([
       [/GET .*\/integrations$/, 200, fixture("postiz/integrations.json")],
