@@ -140,7 +140,9 @@ describe("clip polish (real ffmpeg on generated testsrc + sine)", () => {
     expect(clips.get(clip.id)).toMatchObject({ status: "pending", startSec: 1, endSec: 6, quality: { issues: [], fix: null } });
     // Measurements, frames and captions lived only in the jobs' temp folders.
     expect((await readdir(dir)).sort()).toEqual(["master.mp4", "media"]);
-    expect(await readdir(mediaDir)).toHaveLength(1);
+    // Both renders are kept as versions (Studio), the fixed one in use.
+    expect(await readdir(mediaDir)).toHaveLength(2);
+    expect(clips.versions(clip.id).map((v) => [v.n, v.current])).toEqual([[2, true], [1, false], [0, false]]);
     db.close();
   });
 });
