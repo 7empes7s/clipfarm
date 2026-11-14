@@ -556,7 +556,7 @@ function Preview({
         </span>
       )}
       {line.length > 0 && (
-        <span className={`studio-caption pos-${style.position}`} style={{ fontFamily: style.font, fontSize: `${style.size / 19.2}cqh`, color: style.color }} data-testid="caption-preview">
+        <span className={`studio-caption pos-${style.position}`} style={{ fontFamily: `"${style.font}", ${style.font.endsWith("Serif") ? "serif" : style.font.endsWith("Mono") ? "monospace" : "sans-serif"}`, fontSize: `${style.size / 19.2}cqh`, color: style.color }} data-testid="caption-preview">
           {line.map((w, i) => (
             <span key={i} style={style.wordByWord && w === kept[at] ? { color: style.highlight } : undefined}>
               {w.word}{" "}

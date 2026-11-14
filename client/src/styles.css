@@ -4101,8 +4101,8 @@ button.timeline-handle::after {
 }
 .studio-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s2);
-  overflow-x: auto;
   padding-bottom: var(--s2);
   margin-bottom: var(--s3);
   border-bottom: 1px solid var(--line);
@@ -4161,7 +4161,6 @@ button.timeline-handle::after {
 }
 .word.outside {
   color: var(--muted);
-  opacity: 0.55;
 }
 .word.filler {
   text-decoration: underline dotted var(--muted);
