@@ -28,6 +28,7 @@ interface CreatorRow {
   source_id: number | null;
   auto_ingest: number;
   live: string | null;
+  workspace_id: number;
   created_at: string;
 }
 
@@ -186,6 +187,12 @@ export class WatchlistRepo {
     this.db.prepare("DELETE FROM watchlist WHERE id = ?").run(id);
   }
 
+  /** Creator mode: the channel belongs to a workspace (me, or a client). */
+  setWorkspace(id: number, workspaceId: number): void {
+    this.row(id);
+    this.db.prepare("UPDATE watchlist SET workspace_id = ? WHERE id = ?").run(workspaceId, id);
+  }
+
   setAutoIngest(id: number, on: boolean): void {
     this.row(id);
     this.db.prepare("UPDATE watchlist SET auto_ingest = ? WHERE id = ?").run(on ? 1 : 0, id);
@@ -266,6 +273,7 @@ export class WatchlistRepo {
       autoIngest: r.auto_ingest === 1,
       live: r.live ? (JSON.parse(r.live) as LiveNow) : null,
       lastVod: last ? toDetected(last) : null,
+      workspaceId: r.workspace_id ?? 1,
     };
   }
 }

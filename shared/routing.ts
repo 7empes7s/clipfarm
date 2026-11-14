@@ -4,10 +4,12 @@
 import type { ChannelAccount, Permission } from "./types.js";
 import { PERMISSION_KIND_LABELS } from "./types.js";
 
-export type RoutingBlock = "brief" | "burner" | "kind" | "pinned";
+export type RoutingBlock = "workspace" | "brief" | "burner" | "kind" | "pinned";
 
 /** Why this account does not take clips posted under this permission, or null when it does. */
 export function routingBlock(permission: Permission, account: ChannelAccount, accounts: ChannelAccount[]): RoutingBlock | null {
+  // A workspace's clips go only to that workspace's accounts: a client's clip never lands on our channel.
+  if ((permission.workspaceId ?? 1) !== (account.workspaceId ?? 1)) return "workspace";
   if (!permission.allowedPlatforms.includes(account.platform)) return "brief";
   // An experiment record is held to burner accounts, whatever kinds a main account is set to take.
   if (permission.kind === "experiment" && account.role !== "burner") return "burner";
@@ -21,6 +23,7 @@ export function routingBlock(permission: Permission, account: ChannelAccount, ac
 
 /** The block in plain words, to follow the account's name ("gtavi.daily does not take …"). */
 export function routingBlockText(block: RoutingBlock, permission: Permission): string {
+  if (block === "workspace") return "belongs to another workspace";
   if (block === "brief") return "is not in the brief";
   if (block === "burner") return "is a main account, and experiment clips go to burner accounts only";
   if (block === "kind") return `does not take “${PERMISSION_KIND_LABELS[permission.kind]}” clips`;
@@ -43,6 +46,9 @@ function isActive(p: Permission, now: Date): boolean {
  */
 export function noAccountReason(permissions: Permission[], accounts: ChannelAccount[], now: Date): string | null {
   const active = permissions.filter((p) => isActive(p, now));
+  // Only the accounts of the clip's workspace count.
+  const ws = active[0]?.workspaceId ?? 1;
+  accounts = accounts.filter((a) => (a.workspaceId ?? 1) === ws);
   const open = accounts.filter((a) => a.enabled && !a.disabled);
   if (active.length === 0 || accounts.length === 0) return null;
   if (active.every((p) => p.kind === "experiment") && !open.some((a) => a.role === "burner")) {

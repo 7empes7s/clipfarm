@@ -40,6 +40,14 @@ import { SourcesRepo } from "./sources/repo.js";
 import { TrendRadar } from "./trends/radar.js";
 import { VodsRepo } from "./vods/repo.js";
 import { WatchlistRepo } from "./sources/watchlist/repo.js";
+import { join } from "node:path";
+import { CreatorSectionDownloader, UploadAudioDownloader } from "./creator/media.js";
+import { isAudioUrl } from "./creator/links.js";
+import { OutputsRepo } from "./creator/outputs.js";
+import { isOwnContent } from "./creator/service.js";
+import { uploadIdOf, UploadsRepo } from "./creator/uploads.js";
+import { FORMATS_JOB, formatsHandler } from "./pipeline/formats/job.js";
+import { WorkspacesRepo } from "./workspaces/repo.js";
 
 export interface Runtime {
   settings: Settings;
@@ -66,6 +74,9 @@ export interface Runtime {
   /** Live mode. The server starts it; clipfarm-ops only uses it for a launch drill. */
   live: LiveManager;
   proof: ProofRunner;
+  workspaces: WorkspacesRepo;
+  uploads: UploadsRepo;
+  outputs: OutputsRepo;
 }
 
 /**
@@ -100,9 +111,28 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   publisher.useDirect(direct);
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
   const mediaDir = config.mediaDir;
+  const workspaces = new WorkspacesRepo(db);
+  const uploads = new UploadsRepo(db, join(mediaDir, "uploads"));
+  const outputs = new OutputsRepo(db);
+  const brandOf = (sourceId: number) => workspaces.get(sources.get(sourceId).workspaceId).brand;
+  // Uploaded files are read where they lie; sound-only sections become waveform videos (audiograms).
+  const downloader = new UploadAudioDownloader(config.downloader, uploads);
+  const sectionDownloader = new CreatorSectionDownloader(config.sectionDownloader, uploads, (url) => {
+    const vod = vods.list().find((v) => v.url === url);
+    return vod ? brandOf(vod.sourceId).color : workspaces.get(1).brand.color;
+  });
+  const audioOnly = (url: string) => {
+    const id = uploadIdOf(url);
+    return isAudioUrl(id === null ? url : uploads.get(id).fileName);
+  };
   const watchRepo = new WatchlistRepo(db, sources);
   const radar = new TrendRadar({ db, source: config.trendSource, chat: config.aiChat, watchlist: () => watchRepo.list() });
-  const pipelineFinished = pipelineOnFinished({ vods, picks, queue: () => queue });
+  const pipelineFinished = pipelineOnFinished({
+    vods,
+    picks,
+    queue: () => queue,
+    creatorMode: (vodId) => isOwnContent(sources.get(vods.get(vodId).sourceId), new Date()),
+  });
   const clipRenderFinished = onRenderFinished(clips);
   const hookLab = new HookLab({
     db,
@@ -145,7 +175,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
-      [INGEST_JOB]: ingestHandler({ sources, vods, downloader: config.downloader, transcriber: config.transcriber }),
+      [INGEST_JOB]: ingestHandler({ sources, vods, downloader, transcriber: config.transcriber }),
       [PICKS_JOB]: picksHandler({
         sources,
         vods,
@@ -162,7 +192,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         vods,
         picks,
         clips,
-        downloader: config.sectionDownloader,
+        downloader: sectionDownloader,
         liveCut: liveCutter(liveRepo, config.renderPreset),
         mediaDir,
         preset: config.renderPreset,
@@ -179,7 +209,8 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
         contextSec: config.live.segmentSec * 2,
       }),
       [RENDER_CLIP_JOB]: renderClipHandler({ clips, sources, mediaDir }),
-      [THUMBS_JOB]: thumbsHandler({ clips, thumbs, google: config.google, mediaDir }),
+      [FORMATS_JOB]: formatsHandler({ sources, vods, picks, outputs, downloader: sectionDownloader, audioOnly, brand: brandOf, mediaDir, preset: config.renderPreset }),
+      [THUMBS_JOB]: thumbsHandler({ clips, thumbs, google: config.google, mediaDir, aiAllowed: (id) => sources.get(id).aiAllowed }),
       [HOOK_VARIANTS_JOB]: hookVariantsHandler({ lab: hookLab, clips, sources, mediaDir }),
       [ENGINE_SETUP_JOB]: engineSetupHandler(config.engine),
       [DEMO_JOB]: demoClipsHandler({ sources, clips, mediaDir }),
@@ -264,5 +295,8 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     thumbs,
     live,
     proof,
+    workspaces,
+    uploads,
+    outputs,
   };
 }

@@ -164,6 +164,9 @@ test("A test source is added with its permission record", async ({ page, request
     await sheet.getByLabel(/^Link to the permission/).fill(settings.permissionUrl);
   } else {
     await sheet.getByRole("combobox").selectOption({ label: "Our own content" });
+    // Own content posts only with its owner and the dated "I own these videos" tick.
+    await sheet.getByLabel("Who owns the videos").fill("clipfarm test");
+    await sheet.getByLabel(/^I own these videos/).check();
   }
   await sheet.getByLabel("Creator", { exact: true }).fill(tag);
   // Ends in a week: long enough for the run, and it lets the posting step try a time after the end.

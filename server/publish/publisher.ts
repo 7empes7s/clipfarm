@@ -23,7 +23,7 @@ import { AccountsRepo, nicheMatches } from "../accounts/repo.js";
 import type { ClipsRepo } from "../clips/repo.js";
 import { ValidationError } from "../errors.js";
 import type { Isolation } from "../isolation/isolation.js";
-import { isActive, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
+import { isActive, isAttested, isExperimentOnly, PermissionError, requireActivePermission } from "../sources/permission.js";
 import type { SourcesRepo } from "../sources/repo.js";
 import { buildCaption } from "./caption.js";
 import { type DirectPoster, QUOTA_NOTE } from "./direct/direct.js";
@@ -232,6 +232,7 @@ export class Publisher {
     const experiment = isExperimentOnly(source.permissions, now);
     const accounts = await this.knownAccounts();
     const active = source.permissions.filter((p) => isActive(p, now));
+    const unattested = active.length > 0 && !active.some(isAttested);
     // Why routing keeps the clip off an account: the kind or pin when the brief is not the reason.
     const routed = (account: ChannelAccount): string | null => {
       const blocks = active.map((p) => ({ p, block: routingBlock(p, account, accounts) }));
@@ -261,7 +262,9 @@ export class Publisher {
             : "Switched off"
           : account.health === "banned"
             ? "Marked banned, so it is skipped"
-            : (routed(account) ?? broken(account) ?? this.isolationBlock(account));
+            : unattested
+              ? "Confirm the videos are yours first (tick “I own these videos” in Creator)"
+              : (routed(account) ?? broken(account) ?? this.isolationBlock(account));
       return {
         account,
         canPost: blocked === null,
@@ -572,7 +575,7 @@ export class Publisher {
     // Routing: a clip only goes to accounts that take its permission kind (and its pin, if any).
     // A real permission wins over an experiment, so a burner posts under the experiment only when nothing else covers it.
     const routedAt = (account: ChannelAccount, at: Date) => {
-      const routes = source.permissions.filter((p) => isActive(p, at) && routingBlock(p, account, known) === null);
+      const routes = source.permissions.filter((p) => isActive(p, at) && isAttested(p) && routingBlock(p, account, known) === null);
       return routes.find((p) => p.kind !== "experiment") ?? routes[0];
     };
     const routingReason = (account: ChannelAccount, at: Date): string => {

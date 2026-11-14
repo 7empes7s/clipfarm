@@ -4,7 +4,7 @@ import type { CampaignRules, FaceCam, NewPermissionInput, NewSourceInput, Permis
 import { ALLOWANCE_VALID_DAYS, EXPERIMENT_DAYS, NO_CAMPAIGN_RULES, PERMISSION_KINDS, PLATFORMS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import { campaignKey } from "./campaign/extract.js";
-import { permissionState, requireActivePermission } from "./permission.js";
+import { aiAllowed, permissionState, requireActivePermission } from "./permission.js";
 
 interface PermissionRow {
   id: number;
@@ -23,8 +23,15 @@ interface PermissionRow {
   review_reason: string | null;
   campaign_rules: string | null;
   campaign_checked_at: string | null;
+  owner_name: string | null;
+  attested_at: string | null;
+  /** The source's workspace, joined in by PERMISSIONS. */
+  workspace_id: number;
   created_at: string;
 }
+
+/** Permission rows with the workspace of their source. */
+const PERMISSIONS = "SELECT p.*, (SELECT s.workspace_id FROM sources s WHERE s.id = p.source_id) AS workspace_id FROM permissions p";
 
 interface SourceRow {
   id: number;
@@ -32,6 +39,7 @@ interface SourceRow {
   channel_urls: string;
   banned_content: string;
   face_cam: string | null;
+  workspace_id: number;
   created_at: string;
 }
 
@@ -53,6 +61,9 @@ function toPermission(r: PermissionRow): Permission {
     reviewReason: r.review_reason,
     rules: r.campaign_rules ? { ...NO_CAMPAIGN_RULES, ...(JSON.parse(r.campaign_rules) as Partial<CampaignRules>) } : null,
     campaignCheckedAt: r.campaign_checked_at,
+    ownerName: r.owner_name,
+    attestedAt: r.attested_at,
+    workspaceId: r.workspace_id ?? 1,
     createdAt: r.created_at,
   };
 }
@@ -99,6 +110,7 @@ export function parseCampaignRules(body: unknown): CampaignRules {
     maxSec,
     budgetLeftUsd: optionalNumber(r.budgetLeftUsd, "The budget left"),
     manualSubmit: r.manualSubmit !== false,
+    aiBanned: r.aiBanned === true,
   };
 }
 
@@ -148,6 +160,17 @@ export function parsePermission(body: unknown, now: Date = new Date()): NewPermi
     proof = { proofUrl, proofQuote, proofCheckedAt: checked.toISOString() };
   }
 
+  // Our own (or a client's) videos: who owns them, and the tick "I own these videos or have the owner's OK", dated.
+  let ownerName: string | null = null;
+  let attestedAt: string | null = null;
+  if (kind === "own-content") {
+    ownerName = typeof p.ownerName === "string" && p.ownerName.trim() ? p.ownerName.trim().slice(0, 120) : null;
+    if (p.attested === true) {
+      if (!ownerName) throw new ValidationError("Say who owns the videos.");
+      attestedAt = now.toISOString();
+    }
+  }
+
   return {
     kind,
     campaignUrl,
@@ -162,6 +185,8 @@ export function parsePermission(body: unknown, now: Date = new Date()): NewPermi
     proofQuote: proof?.proofQuote ?? null,
     proofCheckedAt: proof?.proofCheckedAt ?? null,
     rules: kind === "whop-campaign" && p.rules ? parseCampaignRules(p.rules) : null,
+    ownerName,
+    attestedAt,
   };
 }
 
@@ -207,14 +232,14 @@ export class SourcesRepo {
     private now: () => Date = () => new Date(),
   ) {}
 
-  create(input: NewSourceInput): Source {
+  create(input: NewSourceInput, workspaceId = 1): Source {
     const createdAt = this.now().toISOString();
     const id = this.db.transaction(() => {
       const { lastInsertRowid } = this.db
         .prepare(
-          "INSERT INTO sources (creator_name, channel_urls, banned_content, created_at) VALUES (?, ?, ?, ?)",
+          "INSERT INTO sources (creator_name, channel_urls, banned_content, workspace_id, created_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(input.creatorName, JSON.stringify(input.channelUrls), input.bannedContent ?? "", createdAt);
+        .run(input.creatorName, JSON.stringify(input.channelUrls), input.bannedContent ?? "", workspaceId, createdAt);
       this.addPermission(Number(lastInsertRowid), input.permission, createdAt);
       return Number(lastInsertRowid);
     })();
@@ -232,8 +257,8 @@ export class SourcesRepo {
     this.db
       .prepare(
         `INSERT INTO permissions (source_id, kind, campaign_url, brief_rules, note, cpm_rate_usd, min_views,
-           allowed_platforms, expires_at, proof_url, proof_quote, proof_checked_at, campaign_rules, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           allowed_platforms, expires_at, proof_url, proof_quote, proof_checked_at, campaign_rules, owner_name, attested_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         sourceId,
@@ -249,14 +274,26 @@ export class SourcesRepo {
         isAllowance ? p.proofQuote! : null,
         proofCheckedAt,
         p.rules ? JSON.stringify(p.rules) : null,
+        p.kind === "own-content" ? (p.ownerName ?? null) : null,
+        p.kind === "own-content" ? (p.attestedAt ?? null) : null,
         createdAt,
       );
+  }
+
+  /** "I own these videos": dates an own-content record with its owner, so its clips may post. */
+  attest(permissionId: number, ownerName: unknown): Source {
+    const p = this.permission(permissionId);
+    if (p.kind !== "own-content") throw new ValidationError("Only an own-content record is confirmed this way.");
+    const owner = typeof ownerName === "string" ? ownerName.trim().slice(0, 120) : "";
+    if (!owner) throw new ValidationError("Say who owns the videos.");
+    this.db.prepare("UPDATE permissions SET owner_name = ?, attested_at = ? WHERE id = ?").run(owner, this.now().toISOString(), permissionId);
+    return this.get(p.sourceId);
   }
 
   /** The Whop campaign record with this campaign link, whatever its query or trailing slash. */
   findCampaign(campaignUrl: string): Permission | null {
     const key = campaignKey(campaignUrl);
-    const rows = this.db.prepare("SELECT * FROM permissions WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL ORDER BY id DESC").all() as PermissionRow[];
+    const rows = this.db.prepare(`${PERMISSIONS} WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL ORDER BY id DESC`).all() as PermissionRow[];
     const row = rows.find((r) => campaignKey(r.campaign_url!) === key);
     return row ? toPermission(row) : null;
   }
@@ -265,13 +302,13 @@ export class SourcesRepo {
    * Saves an imported campaign: the record with the same campaign link is brought up to date, else the
    * campaign is added to the creator of the same name, else the creator is added with it.
    */
-  saveCampaign(input: NewSourceInput): Source {
+  saveCampaign(input: NewSourceInput, workspaceId = 1): Source {
     const p = input.permission;
     if (p.kind !== "whop-campaign" || !p.campaignUrl) throw new ValidationError("Paste the Whop campaign link.");
     const known = this.findCampaign(p.campaignUrl);
     const name = input.creatorName.toLowerCase();
-    const sourceId = known?.sourceId ?? this.list().find((s) => s.creatorName.toLowerCase() === name)?.id;
-    if (sourceId === undefined) return this.create(input);
+    const sourceId = known?.sourceId ?? this.list(workspaceId).find((s) => s.creatorName.toLowerCase() === name)?.id;
+    if (sourceId === undefined) return this.create(input, workspaceId);
     this.db.transaction(() => {
       const channels = [...new Set([...this.get(sourceId).channelUrls, ...input.channelUrls])];
       this.db.prepare("UPDATE sources SET channel_urls = ? WHERE id = ?").run(JSON.stringify(channels), sourceId);
@@ -301,7 +338,7 @@ export class SourcesRepo {
     return (
       this.db
         .prepare(
-          `SELECT * FROM permissions WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL
+          `${PERMISSIONS} WHERE kind = 'whop-campaign' AND campaign_url IS NOT NULL
              AND (expires_at IS NULL OR expires_at > ?) AND (campaign_checked_at IS NULL OR campaign_checked_at <= ?) ORDER BY id`,
         )
         .all(this.now().toISOString(), before.toISOString()) as PermissionRow[]
@@ -321,7 +358,7 @@ export class SourcesRepo {
   }
 
   permission(id: number): Permission {
-    const row = this.db.prepare("SELECT * FROM permissions WHERE id = ?").get(id) as PermissionRow | undefined;
+    const row = this.db.prepare(`${PERMISSIONS} WHERE id = ?`).get(id) as PermissionRow | undefined;
     if (!row) throw new NotFoundError("That permission record was not found.");
     return toPermission(row);
   }
@@ -331,7 +368,7 @@ export class SourcesRepo {
     return (
       this.db
         .prepare(
-          `SELECT * FROM permissions WHERE kind = 'public-allowance' AND review_reason IS NULL
+          `${PERMISSIONS} WHERE kind = 'public-allowance' AND review_reason IS NULL
              AND proof_checked_at <= ? ORDER BY proof_checked_at, id`,
         )
         .all(before.toISOString()) as PermissionRow[]
@@ -355,8 +392,13 @@ export class SourcesRepo {
     this.db.prepare("UPDATE permissions SET review_reason = ? WHERE id = ?").run(reason, permissionId);
   }
 
-  list(): Source[] {
-    const rows = this.db.prepare("SELECT * FROM sources ORDER BY id DESC").all() as SourceRow[];
+  /** Every source, or a workspace's only. */
+  list(workspaceId?: number): Source[] {
+    const rows = (
+      workspaceId === undefined
+        ? this.db.prepare("SELECT * FROM sources ORDER BY id DESC").all()
+        : this.db.prepare("SELECT * FROM sources WHERE workspace_id = ? ORDER BY id DESC").all(workspaceId)
+    ) as SourceRow[];
     return rows.map((r) => this.hydrate(r));
   }
 
@@ -364,6 +406,12 @@ export class SourcesRepo {
     const row = this.db.prepare("SELECT * FROM sources WHERE id = ?").get(id) as SourceRow | undefined;
     if (!row) throw new NotFoundError("That creator was not found.");
     return this.hydrate(row);
+  }
+
+  /** Adds channel or feed links to a source (each once). */
+  addChannels(id: number, urls: string[]): void {
+    const channels = [...new Set([...this.get(id).channelUrls, ...urls])];
+    this.db.prepare("UPDATE sources SET channel_urls = ? WHERE id = ?").run(JSON.stringify(channels), id);
   }
 
   setFaceCam(id: number, faceCam: FaceCam | null): Source {
@@ -398,7 +446,9 @@ export class SourcesRepo {
            UNION SELECT file_path FROM picks WHERE source_id = @id UNION SELECT thumb_path FROM picks WHERE source_id = @id
            UNION SELECT file_path FROM hook_variants WHERE test_id IN (SELECT id FROM hook_tests WHERE clip_id IN ${ofSource})
            UNION SELECT file_path FROM live_segments WHERE capture_id IN (SELECT id FROM live_captures WHERE source_id = @id)
-           UNION SELECT cover_path FROM clip_thumbs WHERE clip_id IN ${ofSource} UNION SELECT wide_path FROM clip_thumbs WHERE clip_id IN ${ofSource}`,
+           UNION SELECT cover_path FROM clip_thumbs WHERE clip_id IN ${ofSource} UNION SELECT wide_path FROM clip_thumbs WHERE clip_id IN ${ofSource}
+           UNION SELECT file_path FROM outputs WHERE source_id = @id UNION SELECT thumb_path FROM outputs WHERE source_id = @id
+           UNION SELECT path FROM uploads WHERE vod_id IN (SELECT id FROM vods WHERE source_id = @id)`,
         )
         .all({ id }) as { f: string | null }[]
     ).flatMap((r) => (r.f ? [r.f] : []));
@@ -409,6 +459,8 @@ export class SourcesRepo {
       run(`DELETE FROM clip_reviews WHERE clip_id IN ${ofSource}`);
       run(`DELETE FROM jobs WHERE ${jobsOfSource}`);
       run("DELETE FROM picks WHERE source_id = @id");
+      run("DELETE FROM outputs WHERE source_id = @id");
+      run("DELETE FROM uploads WHERE vod_id IN (SELECT id FROM vods WHERE source_id = @id)");
       run("DELETE FROM live_captures WHERE source_id = @id");
       // The watchlist keeps what it detected, so the same video is not queued again.
       run("UPDATE detected_vods SET vod_id = NULL WHERE vod_id IN (SELECT id FROM vods WHERE source_id = @id)");
@@ -429,7 +481,7 @@ export class SourcesRepo {
 
   private hydrate(r: SourceRow): Source {
     const permissions = (
-      this.db.prepare("SELECT * FROM permissions WHERE source_id = ? ORDER BY id").all(r.id) as PermissionRow[]
+      this.db.prepare(`${PERMISSIONS} WHERE source_id = ? ORDER BY id`).all(r.id) as PermissionRow[]
     ).map(toPermission);
     return {
       id: r.id,
@@ -440,6 +492,8 @@ export class SourcesRepo {
       createdAt: r.created_at,
       permissions,
       permissionState: permissionState(permissions, this.now()),
+      workspaceId: r.workspace_id ?? 1,
+      aiAllowed: aiAllowed(permissions, this.now()),
     };
   }
 }
