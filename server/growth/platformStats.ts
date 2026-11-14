@@ -72,6 +72,11 @@ export const STATS_CAPABILITIES: Record<Platform, { metrics: (keyof PostMetrics)
   tiktok: { metrics: ["views", "likes", "comments", "shares"], batch: 20, callsPerDay: 200, api: "TikTok Display API" },
   instagram: { metrics: ["views", "likes", "comments", "shares", "saves", "reach"], batch: 1, callsPerDay: 150, api: "Instagram Insights" },
   x: { metrics: ["views", "likes", "comments", "shares"], batch: 100, callsPerDay: 100, api: "X API public metrics" },
+  // No stats reader of our own yet: only what the posting service passes on.
+  facebook: { metrics: [], batch: 1, callsPerDay: 0, api: "the posting service" },
+  threads: { metrics: [], batch: 1, callsPerDay: 0, api: "the posting service" },
+  linkedin: { metrics: [], batch: 1, callsPerDay: 0, api: "the posting service" },
+  bluesky: { metrics: [], batch: 1, callsPerDay: 0, api: "the posting service" },
 };
 
 /** Calls one ask about `posts` posts costs. */

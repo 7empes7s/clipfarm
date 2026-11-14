@@ -60,6 +60,8 @@ describe("PostizService", () => {
       { id: "int-tt", platform: "tiktok", name: "gtavimoments", disabled: false, handle: "gtavimoments", avatarUrl: "https://uploads.postiz.com/b.jpg" },
       { id: "int-ig", platform: "instagram", name: "gtavi.moments", disabled: true, handle: "gtavi.moments", avatarUrl: "https://uploads.postiz.com/c.jpg" },
       { id: "int-x", platform: "x", name: "GTA VI Moments", disabled: false, handle: "gtavimoments", avatarUrl: "https://uploads.postiz.com/d.jpg" },
+      // A LinkedIn page posts like a LinkedIn profile.
+      { id: "int-li", platform: "linkedin", name: "Company page", disabled: false, handle: "co", avatarUrl: "https://uploads.postiz.com/e.jpg" },
     ]);
     expect(calls[0]!.headers.authorization).toBe("secret-key");
   });
@@ -100,6 +102,18 @@ describe("PostizService", () => {
     await new PostizService({ url: base, apiKey: "k", fetch: fn }).publish(video, [{ ...item(yt), privacy: "private" }]);
     const body = calls.find((c) => c.url.endsWith("/posts"))!.body as { posts: { settings: Record<string, unknown> }[] };
     expect(body.posts[0]!.settings).toMatchObject({ __type: "youtube", type: "private" });
+  });
+
+  it("posts to a LinkedIn page with Postiz's own provider id as its settings type", async () => {
+    const { fn, calls } = fakeFetch([
+      [/GET .*\/integrations$/, 200, fixture("postiz/integrations.json")],
+      [/POST .*\/upload$/, 200, fixture("postiz/upload.json")],
+      [/POST .*\/posts$/, 200, JSON.stringify([{ postId: "p", integration: "int-li" }])],
+    ]);
+    const li = { id: "int-li", platform: "linkedin", name: "Company page", disabled: false } as const;
+    await new PostizService({ url: base, apiKey: "k", fetch: fn }).publish(video, [item(li)]);
+    const body = calls.find((c) => c.url.endsWith("/posts"))!.body as { posts: { settings: Record<string, unknown> }[] };
+    expect(body.posts[0]!.settings).toEqual({ __type: "linkedin-page" });
   });
 
   it("sends scheduled posts at different times as separate requests", async () => {

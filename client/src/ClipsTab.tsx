@@ -8,6 +8,7 @@ import { ExperimentBadge } from "./Experiment";
 import { ExportSheet } from "./ExportSheet";
 import { LiveTag } from "./LiveTag";
 import { allowedPlatforms, PostSheet } from "./PostSheet";
+import { VersionsSheet } from "./VersionsSheet";
 import { ThumbSheet } from "./ThumbSheet";
 import { QualityChips } from "./QualityChips";
 import { shortDate, usd } from "./format";
@@ -106,6 +107,8 @@ export function ClipsTab({
 
   const closePost = useCallback(() => setPosting(null), []);
   const closeExport = useCallback(() => setExporting(null), []);
+  const [versionsOf, setVersionsOf] = useState<Clip | null>(null);
+  const closeVersions = useCallback(() => setVersionsOf(null), []);
   const closeThumbs = useCallback(() => setThumbsOf(null), []);
   const target = submitTarget(focus);
   // "#posted/clip-12" (a tap on the dashboard) opens clip 12 first.
@@ -196,6 +199,9 @@ export function ClipsTab({
                         <button type="button" onClick={() => setThumbsOf(clip)}>
                           Thumbnail
                         </button>
+                        <button type="button" onClick={() => setVersionsOf(clip)}>
+                          Versions
+                        </button>
                       </>
                     )}
                     {clip.status !== "rejected" && clip.postCount === 0 && (
@@ -232,6 +238,7 @@ export function ClipsTab({
         />
       )}
       {thumbsOf && <ThumbSheet clip={thumbsOf} onClose={closeThumbs} />}
+      {versionsOf && <VersionsSheet clipId={versionsOf.id} title={versionsOf.title} onClose={closeVersions} />}
       {exporting && (
         <ExportSheet
           clip={exporting}

@@ -561,6 +561,52 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX outputs_vod ON outputs(vod_id);
   `,
   `
+  -- Cross-platform publishing: per-platform versions of a clip, autopilot rules and what they did,
+  -- a campaign's rejection with its reason, and the post a failed post was tried again as.
+  CREATE TABLE post_versions (
+    clip_id INTEGER NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL,
+    title TEXT NOT NULL,
+    caption TEXT NOT NULL,
+    hashtags TEXT NOT NULL,
+    cover_id INTEGER,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (clip_id, platform)
+  );
+  CREATE TABLE autopilot_rules (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    source_id INTEGER,
+    permission_id INTEGER,
+    min_score REAL NOT NULL,
+    needs_quality INTEGER NOT NULL,
+    account_ids TEXT NOT NULL,
+    auto INTEGER NOT NULL,
+    burner_only INTEGER NOT NULL,
+    daily_cap INTEGER NOT NULL,
+    dry_run INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE autopilot_log (
+    id INTEGER PRIMARY KEY,
+    rule_id INTEGER NOT NULL REFERENCES autopilot_rules(id) ON DELETE CASCADE,
+    clip_id INTEGER NOT NULL,
+    clip_title TEXT NOT NULL,
+    account_id TEXT,
+    account_name TEXT,
+    action TEXT NOT NULL,
+    at TEXT,
+    reason TEXT NOT NULL,
+    dry_run INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX autopilot_log_rule ON autopilot_log(rule_id, created_at);
+  ALTER TABLE posts ADD COLUMN whop_rejected_at TEXT;
+  ALTER TABLE posts ADD COLUMN whop_reject_reason TEXT;
+  ALTER TABLE posts ADD COLUMN retried_by INTEGER;
+  `,
+  `
   -- Campaign payouts read from a campaign's CSV export (Content Rewards has no clipper API): the views
   -- it counted, approved or rejected (with its reason) and what it paid, matched to our post by link.
   CREATE TABLE campaign_payouts (

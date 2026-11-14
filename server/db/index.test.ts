@@ -22,7 +22,7 @@ const SHIPPED_ON_MAIN = [
   `,
 ];
 
-/** Everything main ships, proof runs included; the submit window's columns come after those. */
+/** Everything main ships up to the proof runs; the submit window, creator mode, the publishing tables and the campaign payouts come after those. */
 const ALL_OF_MAIN = 21;
 
 function tables(db: Database.Database): string[] {
@@ -84,7 +84,10 @@ describe("migrate", () => {
 
     expect(() => migrate(db)).not.toThrow();
     // A waiting post keeps the video of its hook variant.
-    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at"]));
+    expect(db.prepare("SELECT name FROM pragma_table_info('posts')").pluck().all()).toEqual(
+      expect.arrayContaining(["group_id", "variant_file", "needs_submit", "held", "submit_missed_at", "whop_rejected_at", "retried_by"]),
+    );
+    expect(tables(db)).toEqual(expect.arrayContaining(["post_versions", "autopilot_rules", "autopilot_log"]));
     // Creator mode: workspaces ("Me" first), uploads, outputs, and the owner's dated tick on own-content records.
     expect(tables(db)).toEqual(expect.arrayContaining(["workspaces", "uploads", "outputs"]));
     expect(db.prepare("SELECT name FROM workspaces WHERE id = 1").pluck().get()).toBe("Me");

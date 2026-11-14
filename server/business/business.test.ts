@@ -99,9 +99,16 @@ describe("stats ingestion from each platform's API (fakes)", () => {
     const t = setup(fakes);
     const c = t.clip("Chase");
     const ids = Object.fromEntries(PLATFORMS.map((p, i) => [p, t.post(c.id, p, { url: `https://example.com/${p}/${i}` }).id]));
+    // Facebook, Threads, LinkedIn and Bluesky have no stats reader here: never asked, numbers stay not available.
+    const withApi = PLATFORMS.filter((p) => STATS_CAPABILITIES[p].callsPerDay > 0);
+    expect(withApi).toEqual(["tiktok", "youtube", "instagram", "x"]);
     expect(await t.growth.collectPlatformStats()).toBe(4);
     const metrics = t.posts.metrics();
-    for (const p of PLATFORMS) {
+    for (const fake of fakes.filter((f) => !withApi.includes(f.platform))) {
+      expect(fake.calls, fake.platform).toBe(0);
+      expect(metrics.get(ids[fake.platform]!), fake.platform).toBeUndefined();
+    }
+    for (const p of withApi) {
       const m = metrics.get(ids[p]!)!;
       for (const [key, value] of Object.entries(m)) {
         if (STATS_CAPABILITIES[p].metrics.includes(key as never)) expect(value, `${p} ${key}`).not.toBeNull();
@@ -112,7 +119,7 @@ describe("stats ingestion from each platform's API (fakes)", () => {
     const board = t.business.board("7d");
     expect(board.totals.avgWatchPct).toBeNull();
     expect(board.totals.followsGained).toBeNull();
-    expect(board.totals.views).toBe(1000 * Object.values(ids).reduce((s, id) => s + id, 0));
+    expect(board.totals.views).toBe(1000 * withApi.reduce((s, p) => s + ids[p]!, 0));
   });
 
   it("stays inside each platform's daily call budget, counting failed calls too", async () => {

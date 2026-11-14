@@ -39,6 +39,7 @@ const {
   thumbs,
   live,
   proof,
+  autopilot,
   workspaces,
   uploads,
   outputs,
@@ -89,6 +90,7 @@ const seedDemoClip =
   config.fakes ? demoClipSeeder({ sources, clips, mediaDir }) : undefined;
 const app = createApp({
   sources,
+  autopilot,
   vods,
   picks,
   queue,
@@ -147,6 +149,9 @@ refreshTimer.unref();
 const submitWatch = new SubmitWatch({ posts, publisher, notifier, sendDirect: () => direct.runDue() });
 const directTimer = setInterval(() => void submitWatch.tick().catch((err: unknown) => console.error(`[submit window] ${(err as Error).message}`)), 60_000);
 directTimer.unref();
+// Autopilot rules that are on: matching clips go to their accounts at the next best slot (or, in dry run, are only noted).
+const autopilotTimer = setInterval(() => void autopilot.tick().catch((err: unknown) => console.error(`[autopilot] ${(err as Error).message}`)), 5 * 60_000);
+autopilotTimer.unref();
 const proxyTimer = setInterval(() => void isolation.recheckStale(), 3600_000);
 proxyTimer.unref();
 // Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.
