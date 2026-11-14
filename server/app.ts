@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Platform, PostFlag, RejectReason, WatchChannel, WhopStep } from "../shared/types.js";
+import type { PermissionKind, Platform, PostFlag, RejectReason, WatchChannel, WhopStep } from "../shared/types.js";
 import { PLATFORMS, POST_FLAGS, REJECT_REASONS, WHOP_STEPS } from "../shared/types.js";
 import { parseSubmitHours, type Snooze, SNOOZES } from "../shared/submitWindow.js";
 import { accessGate, type AccessVerifier } from "./access.js";
@@ -33,6 +33,8 @@ import { INGEST_JOB } from "./pipeline/ingest/ingest.js";
 import { RENDER_CLIP_JOB } from "./pipeline/rerender/render.js";
 import type { DirectPoster } from "./publish/direct/direct.js";
 import { scoutRoutes } from "./scout/routes.js";
+import { catalogRoutes } from "./catalog/routes.js";
+import type { StreamerRegistry } from "./catalog/registry.js";
 import { clipAiGate, studioRoutes } from "./studio/routes.js";
 import type { TemplatesRepo } from "./studio/templates.js";
 import type { ChatClient } from "./pipeline/picks/llm.js";
@@ -106,6 +108,8 @@ export interface AppDeps {
   aiChat?: () => ChatClient | null;
   /** Autopilot rules: post matching clips at the next best slot, or show what they would do. */
   autopilot?: Autopilot;
+  /** The streamer registry: who pays for or allows clipping; a public allowance for a creator without a program is refused. */
+  registry?: StreamerRegistry;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
   seedDemoClip?: () => Promise<unknown>;
   /** Built client to serve (npm run preview). Omitted in dev, where Vite serves it. */
@@ -176,6 +180,7 @@ export function createApp({
   templates,
   aiChat,
   autopilot,
+  registry,
   seedDemoClip,
   clientDir,
   deployStatusFile,
@@ -229,8 +234,16 @@ export function createApp({
     res.json(sources.list(wsOf(req)));
   });
 
+  // The streamer registry's say: a public allowance for a creator with no program is refused.
+  const registryGate = (creatorName: string, kind: PermissionKind) => {
+    const why = registry?.blockReason(creatorName, kind);
+    if (why) throw new ValidationError(why);
+  };
+
   app.post("/api/sources", (req, res) => {
-    res.status(201).json(sources.create(parseNewSource(req.body), wsOf(req)));
+    const input = parseNewSource(req.body);
+    registryGate(input.creatorName, input.permission.kind);
+    res.status(201).json(sources.create(input, wsOf(req)));
   });
 
   // "I own these videos": dates an own-content record so its clips may post.
@@ -304,13 +317,18 @@ export function createApp({
   app.post("/api/sources/suggested", (req, res) => {
     const names = ((req.body ?? {}) as { names?: unknown }).names;
     const picked = Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
+    for (const n of picked) registryGate(n, "public-allowance");
     const added = addSuggested(picked, suggested, { sources, watchlist: watchlist?.repo, now: new Date() });
     res.status(201).json({ added, suggested: listSuggested(suggested, sources.list()) });
   });
 
   // Paste a campaign link: an imported campaign is saved onto its creator (made, or brought up to date).
   app.post("/api/campaigns", (req, res) => {
-    res.status(201).json(sources.saveCampaign(parseNewSource(req.body), wsOf(req)));
+    const input = parseNewSource(req.body);
+    registryGate(input.creatorName, input.permission.kind);
+    const saved = sources.saveCampaign(input, wsOf(req));
+    if (input.permission.kind === "whop-campaign" && input.permission.campaignUrl) registry?.markProgram(input.creatorName, input.permission.campaignUrl);
+    res.status(201).json(saved);
   });
 
   if (campaigns) {
@@ -342,8 +360,9 @@ export function createApp({
   // Another record for a creator we already have (an experiment, or a campaign that replaces an old one).
   app.post("/api/sources/:id/permissions", (req, res) => {
     const id = idParam(req.params.id);
-    sources.get(id);
-    sources.addPermission(id, parsePermission(req.body));
+    const permission = parsePermission(req.body);
+    registryGate(sources.get(id).creatorName, permission.kind);
+    sources.addPermission(id, permission);
     res.status(201).json(sources.get(id));
   });
 
@@ -985,6 +1004,7 @@ export function createApp({
   if (growth) app.use("/api/growth", growthRoutes(growth));
   if (business) app.use("/api/business", businessRoutes(business));
   if (scout) app.use("/api/scout", scoutRoutes(scout));
+  if (registry) app.use("/api/catalog", catalogRoutes({ registry, posts }));
 
   app.post("/api/demo", (_req, res) => {
     res.status(201).json(queue.enqueue(DEMO_JOB, {}, { maxAttempts: 1 }));

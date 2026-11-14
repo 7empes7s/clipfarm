@@ -40,6 +40,7 @@ import { PostsRepo } from "./publish/repo.js";
 import { PoliteFetcher } from "./scout/polite.js";
 import { ScoutRepo } from "./scout/repo.js";
 import { Scout } from "./scout/service.js";
+import { RegistryRepo, StreamerRegistry } from "./catalog/registry.js";
 import { INTEGRATIONS, isConfigured } from "./settings/integrations.js";
 import { testIntegration } from "./settings/keyTests.js";
 import type { Settings } from "./settings/store.js";
@@ -77,6 +78,8 @@ export interface Runtime {
   growth: GrowthLab;
   business: BusinessService;
   scout: Scout;
+  /** The streamer registry: who pays for or allows clipping, re-checked weekly. */
+  registry: StreamerRegistry;
   queue: JobQueue;
   watchRepo: WatchlistRepo;
   radar: TrendRadar;
@@ -127,6 +130,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     covers: (clipId) => thumbs.listForClip(clipId).map((t) => ({ id: t.id, label: t.label, url: `/api/thumbnails/${t.id}/cover` })),
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
+    aiMade: (clipId) => (thumbs.listForClip(clipId).some((t) => t.chosen && t.ai) ? ["the chosen thumbnail"] : []),
   });
   const direct = new DirectPoster({
     isolation,
@@ -221,6 +225,18 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     watched: () => watchRepo.list().map((c) => c.name),
     // Only while the radar's reading is fresh (boost() is null otherwise).
     trending: () => (radar.boost() ? radar.videos().map((v) => v.streamer ?? v.channel) : []),
+  });
+  const registry = new StreamerRegistry({
+    repo: new RegistryRepo(db),
+    sources,
+    fetcher: new PoliteFetcher(config.proofFetcher, { gapMs: config.scout.gapMs }),
+    campaignsFor: (name) => {
+      const n = name.trim().toLowerCase();
+      return scout.repo
+        .list()
+        .filter((r) => !r.facts.ended && r.facts.creatorName?.trim().toLowerCase() === n)
+        .map((r) => r.url);
+    },
   });
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
@@ -342,6 +358,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     growth,
     business,
     scout,
+    registry,
     queue,
     watchRepo,
     radar,

@@ -105,7 +105,7 @@ export class Scout {
             channelUrls: s.channelUrls.length > 0 ? s.channelUrls : (seen?.channelUrls ?? []),
             ratePer1kUsd: p.cpmRateUsd ?? seen?.ratePer1kUsd ?? null,
             payoutMinUsd: seen?.payoutMinUsd ?? null,
-            payoutMaxUsd: seen?.payoutMaxUsd ?? null,
+            payoutMaxUsd: p.rules?.payoutCapUsd ?? seen?.payoutMaxUsd ?? null,
             budgetUsedUsd: seen?.budgetUsedUsd ?? null,
             budgetTotalUsd: seen?.budgetTotalUsd ?? null,
             budgetLeftUsd: seen?.budgetLeftUsd ?? p.rules?.budgetLeftUsd ?? null,

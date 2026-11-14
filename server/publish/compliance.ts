@@ -12,6 +12,12 @@ export interface ComplianceInput {
   /** What is said in the clip. */
   transcript: string;
   durationSec: number;
+  /** Parts of the clip made by AI ("the chosen thumbnail"). */
+  aiMade?: string[];
+  /** The clip already went out under another campaign or permission. */
+  postedElsewhere?: boolean;
+  /** Other clips that went out today under this campaign. */
+  clipsToday?: number;
 }
 
 export function says(text: string, term: string): boolean {
@@ -38,6 +44,10 @@ export function campaignProblems(i: ComplianceInput): string[] {
     if (says(`${i.title}\n${i.hook}`, word)) problems.push(`the title says “${word}”, which the campaign bans`);
     else if (says(i.transcript, word)) problems.push(`“${word}” is said in the clip, which the campaign bans`);
   }
+  if (rules.aiBanned) for (const part of i.aiMade ?? []) problems.push(`${part} is made by AI, and the campaign bans AI content`);
+  if (rules.originalOnly && i.postedElsewhere) problems.push("the clip already went out under another campaign, and this one takes original clips only");
+  const max = rules.maxClipsPerDay ?? null;
+  if (max !== null && (i.clipsToday ?? 0) >= max) problems.push(`${i.clipsToday} ${i.clipsToday === 1 ? "clip" : "clips"} went out under the campaign today, and it takes ${max} a day at most`);
   return problems;
 }
 

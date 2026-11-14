@@ -54,7 +54,10 @@ export function CampaignImport({ onDraft }: { onDraft: (draft: CampaignDraft) =>
   return (
     <form className="card campaign-import" onSubmit={read} data-testid="campaign-import">
       <label htmlFor="campaign-import-url">Paste a campaign link</label>
-      <p className="hint">From whop.com or contentrewards.com. clipfarm reads the page and fills in the pay, the rules and the end date for you to check.</p>
+      <p className="hint">
+        From Whop, Content Rewards, Vyro or Clipping.net, or a Discord payroll invite. clipfarm reads the page (or the rules you paste) and turns it into
+        rules for you to check once: pay, tags, AI ban, length, caps and the end date.
+      </p>
       <div className="inline">
         <input
           id="campaign-import-url"
