@@ -118,6 +118,11 @@ export interface PostOptions {
   bestSlot?: boolean;
   /** Dry run only: checks a clip that is still waiting as if it were approved (an autopilot rule approves it first). */
   asApproved?: boolean;
+  /**
+   * Autopilot's burner rules: a clip that still waits for the approve tap may go out, but only to
+   * burner accounts, and it stays waiting in the Inbox. Never used to reach a main account.
+   */
+  burnersOnly?: boolean;
 }
 
 /** The words a post goes out with: the clip's own, or a hook variant's. */
@@ -328,7 +333,7 @@ export class Publisher {
    */
   async post(clipId: number, accountIds: string[], when: Date | null, variant?: PostVariant, opts: PostOptions = {}): Promise<PostOutcome> {
     const { clips, posts, service, isolation } = this.deps;
-    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant, { bestSlot: opts.bestSlot });
+    const { clip, planned, skipped } = await this.plan(clipId, accountIds, when, variant, { bestSlot: opts.bestSlot, burnersOnly: opts.burnersOnly });
     // The words each post goes out with, when they are not the clip's own: a hook variant, or a platform version's title.
     const wordsOf = (title: string) => (variant ? { title: variant.title, hook: variant.hook } : title !== clip.title ? { title, hook: clip.hook } : undefined);
     // Channels connected here are uploaded by clipfarm, through their group; the rest go to the service.
@@ -783,7 +788,7 @@ export class Publisher {
     const clip = clips.get(clipId);
     const copy: Copy = variant ?? clip;
     const source = sources.get(clip.sourceId);
-    const clipStatus = opts.asApproved && clip.status === "pending" ? "approved" : clip.status;
+    const clipStatus = (opts.asApproved || opts.burnersOnly) && clip.status === "pending" ? "approved" : clip.status;
     // First pass without platforms: refuses missing or expired records before any service call.
     assertCanPost({ clipStatus, creatorName: source.creatorName, permissions: source.permissions, targets: [], now });
 
@@ -800,6 +805,10 @@ export class Publisher {
       if (account.disabled) throw new ValidationError(`${account.name} is disconnected in ${service.label}. Reconnect it there first.`);
       return account;
     });
+    // Without the manager's approve tap, a waiting clip only ever reaches burners.
+    if (opts.burnersOnly && clip.status === "pending" && picked.some((a) => a.role !== "burner")) {
+      throw new ValidationError("Approve the clip before posting it to a main account.");
+    }
     const skipped: SkippedAccount[] = [];
     const chosen = picked.filter((account) => {
       const reason = skipReason(account);

@@ -240,6 +240,22 @@ describe("autopilot", () => {
     expect(clips.get(waiting.id).status).toBe("pending");
   });
 
+  it("a burner rule posts a waiting clip without approving it, so a main rule still waits for the tap", async () => {
+    const { app, publisher, makeClip, autopilot, clips, posts, setAccount } = setup();
+    await setAccount("tt-burner", { role: "burner" });
+    const waiting = makeClip({ score: 95, approved: false });
+    await request(app).post("/api/autopilot/rules").send({ ...RULE, name: "Burners", burnerOnly: true, accountIds: ["tt-burner"], enabled: true, dryRun: false }).expect(201);
+    const main = (await request(app).post("/api/autopilot/rules").send({ ...RULE, name: "Main", accountIds: ["yt-main"], enabled: true, dryRun: false }).expect(201)).body;
+    await autopilot.tick();
+    await autopilot.tick();
+    expect(clips.get(waiting.id).status).toBe("pending");
+    expect(posts.list().map((p) => p.accountId)).toEqual(["tt-burner"]);
+    const steps = (await request(app).post(`/api/autopilot/rules/${main.id}/dry-run`).expect(200)).body as AutopilotStep[];
+    expect(steps.map((s) => [s.accountId, s.action])).toEqual([["yt-main", "wait-approval"]]);
+    // The publisher itself refuses a waiting clip to a main account, whatever the caller says.
+    await expect(publisher.post(waiting.id, ["yt-main"], null, undefined, { burnersOnly: true })).rejects.toThrow("Approve the clip before posting it to a main account.");
+  });
+
   it("a rule that says auto approves a waiting clip and posts it", async () => {
     const { app, publisher, makeClip, autopilot, clips, posts } = setup();
     await publisher.syncAccounts();

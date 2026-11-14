@@ -115,8 +115,12 @@ export class Autopilot {
           continue;
         }
         // The rule says auto (or posts to burners only): it gives the approve tap itself.
-        if (clips.get(clipId).status === "pending") clips.setStatus(clipId, "approved");
-        const { posts, skipped } = await publisher.post(clipId, ids, null, undefined, { bestSlot: true });
+        // Only a rule that says auto gives the approve tap. A burner rule (or an experiment clip, which
+        // only reaches burners) posts a waiting clip to burners and leaves it waiting in the Inbox, so
+        // other rules still wait for the manager's tap before a main account gets it.
+        const waiting = clips.get(clipId).status === "pending";
+        if (waiting && rule.auto) clips.setStatus(clipId, "approved");
+        const { posts, skipped } = await publisher.post(clipId, ids, null, undefined, { bestSlot: true, burnersOnly: waiting && !rule.auto });
         for (const p of posts) {
           const ok = p.status !== "failed";
           out.push({ ...base(named(p.accountId)), action: ok ? "post" : "skip", at: p.scheduledAt, reason: ok ? [named(p.accountId).reason, p.note].filter(Boolean).join(" ") : (p.error ?? "The post failed.") });
