@@ -102,6 +102,10 @@ const PLATFORM_HEADING: Record<Platform, RegExp> = {
   youtube: /^youtube(?:\s+shorts)?$/i,
   instagram: /^instagram(?:\s+reels)?$/i,
   x: /^(?:x|twitter)$/i,
+  facebook: /^facebook(?:\s+reels)?$/i,
+  threads: /^threads$/i,
+  linkedin: /^linked\s?in$/i,
+  bluesky: /^blue\s?sky$/i,
 };
 
 function count(s: string): number {

@@ -34,6 +34,7 @@ import { scoutRoutes } from "./scout/routes.js";
 import { catalogRoutes } from "./catalog/routes.js";
 import type { StreamerRegistry } from "./catalog/registry.js";
 import type { Scout } from "./scout/service.js";
+import type { Autopilot } from "./publish/autopilotService.js";
 import { parseRules, type Publisher, slug } from "./publish/publisher.js";
 import { buildChecklist } from "./settings/checklist.js";
 import { configuredMap, integration, isConfigured, parseSettingsInput, settingsInfo } from "./settings/integrations.js";
@@ -93,6 +94,8 @@ export interface AppDeps {
   growth?: GrowthLab;
   /** The campaign scout: "Campaigns for you" and auto mode. */
   scout?: Scout;
+  /** Autopilot rules: post matching clips at the next best slot, or show what they would do. */
+  autopilot?: Autopilot;
   /** The streamer registry: who pays for or allows clipping; a public allowance for a creator without a program is refused. */
   registry?: StreamerRegistry;
   /** Demo/e2e only (CLIPFARM_FAKES=1): adds a campaign and a pending clip from a generated sample. */
@@ -159,6 +162,7 @@ export function createApp({
   hookLab,
   growth,
   scout,
+  autopilot,
   registry,
   seedDemoClip,
   clientDir,
@@ -548,6 +552,76 @@ export function createApp({
     growth?.pauseOnStrikes();
     res.json(post);
   });
+
+  // The campaign turned a submitted post down, with its reason (reason: null takes it back).
+  app.post("/api/posts/:id/whop-reject", (req, res) => {
+    const { reason } = (req.body ?? {}) as { reason?: unknown };
+    if (reason !== null && (typeof reason !== "string" || !reason.trim())) throw new ValidationError("Say why the campaign turned it down.");
+    res.json(posts.setWhopRejected(idParam(req.params.id), reason === null ? null : reason.trim().slice(0, 300)));
+  });
+
+  // The calendar: every post from `from` to `to` (ISO times), drag to move, Retry when it failed.
+  app.get("/api/calendar", (req, res) => {
+    const from = new Date(String(req.query.from ?? ""));
+    const to = new Date(String(req.query.to ?? ""));
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) throw new ValidationError("Pick a start and an end for the calendar.");
+    if (to.getTime() - from.getTime() > 62 * 86_400_000) throw new ValidationError("The calendar shows at most two months at a time.");
+    res.json(publisher.calendar(from, to));
+  });
+
+  app.put("/api/calendar/settings", (req, res) => {
+    const { tiktokAudited } = (req.body ?? {}) as { tiktokAudited?: unknown };
+    if (typeof tiktokAudited !== "boolean") throw new ValidationError("Say whether the TikTok app passed TikTok's audit.");
+    posts.savePlannerSettings({ tiktokAudited });
+    res.json({ tiktokAudited });
+  });
+
+  app.post("/api/posts/:id/reschedule", async (req, res) => {
+    const at = new Date(String((req.body ?? {}).at ?? ""));
+    if (Number.isNaN(at.getTime())) throw new ValidationError("Pick a time.");
+    res.json(await publisher.reschedule(idParam(req.params.id), at));
+  });
+
+  app.post("/api/posts/:id/retry", async (req, res) => {
+    res.status(201).json(await publisher.retry(idParam(req.params.id)));
+  });
+
+  // Per-platform versions: title, caption, hashtags and cover per platform, in one sheet.
+  app.get("/api/clips/:id/versions", (req, res) => {
+    res.json(publisher.versions(idParam(req.params.id)));
+  });
+
+  app.put("/api/clips/:id/versions/:platform", (req, res) => {
+    res.json(publisher.saveVersion(idParam(req.params.id), platformParam(req.params.platform), req.body));
+  });
+
+  // Back to the version made from the clip and its campaign.
+  app.delete("/api/clips/:id/versions/:platform", (req, res) => {
+    res.json(publisher.saveVersion(idParam(req.params.id), platformParam(req.params.platform), null));
+  });
+
+  if (autopilot) {
+    app.get("/api/autopilot", (_req, res) => {
+      res.json(autopilot.info());
+    });
+
+    app.post("/api/autopilot/rules", async (req, res) => {
+      res.status(201).json(await autopilot.create(req.body));
+    });
+
+    app.put("/api/autopilot/rules/:id", async (req, res) => {
+      res.json(await autopilot.update(idParam(req.params.id), req.body));
+    });
+
+    app.delete("/api/autopilot/rules/:id", (req, res) => {
+      autopilot.remove(idParam(req.params.id));
+      res.status(204).end();
+    });
+
+    app.post("/api/autopilot/rules/:id/dry-run", async (req, res) => {
+      res.json(await autopilot.dryRun(idParam(req.params.id)));
+    });
+  }
 
   app.get("/api/stats", (_req, res) => {
     res.json(publisher.stats());
