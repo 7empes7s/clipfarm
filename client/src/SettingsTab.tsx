@@ -120,6 +120,29 @@ const STEPS: Record<IntegrationId, { title: string; steps: ReactNode[] }> = {
       </>,
     ],
   },
+  stripe: {
+    title: "How to set up Stripe",
+    steps: [
+      <>
+        Open <Out href="https://dashboard.stripe.com/apikeys">dashboard.stripe.com/apikeys</Out> and copy the <b>Secret key</b> (a test key first, to try it).
+      </>,
+      <>Paste it here and tap <b>Test</b>.</>,
+      <>
+        Ask IT to run the Stripe setup (<code>npm run ops -- stripe-setup</code>): it makes the plans' prices, the VAT settings and the webhook. Nothing else to do in Stripe.
+      </>,
+    ],
+  },
+  "client-signin": {
+    title: "How to set up client sign-in",
+    steps: [
+      <>
+        Open <Out href="https://resend.com/api-keys">resend.com/api-keys</Out>, make a key with sending access, and paste it here with the address emails come from.
+      </>,
+      <>
+        Optional, for "Sign in with Google": in Google Cloud, make an OAuth client (Web application) with the redirect address <code>/portal/auth/google/callback</code> on this site, and paste its ID and secret.
+      </>,
+    ],
+  },
 };
 
 function Out({ href, children }: { href: string; children: ReactNode }) {

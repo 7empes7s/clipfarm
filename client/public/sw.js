@@ -22,6 +22,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
   // The public pages are the server's own, not the app: never kept as the app shell.
   if (["/home", "/privacy", "/terms"].includes(url.pathname)) return;
+  // Nor are the clipping service's pages and the client portal: another page, with its own sign-in.
+  if (["/service", "/pricing", "/service-terms", "/portal"].includes(url.pathname) || url.pathname.startsWith("/portal/")) return;
 
   if (req.mode === "navigate") {
     // Network first, so a new version shows at once; the cached shell when offline.

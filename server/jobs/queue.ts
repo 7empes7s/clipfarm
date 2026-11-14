@@ -45,6 +45,7 @@ interface JobRow {
   vod_id: number | null;
   clip_id: number | null;
   priority: number;
+  workspace_id: number;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -69,6 +70,20 @@ function toJob(r: JobRow): Job {
     startedAt: r.started_at,
     finishedAt: r.finished_at,
   };
+}
+
+/**
+ * Fair share between workspaces (us and each client) among jobs of the same priority: the
+ * workspace whose last job started longest ago (or never) goes next, its oldest job first. One
+ * client's long backlog never holds everyone else up, and with one workspace it is plain FIFO.
+ */
+export function pickFair(waiting: { id: number; workspaceId: number }[], lastStarted: Map<number, string>): number | undefined {
+  let best: { id: number; at: string } | undefined;
+  for (const j of [...waiting].sort((a, b) => a.id - b.id)) {
+    const at = lastStarted.get(j.workspaceId) ?? "";
+    if (!best || at < best.at) best = { id: j.id, at };
+  }
+  return best?.id;
 }
 
 /**
@@ -165,16 +180,27 @@ export class JobQueue {
   enqueue(
     type: string,
     payload: unknown,
-    opts: { vodId?: number; clipId?: number; maxAttempts?: number; priority?: number } = {},
+    opts: { vodId?: number; clipId?: number; maxAttempts?: number; priority?: number; workspaceId?: number } = {},
   ): Job {
     if (!this.opts.handlers[type]) throw new Error(`No handler for job type "${type}"`);
     const ts = this.now().toISOString();
     const { lastInsertRowid } = this.db
       .prepare(
-        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, clip_id, priority, created_at, updated_at)
-         VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO jobs (type, payload, status, max_attempts, vod_id, clip_id, priority, created_at, updated_at, workspace_id)
+         VALUES (@type, @payload, 'queued', @maxAttempts, @vodId, @clipId, @priority, @ts, @ts, COALESCE(@workspaceId,
+           (SELECT s.workspace_id FROM vods v JOIN sources s ON s.id = v.source_id WHERE v.id = @vodId),
+           (SELECT s.workspace_id FROM clips c JOIN sources s ON s.id = c.source_id WHERE c.id = @clipId), 1))`,
       )
-      .run(type, JSON.stringify(payload ?? {}), opts.maxAttempts ?? 3, opts.vodId ?? null, opts.clipId ?? null, opts.priority ?? 0, ts, ts);
+      .run({
+        type,
+        payload: JSON.stringify(payload ?? {}),
+        maxAttempts: opts.maxAttempts ?? 3,
+        vodId: opts.vodId ?? null,
+        clipId: opts.clipId ?? null,
+        priority: opts.priority ?? 0,
+        ts,
+        workspaceId: opts.workspaceId ?? null,
+      });
     const job = this.get(Number(lastInsertRowid));
     if (!this.stopped) this.kick();
     return job;
@@ -253,13 +279,24 @@ export class JobQueue {
 
   private async drainLoop(): Promise<void> {
     while (!this.stopped && this.takeLease()) {
-      const row = this.db
-        .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY priority DESC, id LIMIT 1")
-        .get() as JobRow | undefined;
+      const row = this.nextJob();
       if (!row) break;
       await this.runOne(row);
     }
     if (this.stopped) this.releaseLease();
+  }
+
+  /** The next job to run: highest priority first, then fair share between workspaces (see pickFair). */
+  private nextJob(): JobRow | undefined {
+    const top = this.db
+      .prepare("SELECT * FROM jobs WHERE status = 'queued' AND priority = (SELECT MAX(priority) FROM jobs WHERE status = 'queued') ORDER BY id LIMIT 500")
+      .all() as JobRow[];
+    if (top.length <= 1) return top[0];
+    const lastStarted = new Map(
+      (this.db.prepare("SELECT workspace_id AS ws, MAX(started_at) AS at FROM jobs WHERE started_at IS NOT NULL GROUP BY workspace_id").all() as { ws: number; at: string }[]).map((r) => [r.ws, r.at]),
+    );
+    const id = pickFair(top.map((r) => ({ id: r.id, workspaceId: r.workspace_id })), lastStarted);
+    return top.find((r) => r.id === id);
   }
 
   private async runOne(row: JobRow): Promise<void> {

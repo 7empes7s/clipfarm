@@ -313,6 +313,29 @@ Your own long videos, or a client's, become ready-to-post clips (**Creator** tab
   account in its settings); a clip only ever posts to its own workspace's accounts. There is no
   billing yet.
 
+## Clipping as a service (client portal, plans, Stripe)
+
+Outside creators can buy clipping: `/service` (landing), `/pricing` (the plans on offer) and
+`/service-terms` are public; `/portal` is the client portal, phone first, with its own sign-in
+(email link or Google) and its own workspace per client. In it: Dashboard (usage against the plan,
+views per platform, best clips), Clips (approve / reject, or auto-approve), Videos (paste a channel
+or video link), Channels (connect their own), Calendar, Brand kit, Plans and Billing (Stripe's
+billing page and the invoices). A client never sees another workspace or our campaigns.
+
+- **Plans** are set in **Creator > Plans** (self-serve by minutes and clips a month, or managed by
+  views or a monthly retainer). Usage is counted per workspace from what was made in the billing
+  period (minutes, clips, posts, views). A limit reached answers with an "Upgrade" prompt; a
+  client's video that comes in by itself (a watched channel) fails its job with the same words.
+- **Billing**: Stripe Checkout and the Customer Portal; card data never reaches the server. Stripe's
+  signed webhook (`/api/stripe/webhook`) sets the plan (each event once); per-view plans report new
+  views to Stripe's meter every hour. Setup is one command (RUNBOOK, "Clipping service").
+- **Admin**: **Creator > Clients**: plan, usage, MRR, overdue, and **View as client (read-only)**.
+- **Queue**: still one heavy job at a time; among waiting jobs of the same priority, the workspace
+  that waited longest since its last job goes next, so a client's backlog never holds ours up.
+- **Demo mode** (`CLIPFARM_FAKES=1`): Stripe, email and Google are stand-ins. "Pay (test)" on the
+  stand-in checkout sends the same signed events Stripe would; the sign-in email's link is shown on
+  the screen.
+
 ## Campaign import (Whop / Content Rewards)
 
 In Sources, **Paste a campaign link** (whop.com or contentrewards.com). The server reads the public

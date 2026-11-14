@@ -536,6 +536,37 @@ Live version card shows its line when one of them stops answering.
 When the code changes what is read from Google, where it is kept or who gets it, the text in
 `server/publicPages.ts` and its `EFFECTIVE_DATE` change in the same pull request.
 
+## Clipping service: Stripe and the client portal (IT: two commands, once)
+
+Outside creators sign up at `/service` (pricing at `/pricing`, terms at `/service-terms`) and use
+the client portal at `/portal`, which has its own sign-in (email link or Google). The only thing the
+manager provides is the **Stripe secret key**, pasted in the app: **⋯ > Settings > Stripe**.
+
+**1. Open the portal to visitors.** `npm run clipfarm:public-pages` (above) also makes a second
+Access application, `clipfarm client portal`, for `/service`, `/pricing`, `/service-terms`,
+`/portal`, `/portal/*`, `/api/portal/*`, `/api/stripe/webhook` and `/assets/*` (the built page
+files, which hold no data). Every portal call checks the client's own session; the webhook takes
+only events Stripe signed. The rest of the app keeps the Cloudflare sign-in.
+
+**2. Set up Stripe from the key** (products, prices, VAT with Stripe Tax for Luxembourg and the EU
+one-stop shop, the views meter, the billing page and the webhook, whose signing secret it saves):
+
+```bash
+cd /opt/clipfarm-live/current && sudo -u clipfarm --preserve-env=DATA_DIR npm run ops -- stripe-setup
+```
+
+Safe to run again (after a plan's price changes in the app, run it again). Every line starts with
+`OK:`; a `NOT OK:` line says what Stripe refused, and the exit code is 1. A test key (`sk_test_…`)
+charges nothing; swap in the live key in Settings and run it again to go live.
+
+**Client sign-in emails** go through Resend: the manager pastes the Resend key and the sending
+address in **Settings > Client sign-in** (optional there too: a Google OAuth client for "Sign in
+with Google", redirect `https://clip.techinsiderbytes.com/portal/auth/google/callback`).
+
+**Clients connecting their own channels** use the isolation group named `Clients` (Settings,
+Accounts): create it and paste its YouTube/TikTok/Instagram app keys; until then the portal says to
+write to support.
+
 ## IT ops: run clipfarm without a browser (IT)
 
 `clipfarm-ops` does on the box what the app does in the browser: test the keys, add a source,
