@@ -91,7 +91,7 @@ export interface PublisherDeps {
   submitWindow?: boolean;
   /**
    * Every post for later through the posting service waits in clipfarm and is handed over when it
-   * is due, so the calendar can move it and the platforms' limits are checked again. The server
+   * is due, so the calendar can still move it (the slot planner checks each move). The server
    * turns it on; left out (tests of other rules), only campaign posts that need a submit wait.
    */
   holdLater?: boolean;
