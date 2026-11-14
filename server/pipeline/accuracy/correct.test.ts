@@ -123,7 +123,7 @@ describe("the glossary and diff logic", () => {
   it("the spell/sense check catches misheard words left in a title or hook", () => {
     const { words, fixes } = applyFixes(HEARD, [{ first: 3, last: 3, to: "market", why: "" }]);
     expect(copyProblems("I forgot, market opens at ten thirty", words, fixes)).toEqual([]);
-    expect(copyProblems("I for God, market opens", words, fixes)).toEqual([expect.stringContaining("“for”"), expect.stringContaining("“God”")]);
+    expect(copyProblems("I for God, market opens", words, fixes)).toEqual([expect.stringContaining("“God”")]);
     expect(copyProblems("Margaret opens at ten", words, fixes)).toEqual([expect.stringContaining("“Margaret”")]);
     expect(copyProblems("the the market opens", words, fixes)).toEqual([expect.stringContaining("twice")]);
   });

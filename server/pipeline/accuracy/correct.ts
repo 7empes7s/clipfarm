@@ -255,6 +255,11 @@ export function fixText(text: string, fixes: CaptionFix[]): string {
   return out;
 }
 
+/** Words so common that one in a title says nothing about a misheard caption. */
+const COMMON_WORDS = new Set(
+  "a an the and or but so if of to in on at by for from with as is are was were be been it its i im me my we our you your he him his she her they them their this that what when where who how not no yes do did does just".split(" "),
+);
+
 /** Below this the speech-to-text was guessing at a word. */
 export const UNSURE_CONFIDENCE = 0.5;
 
@@ -273,12 +278,13 @@ export function copyProblems(text: string, words: Word[], fixes: CaptionFix[]): 
     }
   };
   const tokens = text.split(/\s+/).map(core).filter(Boolean);
-  for (const f of fixes.filter((x) => x.applied)) {
-    // The words a fix replaced, still in the text (and not also in the fixed words).
-    const kept = new Set(f.to.split(/\s+/).map(core));
-    for (const w of f.fromWords) if (!kept.has(core(w.word)) && tokens.includes(core(w.word))) flag(w.word);
+  // A fixed phrase still in the text as a whole ("for God", not a lone "for").
+  for (const f of fixes.filter((x) => x.applied)) if (phrase(f.from)?.test(text)) flag(f.from);
+  // A word the speech-to-text guessed at; common little words ("for", "the") are too ordinary to mean it was misheard.
+  for (const w of words) {
+    const k = core(w.word);
+    if (typeof w.confidence === "number" && w.confidence < UNSURE_CONFIDENCE && !COMMON_WORDS.has(k) && tokens.includes(k)) flag(w.word);
   }
-  for (const w of words) if (typeof w.confidence === "number" && w.confidence < UNSURE_CONFIDENCE && tokens.includes(core(w.word))) flag(w.word);
   const twice = tokens.find((t, i) => i > 0 && t === tokens[i - 1] && t.length > 1);
   if (twice) out.push(`“${twice}” is written twice in a row`);
   return out;

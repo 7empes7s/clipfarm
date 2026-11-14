@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_EFFECTS } from "../../../shared/types.js";
+import { applyFixes } from "../accuracy/correct.js";
 import { buildAss as buildPickAss } from "../render/captions.js";
 import { buildAss as buildEditAss } from "../rerender/plan.js";
 import { accuracyIssues, captionProblem, type Detected, detectArgs, judgeQuality, MAX_UNSURE_WORDS, parseDetected, suggestFix, unsureWords } from "./quality.js";
@@ -170,5 +171,28 @@ describe("the caption accuracy check", () => {
     expect(accuracyIssues({ words, title: "Margaret opens at ten", hook: "" })).toEqual([
       { code: "accuracy", reason: expect.stringMatching(/^The title may have a misheard word: .*Margaret/) },
     ]);
+  });
+});
+
+describe("the title check after a fix", () => {
+  const heard = "I for God, Margaret opens at ten thirty. Waiting for the open".split(" ").map((word, i) => ({ word, startSec: i * 0.5, endSec: i * 0.5 + 0.45 }));
+  const { words, fixes } = applyFixes(heard, [
+    { first: 1, last: 2, to: "forgot,", why: "" },
+    { first: 3, last: 3, to: "market", why: "" },
+  ]);
+
+  it("passes a correct title that still uses a common word of a fixed phrase ('for')", () => {
+    expect(accuracyIssues({ words, fixes, title: "I forgot, market opens at ten thirty — waiting for the open", hook: "Waiting for the open" })).toEqual([]);
+  });
+
+  it("holds a title that still has the whole misheard phrase", () => {
+    expect(accuracyIssues({ words, fixes, title: "I for God, market opens", hook: "" })).toEqual([
+      { code: "accuracy", reason: expect.stringContaining("“for God” may be misheard") },
+    ]);
+  });
+
+  it("does not hold a title for a short common word the speech-to-text was unsure of", () => {
+    const unsureFor = words.map((w) => (w.word === "for" ? { ...w, confidence: 0.3 } : w));
+    expect(accuracyIssues({ words: unsureFor, fixes, title: "Waiting for the open", hook: "" })).toEqual([]);
   });
 });
