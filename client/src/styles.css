@@ -3839,3 +3839,128 @@ button.danger {
   padding: 0;
   list-style: none;
 }
+
+/* Money and Health: a range or grouping picked from pills, a funnel of bars, ranked lists. */
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+}
+.seg button {
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+}
+.seg button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+.funnel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.funnel li {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) 3rem;
+  align-items: center;
+  gap: var(--s2);
+}
+.funnel-bar {
+  height: 0.75rem;
+  border-radius: var(--pill);
+  background: var(--sunk);
+  overflow: hidden;
+}
+.funnel-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.funnel-n {
+  text-align: right;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.biz-best {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+@media (min-width: 900px) {
+  .biz-best {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.biz-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.biz-list li {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+ul.biz-list > li {
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.biz-costs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.biz-costs li {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.biz-costs li > span {
+  display: grid;
+  min-width: 0;
+}
+.biz-costs strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.biz-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.biz-file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.biz-file:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.biz-csv {
+  margin-top: var(--s4);
+  overflow-wrap: anywhere;
+}
+.biz-digest ul {
+  margin: 0 0 var(--s2);
+  padding-left: var(--s4);
+}

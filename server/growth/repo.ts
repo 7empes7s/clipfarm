@@ -179,6 +179,18 @@ export class GrowthRepo {
     );
   }
 
+  /** Stats calls made per platform on a UTC day (the daily budget of each platform's stats API). */
+  statsCalls(day: string): Record<string, number> {
+    const saved = this.setting("stats_calls");
+    const parsed = saved ? (JSON.parse(saved) as { day: string; calls: Record<string, number> }) : null;
+    return parsed?.day === day ? parsed.calls : {};
+  }
+
+  spendStatsCalls(day: string, platform: string, calls: number): void {
+    const now = this.statsCalls(day);
+    this.saveSetting("stats_calls", JSON.stringify({ day, calls: { ...now, [platform]: (now[platform] ?? 0) + calls } }));
+  }
+
   defaults(): GrowthDefaults {
     const saved = this.setting("growth_defaults");
     return saved ? { ...NO_DEFAULTS, ...(JSON.parse(saved) as Partial<GrowthDefaults>) } : NO_DEFAULTS;

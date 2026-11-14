@@ -61,3 +61,62 @@ export class YouTubeStats implements PlatformStatsSource {
     return out;
   }
 }
+
+/**
+ * What each platform's official stats API can give about one of our posts, and how many stats calls
+ * clipfarm allows itself a day (well under each API's own limit, so posting never runs short).
+ * Anything not listed is "not available" for that platform, never a made-up number.
+ */
+export const STATS_CAPABILITIES: Record<Platform, { metrics: (keyof PostMetrics)[]; batch: number; callsPerDay: number; api: string }> = {
+  youtube: { metrics: ["views", "likes", "comments"], batch: 50, callsPerDay: 500, api: "YouTube Data API (watch time and followers need YouTube Analytics)" },
+  tiktok: { metrics: ["views", "likes", "comments", "shares"], batch: 20, callsPerDay: 200, api: "TikTok Display API" },
+  instagram: { metrics: ["views", "likes", "comments", "shares", "saves", "reach"], batch: 1, callsPerDay: 150, api: "Instagram Insights" },
+  x: { metrics: ["views", "likes", "comments", "shares"], batch: 100, callsPerDay: 100, api: "X API public metrics" },
+};
+
+/** Calls one ask about `posts` posts costs. */
+export function statsCalls(platform: Platform, posts: number): number {
+  return Math.ceil(posts / STATS_CAPABILITIES[platform].batch);
+}
+
+/**
+ * A platform's stats API in tests and demo mode: steady made-up numbers for exactly the metrics that
+ * platform's real API gives, and nothing else.
+ */
+export class FakePlatformStats implements PlatformStatsSource {
+  calls = 0;
+  fail: string | null = null;
+
+  constructor(
+    readonly platform: Platform,
+    private opts: { ready?: boolean; viewsOf?: (postId: number) => number } = {},
+  ) {}
+
+  ready(): boolean {
+    return this.opts.ready ?? true;
+  }
+
+  async stats(posts: { id: number; url: string }[]): Promise<Map<number, Partial<PostMetrics>>> {
+    this.calls += statsCalls(this.platform, posts.length);
+    if (this.fail) throw new Error(this.fail);
+    const out = new Map<number, Partial<PostMetrics>>();
+    for (const p of posts) {
+      const views = this.opts.viewsOf?.(p.id) ?? 1000 * p.id;
+      const all: PostMetrics = {
+        views,
+        likes: Math.round(views * 0.05),
+        comments: Math.round(views * 0.005),
+        shares: Math.round(views * 0.01),
+        saves: Math.round(views * 0.008),
+        reach: Math.round(views * 0.9),
+        avgWatchPct: 55,
+        followsGained: Math.round(views * 0.002),
+        revenueUsd: null,
+      };
+      const metrics: Partial<PostMetrics> = {};
+      for (const key of STATS_CAPABILITIES[this.platform].metrics) (metrics as Record<string, number | null>)[key] = all[key];
+      out.set(p.id, metrics);
+    }
+    return out;
+  }
+}
