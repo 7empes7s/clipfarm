@@ -4,6 +4,7 @@ import { DEFAULT_CAPTION_STYLE, DEFAULT_LOOK, type ClipLook, type EditWindow, ty
 import type { CaptionFix, Clip, ClipEditInput, ClipEffects, ClipLayout, ClipQuality, ClipStatus, ClipVersion, RejectReason, StudioEditInput, Word } from "../../shared/types.js";
 import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { NotFoundError, ValidationError } from "../errors.js";
+import { setFixApplied } from "../pipeline/accuracy/correct.js";
 import { retimeCaptions } from "./edit.js";
 
 interface ClipRow {
@@ -543,6 +544,21 @@ export class ClipsRepo {
   /** Stores the result of the automatic check on the clip's current render. */
   setQuality(id: number, quality: ClipQuality): void {
     this.db.prepare("UPDATE clips SET quality = ? WHERE id = ?").run(JSON.stringify(quality), id);
+  }
+
+  /** Undoes (applied false) or redoes one caption fix; the captions change, the fix stays listed. */
+  setFixApplied(id: number, n: number, applied: boolean): Clip {
+    const clip = this.get(id);
+    if (clip.postCount > 0) throw new ValidationError("This clip is already posted, so it cannot be changed.");
+    const fix = clip.captionFixes[n];
+    if (!fix) throw new NotFoundError("That caption fix was not found.");
+    if (fix.applied !== applied) {
+      const fixes = clip.captionFixes.map((f, i) => (i === n ? { ...f, applied } : f));
+      this.db
+        .prepare("UPDATE clips SET caption_words = ?, caption_fixes = ? WHERE id = ?")
+        .run(JSON.stringify(setFixApplied(clip.captionWords, fix, applied)), JSON.stringify(fixes), id);
+    }
+    return this.get(id);
   }
 
   /** A pick rendered again: its clip takes the new, checked captions and the title and hook built from them. */
