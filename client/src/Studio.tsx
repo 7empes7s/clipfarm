@@ -510,7 +510,7 @@ function Preview({
   const cropX = dragX ?? edit.look.cropX ?? 0.5;
   // The caption line under the playhead: three words at a time, as the render sets them.
   const kept = words.filter((w) => w.startSec >= edit.startSec && w.endSec <= edit.endSec && !edit.cuts.some((c) => w.startSec >= c.startSec && w.endSec <= c.endSec));
-  const at = kept.findIndex((w) => playhead >= w.startSec && playhead < (kept[kept.indexOf(w) + 1]?.startSec ?? w.endSec));
+  const at = kept.findIndex((w, i) => playhead >= w.startSec && playhead < (kept[i + 1]?.startSec ?? w.endSec));
   const line = at >= 0 ? kept.slice(at - (at % 3), at - (at % 3) + 3) : [];
   const fromX = (clientX: number) => {
     const r = frame.current!.getBoundingClientRect();
