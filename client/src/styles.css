@@ -3949,8 +3949,10 @@ button.danger {
 }
 .slot {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   align-content: start;
+  overflow: hidden;
   gap: 2px;
   width: 100%;
   min-width: 0;
@@ -3994,15 +3996,23 @@ button.danger {
 }
 .slot-top {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--s2);
+  gap: var(--s1) var(--s2);
   width: 100%;
+  min-width: 0;
 }
 .slot-time {
+  white-space: nowrap;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .slot-status {
+  display: inline-block;
+  flex: none;
+  line-height: 1.5;
+  white-space: nowrap;
   font-size: var(--t-xs);
   font-weight: 600;
   padding: 0 var(--s2);

@@ -171,7 +171,7 @@ function Slot({ item, drag, onOpen }: { item: CalendarItem; drag: ReturnType<typ
       className={`slot slot-${status}${item.movable ? " movable" : ""}`}
       onPointerDown={(e) => drag.start(e, item)}
       onClick={() => !drag.wasDrag() && onOpen(item)}
-      aria-label={`${timeLabel(post.scheduledAt)}, ${PLATFORM_LABELS[post.platform]}, ${post.accountName}: ${post.clipTitle}. ${SLOT_STATUS_LABELS[status]}.${item.movable ? " Drag to move." : ""}`}
+      title={item.movable ? "Drag to move, or tap for details" : undefined}
     >
       <span className="slot-top">
         <span className="slot-time">{timeLabel(post.scheduledAt)}</span>
