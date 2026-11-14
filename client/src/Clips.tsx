@@ -45,6 +45,7 @@ export function Clips({ picks }: { picks: Pick[] }) {
                 </span>
               </button>
               <div className="pick-title">{p.title}</div>
+              {p.clipId !== null && <a href={`#studio/${p.clipId}`}>Open in Studio</a>}
               <div className="meta">
                 <span>{clock(p.endSec - p.startSec)}</span>
                 {p.sizeBytes !== null && <span>{megabytes(p.sizeBytes)}</span>}

@@ -78,7 +78,7 @@ describe("re-render an edited clip (real ffmpeg on a generated sample)", () => {
     expect(changed / a.length).toBeGreaterThan(0.01);
   });
 
-  it("saving an edit queues one render job; the new version comes back to the inbox and the old render is removed", async () => {
+  it("saving an edit queues one render job; the new version comes back to the inbox and the old render is kept as a version", async () => {
     const db = openDb(":memory:");
     const sources = new SourcesRepo(db);
     const clips = new ClipsRepo(db);
@@ -120,10 +120,11 @@ describe("re-render an edited clip (real ffmpeg on a generated sample)", () => {
     await request(app).post(`/api/clips/${clip.id}/edit`).send({ title: "New title", hook: "", captionText: "", layout: "center", startSec: 0, endSec: 4 }).expect(202);
     queue.start();
     await queue.idle();
-    // The previous render is deleted; the master (the original file) stays for later trims.
-    expect(existsSync(firstFile)).toBe(false);
+    // The previous render is kept as a version (Studio: each export is a version); the master stays for later trims.
+    expect(existsSync(firstFile)).toBe(true);
     expect(existsSync(master)).toBe(true);
-    expect(await readdir(mediaDir)).toHaveLength(1);
+    expect(await readdir(mediaDir)).toHaveLength(2);
+    expect(clips.versions(clip.id).map((v) => [v.n, v.current])).toEqual([[2, true], [1, false], [0, false]]);
     // The job's temp folder is gone.
     expect((await readdir(dir)).filter((f) => f.startsWith("clipfarm-job-"))).toEqual([]);
     db.close();

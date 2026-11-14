@@ -271,6 +271,11 @@ export function InboxTab({ clips, sources, jobs, updateClips, refresh }: Props) 
         <span className="hint">
           {wide ? "Keys: A approve, R reject, E edit, ← → move, Z undo" : "Swipe right to approve, left to reject, up for the next clip."}
         </span>
+        {current && (
+          <a href={`#studio/${current.id}`} data-testid="open-studio">
+            Open in Studio
+          </a>
+        )}
         <a href="#rejected">Rejected clips ({rejectedCount})</a>
       </p>
 

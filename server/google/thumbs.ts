@@ -140,7 +140,7 @@ export interface ThumbsDeps {
  */
 export function thumbsHandler(deps: ThumbsDeps): JobHandler {
   return async ({ payload, tmpDir, signal, progress }) => {
-    const { clipId } = payload as { clipId: number };
+    const { clipId, noAi } = payload as { clipId: number; noAi?: boolean };
     const clip = deps.clips.get(clipId);
     const frame = join(tmpDir, "frame.jpg");
     // A little in, past the hook card's fade: the reaction is what the clip opens on.
@@ -164,7 +164,7 @@ export function thumbsHandler(deps: ThumbsDeps): JobHandler {
 
     const useAi = deps.aiAllowed?.(clip.sourceId) ?? true;
     try {
-      for (const [n, style] of useAi ? STYLES.entries() : []) {
+      for (const [n, style] of useAi && !noAi ? STYLES.entries() : []) {
         progress(0.1 + 0.4 * n, `Making thumbnail ${n + 1} of ${STYLES.length}`);
         try {
           const res = await deps.google.image(
@@ -205,7 +205,7 @@ function makingFor(clipId: number, queue: JobQueue): boolean {
   return queue.list(200).some((j) => j.type === THUMBS_JOB && j.clipId === clipId && (j.status === "queued" || j.status === "running"));
 }
 
-/** Queues the thumbnails of a clip, unless they are already being made. */
-export function queueThumbs(clipId: number, queue: JobQueue): void {
-  if (!makingFor(clipId, queue)) queue.enqueue(THUMBS_JOB, { clipId }, { clipId, maxAttempts: 2 });
+/** Queues the thumbnails of a clip, unless they are already being made. `noAi`: the clip's campaign bans AI, so a frame only. */
+export function queueThumbs(clipId: number, queue: JobQueue, noAi = false): void {
+  if (!makingFor(clipId, queue)) queue.enqueue(THUMBS_JOB, { clipId, noAi }, { clipId, maxAttempts: 2 });
 }

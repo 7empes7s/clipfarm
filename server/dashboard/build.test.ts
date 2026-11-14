@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_LOOK } from "../../shared/studio.js";
 import type { AccountCard, Clip, Job, Post, Source, Vod } from "../../shared/types.js";
 import { DEFAULT_EFFECTS } from "../../shared/types.js";
 import { buildDashboard, earningsRows, goals, vodProgress } from "./build.js";
@@ -96,6 +97,8 @@ const clip = (o: Partial<Clip> = {}): Clip => ({
   endSec: 25,
   masterDurationSec: 25,
   captionWords: [],
+  cuts: [],
+  look: DEFAULT_LOOK,
   postCount: 0,
   experiment: false,
   proof: false,

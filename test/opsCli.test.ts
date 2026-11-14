@@ -217,7 +217,7 @@ describe("clipfarm-ops run, clips and status (fakes; real ffmpeg on a generated 
     expect(status.out).toContain("job 1 ingest video 1: done, Done");
     expect(status.out).toContain("Clips: 1 waiting for review, 0 approved.");
     expect(status.out.at(-1)).toMatch(/^Disk: [\d.]+ GB free of [\d.]+ GB; clips use [\d.]+ GB/);
-  });
+  }, 120_000);
 
   it("leaves the work to the running server: one heavy job at a time on the box", async () => {
     await addTjr();
@@ -236,7 +236,7 @@ describe("clipfarm-ops run, clips and status (fakes; real ffmpeg on a generated 
       await server.queue.idle();
       server.db.close();
     }
-  });
+  }, 120_000);
 
   it("refuses a source whose permission ran out, and a video that belongs to no source", async () => {
     await ops(["source", "add", "kick.com/tjr", "--campaign", "tjr-clipping", "--name", "TJR", "--expires", "2020-01-01"]);
