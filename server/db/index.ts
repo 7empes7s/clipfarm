@@ -644,6 +644,10 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- A VOD's chat replay in 10 s buckets (JSON), for chat-spike picks; NULL when it has no chat.
+  ALTER TABLE vods ADD COLUMN chat TEXT;
+  `,
+  `
   -- Accurate captions: the misheard words the correction pass fixed, each one undoable in the Studio.
   ALTER TABLE clips ADD COLUMN caption_fixes TEXT NOT NULL DEFAULT '[]';
   `,

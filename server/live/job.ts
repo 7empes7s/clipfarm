@@ -6,6 +6,8 @@ import type { JobHandler, JobQueue } from "../jobs/queue.js";
 import type { PicksRepo } from "../picks/repo.js";
 import { bannedTerms, reviewPicks } from "../pipeline/picks/review.js";
 import { pickerBrief } from "../publish/compliance.js";
+import { sliceBuckets } from "../pipeline/chat/buckets.js";
+import { applyChatBoost } from "../pipeline/chat/spikes.js";
 import { toSentences } from "../pipeline/picks/sentences.js";
 import { measureLoudness } from "../pipeline/picks/signals.js";
 import type { Picker } from "../pipeline/picks/types.js";
@@ -93,6 +95,8 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
     const vod = deps.vods.detail(capture.vodId);
     const fromSec = Math.max(0, seg.startSec - contextSec);
     const words = vod.words.filter((w) => w.startSec >= fromSec && w.startSec < endSec);
+    // The chat heard while recording, on the same clock as the words the picker sees.
+    const chat = sliceBuckets(deps.vods.chat(capture.vodId), fromSec, endSec);
     const started = Date.now();
     const result = await deps.picker.pick(
       {
@@ -101,7 +105,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
         chapters: [],
         // The picker sees a window of the stream that starts at 0.
         words: words.map((w) => ({ word: w.word, startSec: round(w.startSec - fromSec), endSec: round(w.endSec - fromSec) })),
-        signals: { loudness: deps.vods.loudness(capture.vodId).slice(Math.floor(fromSec), Math.ceil(endSec)), chat: null },
+        signals: { loudness: deps.vods.loudness(capture.vodId).slice(Math.floor(fromSec), Math.ceil(endSec)), chat },
         creatorName: source.creatorName,
         briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
@@ -116,7 +120,7 @@ export function liveSegmentHandler(deps: LiveSegmentDeps): JobHandler {
     progress(0.9, "Checking picks");
     const before = deps.picks.listForVod(capture.vodId);
     const stored = onDisk(deps.repo.segments(capture.id));
-    const fresh = result.picks
+    const fresh = applyChatBoost(result.picks, chat)
       .map((p) => ({ ...p, startSec: p.startSec + fromSec, endSec: p.endSec + fromSec }))
       // Not what an earlier segment already covered, and not the same moment twice.
       .filter((p) => p.endSec > seg.startSec && !before.some((b) => p.startSec < b.endSec && b.startSec < p.endSec));

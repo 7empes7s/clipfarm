@@ -1,6 +1,8 @@
 import type { Db } from "../db/index.js";
 import type { Chapter, Vod, VodDetail, VodStatus, Word } from "../../shared/types.js";
 import { NotFoundError } from "../errors.js";
+import { mergeBuckets } from "../pipeline/chat/buckets.js";
+import type { ChatBuckets } from "../pipeline/chat/types.js";
 import type { VodMeta } from "../pipeline/ingest/downloader.js";
 
 interface VodRow {
@@ -83,6 +85,21 @@ export class VodsRepo {
   loudness(id: number): number[] {
     const row = this.db.prepare("SELECT loudness FROM vods WHERE id = ?").get(id) as { loudness: string } | undefined;
     return row ? (JSON.parse(row.loudness) as number[]) : [];
+  }
+
+  /** The chat replay in 10 s buckets; null for a video without chat (uploads, YouTube). */
+  saveChat(id: number, chat: ChatBuckets | null): void {
+    this.db.prepare("UPDATE vods SET chat = ? WHERE id = ?").run(chat ? JSON.stringify(chat) : null, id);
+  }
+
+  chat(id: number): ChatBuckets | null {
+    const row = this.db.prepare("SELECT chat FROM vods WHERE id = ?").get(id) as { chat: string | null } | undefined;
+    return row?.chat ? (JSON.parse(row.chat) as ChatBuckets) : null;
+  }
+
+  /** A live segment's chat (bucketed on the stream's clock) joins the stream's, from `fromSec` on. */
+  mergeLiveChat(id: number, fromSec: number, chat: ChatBuckets): void {
+    this.saveChat(id, mergeBuckets(this.chat(id), chat, fromSec));
   }
 
   /**

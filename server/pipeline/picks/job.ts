@@ -7,6 +7,7 @@ import type { SourcesRepo } from "../../sources/repo.js";
 import { applyTrendBoost, type TrendBoost, trendHints } from "../../trends/boost.js";
 import type { VodsRepo } from "../../vods/repo.js";
 import { pickerBrief } from "../../publish/compliance.js";
+import { applyChatBoost } from "../chat/spikes.js";
 import { bannedTerms, reviewPicks } from "./review.js";
 import { toSentences } from "./sentences.js";
 import type { Picker } from "./types.js";
@@ -39,6 +40,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
     const source = deps.sources.get(vod.sourceId);
 
     const trends = deps.trends?.() ?? null;
+    const chat = deps.vods.chat(vodId);
     progress(0.1, "Finding highlights");
     const started = Date.now();
     const result = await deps.picker.pick(
@@ -47,7 +49,7 @@ export function picksHandler(deps: PicksDeps): JobHandler {
         durationSec: vod.durationSec ?? vod.words.at(-1)?.endSec ?? 0,
         chapters: vod.chapters,
         words: vod.words,
-        signals: { loudness: deps.vods.loudness(vodId), chat: null },
+        signals: { loudness: deps.vods.loudness(vodId), chat },
         creatorName: source.creatorName,
         briefRules: pickerBrief(permission),
         bannedContent: source.bannedContent,
@@ -76,7 +78,8 @@ export function picksHandler(deps: PicksDeps): JobHandler {
 
     progress(0.9, "Checking picks");
     const reviewed = reviewPicks(
-      applyTrendBoost(deps.preferences ? applyPreferences(proposed, deps.preferences()) : proposed, vod.words, trends),
+      // Chat spikes weigh in after the picker and Gemini have scored, so every picker gets them.
+      applyTrendBoost(applyChatBoost(deps.preferences ? applyPreferences(proposed, deps.preferences()) : proposed, chat), vod.words, trends),
       toSentences(vod.words),
       vod.words,
       [...bannedTerms(permission.briefRules, source.bannedContent), ...(permission.rules?.bannedWords ?? [])],
