@@ -105,6 +105,8 @@ describe("migrate", () => {
     // Clipping as a service: plans, clients and their sign-ins, Stripe's events and invoices; jobs know their workspace.
     expect(tables(db)).toEqual(expect.arrayContaining(["service_plans", "clients", "client_sessions", "client_login_links", "stripe_events", "client_invoices"]));
     expect(db.prepare("SELECT name FROM pragma_table_info('jobs')").pluck().all()).toContain("workspace_id");
+    // Accurate captions: the correction pass's fixes, kept per clip.
+    expect(db.prepare("SELECT name FROM pragma_table_info('clips')").pluck().all()).toContain("caption_fixes");
     expect(db.pragma("user_version", { simple: true })).toBe(MIGRATIONS.length);
     db.close();
   });
