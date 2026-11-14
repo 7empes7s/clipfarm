@@ -298,7 +298,7 @@ describe("publishing controls", () => {
     // Autopilot: a rule that would post stays, but its tick does nothing.
     const autopilot = new Autopilot({ repo: new AutopilotRepo(t.db, () => NOW), publisher: t.publisher, clips: t.clips, sources: t.sources, paused, now: () => NOW });
     await t.publisher.syncAccounts();
-    await autopilot.create({ name: "All TikTok", enabled: true, dryRun: false, accountIds: ["tt-main"], minScore: 0, creatorIds: [], maxPerDay: 5 });
+    await autopilot.create({ name: "All TikTok", enabled: true, dryRun: false, accountIds: ["tt-main"], minScore: 0, dailyCap: 5 });
     t.makeClip("Fresh one");
     await autopilot.tick();
     expect(t.service.calls).not.toContain("publish");
@@ -315,6 +315,9 @@ describe("publishing controls", () => {
     await request(t.app).post("/api/ops/publishing").send({ paused: false }).expect(200);
     await watch.tick();
     expect(t.posts.get(res.body.posts[0].id).status).toBe("posted");
+    // And the rule fires again, the clip it held back now goes out.
+    await autopilot.tick();
+    expect(t.posts.list().some((p) => p.accountId === "tt-main")).toBe(true);
   });
 });
 
