@@ -12,6 +12,8 @@ import { AllowanceChecker, FakeProofFetcher } from "./sources/proof.js";
 import allowanceSeed from "./sources/seed/public-allowance.json" with { type: "json" };
 import { parseSuggested } from "./sources/suggested.js";
 import { WatchlistPoller } from "./sources/watchlist/poller.js";
+import { FakeGoogleSignIn, FakeMailer, HttpGoogleSignIn, ResendMailer } from "./service/auth.js";
+import { DEMO_WEBHOOK_SECRET, WEBHOOK_SECRET_NAME } from "./service/routes.js";
 import seed from "./sources/watchlist/seed.json" with { type: "json" };
 
 const {
@@ -42,6 +44,8 @@ const {
   workspaces,
   uploads,
   outputs,
+  clientService,
+  stripe,
 } = openRuntime();
 const mediaDir = config.mediaDir;
 
@@ -118,6 +122,18 @@ const app = createApp({
   access: config.access ?? undefined,
   workspaces,
   creator: { service: creator, uploads, outputs },
+  clientService: {
+    service: clientService,
+    stripe,
+    // Demo mode: Stripe, email and Google are stand-ins, and nothing leaves the server.
+    mailer: config.fakes ? new FakeMailer() : new ResendMailer(() => settings.get("RESEND_API_KEY"), () => settings.get("SERVICE_EMAIL_FROM")),
+    google: config.fakes
+      ? new FakeGoogleSignIn()
+      : new HttpGoogleSignIn(() => settings.get("CLIENT_GOOGLE_CLIENT_ID"), () => settings.get("CLIENT_GOOGLE_CLIENT_SECRET")),
+    webhookSecret: () => (config.fakes ? DEMO_WEBHOOK_SECRET : settings.secret(WEBHOOK_SECRET_NAME)),
+    publicUrl: config.publicUrl,
+    demo: config.fakes,
+  },
 });
 
 queue.start();
@@ -150,6 +166,9 @@ directTimer.unref();
 // Autopilot rules that are on: matching clips go to their accounts at the next best slot (or, in dry run, are only noted).
 const autopilotTimer = setInterval(() => void autopilot.tick().catch((err: unknown) => console.error(`[autopilot] ${(err as Error).message}`)), 5 * 60_000);
 autopilotTimer.unref();
+// Per-view plans: the views gained since the last report go to Stripe once an hour.
+const viewsTimer = setInterval(() => void clientService.reportViews().catch((err: unknown) => console.error(`[billing] ${settings.scrub((err as Error).message)}`)), 3600_000);
+viewsTimer.unref();
 const proxyTimer = setInterval(() => void isolation.recheckStale(), 3600_000);
 proxyTimer.unref();
 // Test campaigns: schedule what is due in the next half hour, then the 09:00 digest. No AI, no ffmpeg.

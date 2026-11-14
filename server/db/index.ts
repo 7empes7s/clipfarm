@@ -606,6 +606,70 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE posts ADD COLUMN whop_reject_reason TEXT;
   ALTER TABLE posts ADD COLUMN retried_by INTEGER;
   `,
+  `
+  -- Clipping as a service: plans, outside creators (one workspace each), their sign-ins, Stripe's
+  -- events (each applied once) and invoices. Jobs carry their workspace, for the fair-share queue.
+  CREATE TABLE service_plans (
+    id TEXT PRIMARY KEY,
+    position INTEGER NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE TABLE clients (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL,
+    workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspaces(id),
+    google_sub TEXT UNIQUE,
+    plan_id TEXT,
+    status TEXT NOT NULL DEFAULT 'none',
+    stripe_customer_id TEXT UNIQUE,
+    stripe_subscription_id TEXT,
+    stripe_event_at INTEGER NOT NULL DEFAULT 0,
+    period_start TEXT,
+    period_end TEXT,
+    auto_approve INTEGER NOT NULL DEFAULT 0,
+    views_reported INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE client_sessions (
+    token_hash TEXT PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    read_only INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT NOT NULL
+  );
+  CREATE TABLE client_login_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL COLLATE NOCASE,
+    client_id INTEGER,
+    read_only INTEGER NOT NULL DEFAULT 0,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE stripe_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at TEXT NOT NULL
+  );
+  CREATE TABLE client_invoices (
+    id TEXT PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    number TEXT,
+    status TEXT NOT NULL,
+    amount_due INTEGER NOT NULL,
+    amount_paid INTEGER NOT NULL,
+    tax INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    hosted_url TEXT,
+    pdf_url TEXT,
+    period_start TEXT,
+    period_end TEXT,
+    due_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX client_invoices_client ON client_invoices(client_id, created_at);
+  ALTER TABLE jobs ADD COLUMN workspace_id INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 export function migrate(db: Db): void {

@@ -8,6 +8,9 @@
 import { PUBLIC_PAGE_PATHS } from './check.ts';
 
 export const ACCESS_APP_NAME = 'clipfarm public pages';
+/** The clipping service's client side, which has its own sign-in (server/access.ts, isClientServicePath). */
+export const CLIENT_ACCESS_APP_NAME = 'clipfarm client portal';
+export const CLIENT_SERVICE_PATHS = ['/service', '/pricing', '/service-terms', '/portal', '/portal/*', '/api/portal/*', '/api/stripe/webhook', '/assets/*'];
 const API = 'https://api.cloudflare.com/client/v4';
 const PER_PAGE = 100;
 
@@ -19,6 +22,9 @@ export interface PublicPagesOptions {
   /** The public hostname, e.g. clip.techinsiderbytes.com. */
   hostname: string;
   fetch?: typeof fetch;
+  /** Another Access application (the client portal): its name and paths. Default: the public pages. */
+  name?: string;
+  paths?: string[];
 }
 
 interface Destination {
@@ -55,7 +61,7 @@ function isBypassForAll(policy: AccessPolicy): boolean {
 }
 
 export async function openPublicPages(options: PublicPagesOptions): Promise<PublicPagesResult> {
-  const { accountId, token, hostname, fetch: doFetch = fetch } = options;
+  const { accountId, token, hostname, fetch: doFetch = fetch, name: appName = ACCESS_APP_NAME, paths = PUBLIC_PAGE_PATHS } = options;
   if (!/^[a-f0-9]{32}$/i.test(accountId)) return { ok: false, lines: ['NOT OK: CLOUDFLARE_ACCOUNT_ID is not a Cloudflare account ID (32 letters and digits).'] };
   if (!token) return { ok: false, lines: ['NOT OK: CLOUDFLARE_API_TOKEN is not set.'] };
   // A bare hostname as a destination would open the whole app, so nothing but a hostname gets in.
@@ -76,28 +82,28 @@ export async function openPublicPages(options: PublicPagesOptions): Promise<Publ
     return answer.result;
   }
 
-  const wanted = PUBLIC_PAGE_PATHS.map((path) => `${hostname}${path}`);
-  const app = { name: ACCESS_APP_NAME, type: 'self_hosted', domain: wanted[0], destinations: wanted.map((uri) => ({ type: 'public', uri })) };
+  const wanted = paths.map((path) => `${hostname}${path}`);
+  const app = { name: appName, type: 'self_hosted', domain: wanted[0], destinations: wanted.map((uri) => ({ type: 'public', uri })) };
   const lines: string[] = [];
   try {
     let found: AccessApp | undefined;
     for (let page = 1; !found; page += 1) {
       const apps = await call<AccessApp[]>('GET', `?page=${page}&per_page=${PER_PAGE}`);
-      found = apps.find((a) => a.name === ACCESS_APP_NAME);
+      found = apps.find((a) => a.name === appName);
       if (apps.length < PER_PAGE) break;
     }
 
     if (!found) {
       found = await call<AccessApp>('POST', '', app);
-      lines.push(`OK: made the Access application "${ACCESS_APP_NAME}" for ${wanted.join(', ')}.`);
+      lines.push(`OK: made the Access application "${appName}" for ${wanted.join(', ')}.`);
     } else {
       const has = (found.destinations ?? []).map((d) => d.uri).sort();
       if (JSON.stringify(has) === JSON.stringify([...wanted].sort())) {
-        lines.push(`OK: the Access application "${ACCESS_APP_NAME}" already covers ${wanted.join(', ')}.`);
+        lines.push(`OK: the Access application "${appName}" already covers ${wanted.join(', ')}.`);
       } else {
         const policies = found.policies;
         found = { ...(await call<AccessApp>('PUT', `/${found.id}`, app)), policies };
-        lines.push(`OK: set the Access application "${ACCESS_APP_NAME}" to cover ${wanted.join(', ')} and nothing else.`);
+        lines.push(`OK: set the Access application "${appName}" to cover ${wanted.join(', ')} and nothing else.`);
       }
     }
 

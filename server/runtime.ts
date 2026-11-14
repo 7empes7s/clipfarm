@@ -13,7 +13,7 @@ import { GrowthLab } from "./growth/lab.js";
 import { GrowthRepo } from "./growth/repo.js";
 import { HOOK_VARIANTS_JOB, HookLab } from "./hooklab/lab.js";
 import { hookVariantsHandler, onHookVariantsFinished } from "./hooklab/render.js";
-import { JobQueue } from "./jobs/queue.js";
+import { type JobHandler, JobQueue } from "./jobs/queue.js";
 import { liveCutter, liveOnFinished, LIVE_SEGMENT_JOB, liveSegmentHandler } from "./live/job.js";
 import { LiveManager } from "./live/manager.js";
 import { FakeNotifier, type Notifier, WebPushNotifier } from "./live/notify.js";
@@ -51,6 +51,8 @@ import { isOwnContent } from "./creator/service.js";
 import { uploadIdOf, UploadsRepo } from "./creator/uploads.js";
 import { FORMATS_JOB, formatsHandler } from "./pipeline/formats/job.js";
 import { WorkspacesRepo } from "./workspaces/repo.js";
+import { ClientService } from "./service/service.js";
+import { FakeStripe, HttpStripe, type StripeApi } from "./service/stripe.js";
 
 export interface Runtime {
   settings: Settings;
@@ -81,6 +83,9 @@ export interface Runtime {
   workspaces: WorkspacesRepo;
   uploads: UploadsRepo;
   outputs: OutputsRepo;
+  /** Clipping as a service: clients, plans, billing. */
+  clientService: ClientService;
+  stripe: StripeApi;
 }
 
 /**
@@ -114,7 +119,16 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     vodTitle: (id) => vods.get(id).title,
     campaignLimit: (permission, clipId) => scout.postBlock(permission, clipId),
   });
-  const direct = new DirectPoster({ isolation, accounts: publisher.accounts, posts, clips, sources, settings, endpoints: config.direct.endpoints });
+  const direct = new DirectPoster({
+    isolation,
+    accounts: publisher.accounts,
+    posts,
+    clips,
+    sources,
+    settings,
+    endpoints: config.direct.endpoints,
+    assignWorkspace: (accountId, workspaceId) => workspaces.assignAccount(accountId, workspaceId),
+  });
   publisher.useDirect(direct);
   const autopilot = new Autopilot({ repo: new AutopilotRepo(db), publisher, clips, sources });
   const accountStats = new AccountStatsStore(db, config.postingService, posts, { accounts: publisher.accounts });
@@ -122,6 +136,9 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const workspaces = new WorkspacesRepo(db);
   const uploads = new UploadsRepo(db, join(mediaDir, "uploads"));
   const outputs = new OutputsRepo(db);
+  // Demo mode and tests never reach Stripe.
+  const stripe: StripeApi = config.fakes ? new FakeStripe() : new HttpStripe(() => settings.get("STRIPE_SECRET_KEY"));
+  const clientService = new ClientService({ db, workspaces, sources, vods, clips, stripe });
   const brandOf = (sourceId: number) => workspaces.get(sources.get(sourceId).workspaceId).brand;
   // Uploaded files are read where they lie; sound-only sections become waveform videos (audiograms).
   const downloader = new UploadAudioDownloader(config.downloader, uploads);
@@ -183,7 +200,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
-      [INGEST_JOB]: ingestHandler({ sources, vods, downloader, transcriber: config.transcriber }),
+      [INGEST_JOB]: clientGate(clientService, ingestHandler({ sources, vods, downloader, transcriber: config.transcriber })),
       [PICKS_JOB]: picksHandler({
         sources,
         vods,
@@ -227,6 +244,8 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     onFinished: (job, payload) => {
       pipelineFinished(job, payload);
       clipRenderFinished(job);
+      // A client who switched on auto-approve gets new clips approved as soon as they are cut.
+      if (job.type === RENDER_JOB && job.status === "done") clientService.autoApprove();
       hookVariantsFinished(job, payload);
       liveFinished(job, payload);
     },
@@ -307,5 +326,15 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     workspaces,
     uploads,
     outputs,
+    clientService,
+    stripe,
+  };
+}
+
+/** A client's video starts only while the plan has minutes and clips left; otherwise the job fails and says why. */
+function clientGate(service: ClientService, handler: JobHandler): JobHandler {
+  return async (ctx) => {
+    if (ctx.job.vodId !== null) service.assertVodAllowed(ctx.job.vodId);
+    await handler(ctx);
   };
 }

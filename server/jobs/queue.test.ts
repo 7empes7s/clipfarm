@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb } from "../db/index.js";
 import { ValidationError } from "../errors.js";
-import { type JobHandler, JobQueue } from "./queue.js";
+import { type JobHandler, JobQueue, pickFair } from "./queue.js";
 
 let tmpRoot: string;
 beforeEach(async () => {
@@ -314,5 +314,56 @@ describe("JobQueue", () => {
       expect(ran).toEqual(["ops", "ops"]);
       ops.queue.stop();
     });
+  });
+});
+
+describe("fair share between workspaces", () => {
+  it("picks the workspace that waited longest since its last start, oldest job first within it", () => {
+    const last = new Map([
+      [1, "2026-11-14T10:00:00.000Z"],
+      [2, "2026-11-14T09:00:00.000Z"],
+    ]);
+    // Workspace 3 never ran: it goes first. Then 2 (ran longer ago), then 1.
+    expect(pickFair([{ id: 5, workspaceId: 1 }, { id: 6, workspaceId: 2 }, { id: 7, workspaceId: 3 }], last)).toBe(7);
+    expect(pickFair([{ id: 5, workspaceId: 1 }, { id: 9, workspaceId: 2 }, { id: 6, workspaceId: 2 }], last)).toBe(6);
+    expect(pickFair([], last)).toBeUndefined();
+  });
+
+  it("a client's long backlog does not hold our jobs (or another client's) up, and still one job at a time", async () => {
+    const order: string[] = [];
+    let running = 0;
+    let maxRunning = 0;
+    const { queue } = makeQueue({
+      work: async ({ payload }) => {
+        running++;
+        maxRunning = Math.max(maxRunning, running);
+        await new Promise((r) => setTimeout(r, 5));
+        order.push((payload as { tag: string }).tag);
+        running--;
+      },
+    });
+    queue.stop();
+    for (let i = 1; i <= 3; i++) queue.enqueue("work", { tag: `client-a-${i}` }, { workspaceId: 2 });
+    queue.enqueue("work", { tag: "ours-1" }, { workspaceId: 1 });
+    queue.enqueue("work", { tag: "client-b-1" }, { workspaceId: 3 });
+    queue.enqueue("work", { tag: "ours-2" }, { workspaceId: 1 });
+    queue.start();
+    await queue.idle();
+    queue.stop();
+    expect(maxRunning).toBe(1);
+    expect(order).toEqual(["client-a-1", "ours-1", "client-b-1", "client-a-2", "ours-2", "client-a-3"]);
+  });
+
+  it("a job takes its workspace from its video or clip when none is given", () => {
+    const { db, queue } = makeQueue({ work: async () => undefined });
+    queue.stop();
+    db.prepare("INSERT INTO workspaces (id, name, created_at) VALUES (7, 'Client', '2026-11-14')").run();
+    db.prepare("INSERT INTO sources (id, creator_name, channel_urls, created_at, workspace_id) VALUES (70, 'C', '[]', '2026-11-14', 7)").run();
+    db.prepare("INSERT INTO vods (id, source_id, url, status, created_at) VALUES (700, 70, 'x', 'queued', '2026-11-14')").run();
+    const job = queue.enqueue("work", {}, { vodId: 700 });
+    const plain = queue.enqueue("work", {});
+    const ws = (id: number) => (db.prepare("SELECT workspace_id AS ws FROM jobs WHERE id = ?").get(id) as { ws: number }).ws;
+    expect(ws(job.id)).toBe(7);
+    expect(ws(plain.id)).toBe(1);
   });
 });

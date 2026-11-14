@@ -174,6 +174,19 @@ const TESTERS: Record<IntegrationId, Tester> = {
     await service.accountStats(await service.listAccounts());
     return "Works.";
   },
+
+  // Reads the balance: no charge, and it says whether the key is a test or a live one.
+  async stripe(get) {
+    const key = get("STRIPE_SECRET_KEY");
+    const balance = await ask<{ livemode?: boolean }>("Stripe", "https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${key}` } });
+    return balance.livemode ? "Works: a live key, creators are charged." : "Works: a test key, nothing is charged.";
+  },
+
+  // Lists the sending domains: no email is sent.
+  async "client-signin"(get) {
+    await ask("Resend", "https://api.resend.com/domains", { headers: { Authorization: `Bearer ${get("RESEND_API_KEY")}` } });
+    return "Works.";
+  },
 };
 
 /**

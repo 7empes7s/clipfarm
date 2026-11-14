@@ -4239,6 +4239,9 @@ button.danger {
   border: 1px solid var(--line);
   border-radius: var(--radius-small);
 }
+.ws-list .overdue {
+  color: var(--bad);
+}
 .ws-list li[aria-current="true"] {
   border-color: var(--ink);
   background: var(--sunk);

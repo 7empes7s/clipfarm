@@ -53,6 +53,8 @@ import type { OutputsRepo } from "./creator/outputs.js";
 import { type Creator, parseCreatorAdd } from "./creator/service.js";
 import { parseNewUpload, type UploadsRepo } from "./creator/uploads.js";
 import { parseBrand, parseWorkspaceName, type WorkspacesRepo } from "./workspaces/repo.js";
+import { servicePages } from "./service/pages.js";
+import { type PortalDeps, serviceAdmin, servicePortal, serviceWebhook } from "./service/routes.js";
 
 export interface AppDeps {
   sources: SourcesRepo;
@@ -108,6 +110,8 @@ export interface AppDeps {
   workspaces?: WorkspacesRepo;
   /** Creator mode: own videos in (uploads and links), and the other formats made from them. */
   creator?: { service: Creator; uploads: UploadsRepo; outputs: OutputsRepo };
+  /** Clipping as a service: its public pages, the client portal, Stripe's webhook and the admin's client list. Needs workspaces and creator. */
+  clientService?: Pick<PortalDeps, "service" | "stripe" | "mailer" | "google" | "webhookSecret" | "publicUrl" | "demo" | "now">;
 }
 
 /** What is wrong with the built client at `clientDir`, in plain words, or null when it can be served. */
@@ -166,9 +170,12 @@ export function createApp({
   access,
   workspaces,
   creator,
+  clientService,
 }: AppDeps): express.Express {
   const app = express();
   if (access) app.use(accessGate(access));
+  // Before the JSON parser: Stripe signs the raw body.
+  if (clientService) serviceWebhook(app, clientService);
   app.use(express.json({ limit: "1mb" }));
 
   // The workspace a request is about (the header's switcher sends it); undefined: no scoping.
@@ -185,6 +192,20 @@ export function createApp({
 
   // Open to anyone, and ahead of the app's catch-all, which would answer them with the app shell.
   publicPages(app, supportEmail);
+  if (clientService && workspaces && creator) {
+    servicePages(app, supportEmail, clientService.service.plans);
+    servicePortal(app, {
+      ...clientService,
+      workspaces,
+      sources,
+      vods,
+      clips,
+      publisher,
+      creator: creator.service,
+      direct: groups ? { isolation: groups.isolation, poster: groups.direct } : undefined,
+    });
+    serviceAdmin(app, clientService.service);
+  }
 
   // Open to anyone (see access.ts), so about keys it says only yes or no per connection.
   app.get("/api/health", (_req, res) => {
@@ -867,8 +888,10 @@ export function createApp({
     // Where the platform sends the browser after the sign-in. Open to the internet (see access.ts):
     // only a state we handed out counts, and the answer says nothing but where to go next.
     app.get("/oauth/:platform/callback", async (req, res) => {
+      const forClient = direct.workspaceOfState(req.query.state) !== null;
       const ok = await direct.callback(directPlatform(req.params.platform), req.query.code, req.query.state);
-      res.redirect(`/?connect=${ok ? "ok" : "failed"}#settings/accounts`);
+      // Started in the client portal: back there, not into the team's app.
+      res.redirect(forClient ? `/portal?connect=${ok ? "ok" : "failed"}#accounts` : `/?connect=${ok ? "ok" : "failed"}#settings/accounts`);
     });
   }
 
@@ -1026,6 +1049,14 @@ export function createApp({
   if (clientDir) {
     // Checked per request, not once at startup: a build that finishes (or reruns) after the server
     // started is picked up, and a missing one is said out loud instead of Express's "Cannot GET /".
+    // The client portal is its own page (client/portal.html), with its own sign-in.
+    app.get(["/portal", "/portal/{*rest}"], (_req, res, next) => {
+      if (clientBuildProblem(clientDir) || !existsSync(join(clientDir, "portal.html"))) {
+        res.status(503).type("text/plain").send('The clipfarm app is not built. Run "npm run build", then reload.');
+        return;
+      }
+      res.sendFile("portal.html", { root: clientDir }, (err) => err && !res.headersSent && next(err));
+    });
     app.use(express.static(clientDir));
     app.get("/{*splat}", (_req, res) => {
       if (clientBuildProblem(clientDir)) {
