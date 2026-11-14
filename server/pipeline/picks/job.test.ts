@@ -11,9 +11,14 @@ import { SourcesRepo } from "../../sources/repo.js";
 import { VodsRepo } from "../../vods/repo.js";
 import { pipelineOnFinished } from "../chain.js";
 import { RENDER_JOB } from "../render/job.js";
+import { bucketChat } from "../chat/buckets.js";
+import { seededChat } from "../chat/fake.js";
+import type { ChatBuckets } from "../chat/types.js";
 import { FakeChatClient } from "./fake.js";
 import { PICKS_JOB, picksHandler } from "./job.js";
 import { LlmPicker } from "./llm.js";
+import { LocalPicker } from "./local.js";
+import type { Picker } from "./types.js";
 
 let tmpRoot: string;
 beforeEach(async () => {
@@ -28,7 +33,7 @@ const pick = (start: number, end: number, score: number, over: object = {}) => (
   candidate: 0, start, end, hook: "Wait for it", title: `Pick ${score}`, score, reason: "Loud", layout: "center", flags, ...over,
 });
 
-function setup(answer: unknown, faceCam = false, permission: Parameters<typeof campaignInput>[0] = {}) {
+function setup(answer: unknown, faceCam = false, permission: Parameters<typeof campaignInput>[0] = {}, extra: { picker?: Picker; chat?: ChatBuckets } = {}) {
   const db = openDb(":memory:");
   const sources = new SourcesRepo(db);
   const vods = new VodsRepo(db);
@@ -38,7 +43,7 @@ function setup(answer: unknown, faceCam = false, permission: Parameters<typeof c
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
       [PICKS_JOB]: picksHandler({
-        sources, vods, picks, maxPicks: 10, picker: new LlmPicker(chat),
+        sources, vods, picks, maxPicks: 10, picker: extra.picker ?? new LlmPicker(chat),
       }),
       [RENDER_JOB]: async ({ payload }) => {
         rendered.push((payload as { pickId: number }).pickId);
@@ -59,6 +64,7 @@ function setup(answer: unknown, faceCam = false, permission: Parameters<typeof c
   const loud = new Array<number>(300).fill(-30);
   loud[30] = loud[150] = loud[250] = -5;
   vods.saveLoudness(vod.id, loud);
+  if (extra.chat) vods.saveChat(vod.id, extra.chat);
   return { queue, picks, vod, rendered, chat };
 }
 
@@ -119,5 +125,42 @@ describe("picks job", () => {
     queue.enqueue(PICKS_JOB, { vodId: vod.id }, { vodId: vod.id });
     await queue.idle();
     expect(picks.listForVod(vod.id)).toHaveLength(2);
+  });
+
+  describe("chat spikes", () => {
+    // Loud moments at 30, 150 and 250 s; chat explodes at 200 s, where the audio is quiet.
+    const spike = () => bucketChat(seededChat(300, [{ atSec: 200, messages: 50, emote: "KEKW" }]), 300);
+
+    it("ranks the moment chat exploded first, with the window opening ~30 s before the spike", async () => {
+      const { queue, picks, vod } = setup(null, false, {}, { picker: new LocalPicker(), chat: spike() });
+      queue.enqueue(PICKS_JOB, { vodId: vod.id }, { vodId: vod.id });
+      await queue.idle();
+      const top = picks.listForVod(vod.id).find((p) => p.rank === 1)!;
+      expect(top.startSec).toBeGreaterThanOrEqual(165);
+      expect(top.startSec).toBeLessThanOrEqual(175);
+      expect(top.endSec).toBeGreaterThanOrEqual(195);
+      expect(top.reason).toMatch(/Chat \d+× normal, KEKW burst\.$/);
+    });
+
+    it("lifts an LLM pick on the spike above a better-scored one", async () => {
+      const { queue, picks, vod } = setup({ picks: [pick(20, 45, 90), pick(170, 195, 60)] }, false, {}, { chat: spike() });
+      queue.enqueue(PICKS_JOB, { vodId: vod.id }, { vodId: vod.id });
+      await queue.idle();
+      const stored = picks.listForVod(vod.id);
+      expect(stored.map((p) => [p.startSec, p.rank])).toEqual([[170, 1], [20, 2]]);
+      expect(stored[0]!.score).toBeGreaterThan(90);
+      expect(stored[1]).toMatchObject({ score: 90, reason: "Loud" });
+    });
+
+    it("falls back to the other signals without chat", async () => {
+      const { queue, picks, vod } = setup(null, false, {}, { picker: new LocalPicker() });
+      queue.enqueue(PICKS_JOB, { vodId: vod.id }, { vodId: vod.id });
+      await queue.idle();
+      const stored = picks.listForVod(vod.id);
+      expect(stored.length).toBeGreaterThan(0);
+      const top = stored.find((p) => p.rank === 1)!;
+      expect([30, 150, 250].some((peak) => top.startSec <= peak && peak <= top.endSec)).toBe(true);
+      expect(stored.every((p) => !p.reason.includes("Chat"))).toBe(true);
+    });
   });
 });

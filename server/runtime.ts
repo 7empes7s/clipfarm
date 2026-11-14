@@ -225,7 +225,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
   const liveFinished = liveOnFinished({ repo: liveRepo, picks, sources, notifier });
   const queue: JobQueue = new JobQueue(db, {
     handlers: {
-      [INGEST_JOB]: clientGate(clientService, ingestHandler({ sources, vods, downloader, transcriber: config.transcriber })),
+      [INGEST_JOB]: clientGate(clientService, ingestHandler({ sources, vods, downloader, transcriber: config.transcriber, chat: config.chatSource })),
       [PICKS_JOB]: picksHandler({
         sources,
         vods,
@@ -283,6 +283,7 @@ export function openRuntime(env: NodeJS.ProcessEnv = process.env, opts: { pollMs
     vods,
     queue,
     capturer: config.live.capturer,
+    chatTap: config.live.chatTap,
     system: realSystem,
     notifier,
     mediaDir,

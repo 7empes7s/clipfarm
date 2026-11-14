@@ -4,6 +4,8 @@ import type { JobHandler } from "../../jobs/queue.js";
 import { extractAudio, probeDuration } from "../../tools/ffmpeg.js";
 import type { SourcesRepo } from "../../sources/repo.js";
 import type { VodsRepo } from "../../vods/repo.js";
+import { bucketChat } from "../chat/buckets.js";
+import type { ChatSource } from "../chat/types.js";
 import { measureLoudness } from "../picks/signals.js";
 import type { Transcriber } from "../transcript/types.js";
 import type { AudioDownloader } from "./downloader.js";
@@ -15,6 +17,8 @@ export interface IngestDeps {
   vods: VodsRepo;
   downloader: AudioDownloader;
   transcriber: Transcriber;
+  /** Twitch/Kick chat replay, for chat-spike picks; left out (or no chat for the link), picks use the other signals. */
+  chat?: ChatSource;
 }
 
 /**
@@ -40,6 +44,10 @@ export function ingestHandler(deps: IngestDeps): JobHandler {
     // Loudness spikes help find highlights later; measure them now, while the audio is here.
     progress(0.35, "Measuring loudness");
     deps.vods.saveLoudness(vodId, await measureLoudness(audio, signal));
+    if (deps.chat) {
+      progress(0.37, "Reading chat");
+      deps.vods.saveChat(vodId, await readChat(deps.chat, vod.url, durationSec, signal, vodId));
+    }
 
     deps.vods.setStatus(vodId, "transcribing");
     progress(0.4, "Transcribing");
@@ -52,6 +60,18 @@ export function ingestHandler(deps: IngestDeps): JobHandler {
     });
     deps.vods.saveTranscript(vodId, transcript.words, deps.transcriber.name, transcript.costUsd);
   };
+}
+
+/** The VOD's chat in 10 s buckets. A chat that cannot be read costs the video nothing: picks go on without it. */
+async function readChat(chat: ChatSource, url: string, durationSec: number, signal: AbortSignal, vodId: number) {
+  try {
+    const log = await chat.fetch(url, { durationSec, signal });
+    return log && log.messages.length + log.clips.length > 0 ? bucketChat(log, durationSec) : null;
+  } catch (err) {
+    signal.throwIfAborted();
+    console.warn(`[ingest] vod ${vodId}: the chat could not be read, picking without it: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 /** Marks the video failed when its ingest job ends without success. */

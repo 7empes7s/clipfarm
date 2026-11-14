@@ -644,6 +644,10 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- A VOD's chat replay in 10 s buckets (JSON), for chat-spike picks; NULL when it has no chat.
+  ALTER TABLE vods ADD COLUMN chat TEXT;
+  `,
+  `
   -- Clipping as a service: plans, outside creators (one workspace each), their sign-ins, Stripe's
   -- events (each applied once) and invoices. Jobs carry their workspace, for the fair-share queue.
   CREATE TABLE service_plans (
