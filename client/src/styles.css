@@ -3872,6 +3872,10 @@ button.danger {
 .ws-list {
   list-style: none;
   margin: var(--s3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
 /* Money and Health: a range or grouping picked from pills, a funnel of bars, ranked lists. */
 .seg {
   display: flex;
@@ -4103,6 +4107,7 @@ button.danger {
   flex-wrap: wrap;
   gap: var(--s2);
   margin-top: var(--s2);
+}
 .biz-list li {
   display: grid;
   gap: var(--s1);
