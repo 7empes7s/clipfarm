@@ -622,6 +622,28 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX campaign_payouts_post ON campaign_payouts(post_id);
   `,
   `
+  -- Studio: a non-destructive edit list and look per clip, every export kept as a version, brand templates.
+  ALTER TABLE clips ADD COLUMN cuts TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE clips ADD COLUMN look TEXT;
+  CREATE TABLE clip_versions (
+    id INTEGER PRIMARY KEY,
+    clip_id INTEGER NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+    n INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    duration_sec REAL NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX clip_versions_clip ON clip_versions(clip_id, n);
+  CREATE TABLE brand_templates (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
+  `
   -- The streamer registry: who publicly pays for or allows clipping (with proof), and who has no program.
   CREATE TABLE streamer_registry (
     name TEXT PRIMARY KEY COLLATE NOCASE,

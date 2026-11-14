@@ -13,6 +13,7 @@ import { InboxTab } from "./InboxTab";
 import { tabCounts } from "./review";
 import { SettingsTab } from "./SettingsTab";
 import { StatsTab } from "./StatsTab";
+import { Studio } from "./Studio";
 import { SuggestedSheet } from "./SuggestedSheet";
 import { WatchlistTab } from "./WatchlistTab";
 import { CreatorTab } from "./CreatorTab";
@@ -63,15 +64,15 @@ const TABS = [
   { id: "jobs", label: "Jobs" },
   { id: "stats", label: "Stats" },
 ] as const satisfies readonly { id: IconName; label: string }[];
-/** "rejected" is reached from the inbox, "settings" from the ⋯ in the header: neither is in the tab bar. */
-type Tab = (typeof TABS)[number]["id"] | "rejected" | "settings";
+/** "rejected" is reached from the inbox, "settings" from the ⋯ in the header, "studio" from a clip: none is in the tab bar. */
+type Tab = (typeof TABS)[number]["id"] | "rejected" | "settings" | "studio";
 // Older links keep working.
 const ALIASES: Record<string, Tab> = { clips: "approved" };
 
 function tabFromHash(): Tab {
   // "#dashboard/outputs" opens a section of the dashboard.
   const h = window.location.hash.slice(1).split("/")[0]!;
-  if (h === "rejected" || h === "settings" || TABS.some((t) => t.id === h)) return h as Tab;
+  if (h === "rejected" || h === "settings" || h === "studio" || TABS.some((t) => t.id === h)) return h as Tab;
   return ALIASES[h] ?? "inbox";
 }
 
@@ -152,8 +153,11 @@ export function App() {
   const closeFaceCam = useCallback(() => setFaceCamFor(null), []);
   const counts = tabCounts(clips, sources, jobs);
 
+  // Where × in the Studio goes back to: the screen it was opened from.
+  const beforeStudio = useRef(window.location.hash.startsWith("#studio") ? "#inbox" : window.location.hash || "#inbox");
   useEffect(() => {
     const onHash = () => {
+      if (!window.location.hash.startsWith("#studio")) beforeStudio.current = window.location.hash || "#inbox";
       setTab(tabFromHash());
       setDashView(dashViewFromHash());
       setSub(subFromHash());
@@ -209,7 +213,7 @@ export function App() {
         <p className="tagline">Streams in, vertical clips out. Only from creators who said yes.</p>
       </div>
 
-      <main className="page" key={workspace}>
+      <main className={tab === "studio" ? "page studio-page" : "page"} key={workspace}>
       {loadError && (
         <p className="error" role="alert">
           Could not reach the server: {loadError}
@@ -224,6 +228,16 @@ export function App() {
       {tab === "calendar" && <CalendarTab sub={sub} sources={sources} />}
       {tab === "campaigns" && <CampaignsTab sources={sources} sub={sub} />}
       {tab === "settings" && <SettingsTab focus={sub} />}
+      {tab === "studio" && (
+        <Studio
+          key={sub}
+          clipId={Number(sub)}
+          onClose={() => {
+            window.location.hash = beforeStudio.current;
+            void refresh();
+          }}
+        />
+      )}
       {tab === "watchlist" && <WatchlistTab sources={sources} onQueued={refresh} />}
       {tab === "creator" && <CreatorTab sources={sources} vods={vods} onAdded={() => void refresh()} />}
 

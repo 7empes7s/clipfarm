@@ -101,6 +101,8 @@ export interface PublisherDeps {
   covers?: (clipId: number) => { id: number; label: string; url: string }[];
   /** The stream a clip was cut from, to match it to an account's niche. */
   vodTitle?: (vodId: number) => string | null;
+  /** The brand template's hashtags for a posting account (Studio templates); none when left out. */
+  brandTags?: (accountId: string) => string[];
   /** Auto mode: why a campaign takes no more clips today (its share is used, it is paused), or null. */
   campaignLimit?: (permission: Permission, clipId: number) => string | null;
   /** Parts of a clip made by AI ("the chosen thumbnail"): a campaign that bans AI does not take them. */
@@ -197,8 +199,9 @@ export class Publisher {
     return accounts;
   }
 
-  private caption(copy: Copy, source: Source, permission: Permission, platform: Platform): string {
+  private caption(copy: Copy, source: Source, permission: Permission, platform: Platform, accountId?: string): string {
     return buildCaption({
+      brandTags: accountId ? (this.deps.brandTags?.(accountId) ?? []) : [],
       title: copy.title,
       creatorName: source.creatorName,
       channelUrl: source.channelUrls[0] ?? null,
@@ -913,7 +916,7 @@ export class Publisher {
       const item: PublishItem = {
         account,
         title: saved?.title ?? copy.title,
-        caption: saved ? composeCaption(saved) : this.caption(copy, source, permission, account.platform),
+        caption: saved ? composeCaption(saved) : this.caption(copy, source, permission, account.platform, account.id),
         when: when === null && at.getTime() === now.getTime() ? null : at,
         paidPromotion: permission.kind === "whop-campaign",
       };
