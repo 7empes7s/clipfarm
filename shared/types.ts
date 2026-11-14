@@ -1,5 +1,6 @@
 // Types and constants shared by the server and the gallery client.
 import type { CampaignSummary, Recommendation } from "./growth.js";
+import type { AiGate, BrandTemplate, ClipLook, TimeRange } from "./studio.js";
 
 /**
  * "experiment": a test of what the platforms do to clips posted without the creator's permission.
@@ -57,7 +58,7 @@ export interface CampaignRules {
   budgetLeftUsd: number | null;
   /** The clip has to be submitted by hand within 30 minutes of posting (Whop and Content Rewards: yes unless the page says otherwise). */
   manualSubmit: boolean;
-  /** The campaign bans AI-made content (AI hooks, titles, thumbnails, voices): clipfarm's AI features stay off for it. */
+  /** The campaign bans AI-made content (AI hooks, titles, thumbnails, voices): clipfarm's AI features (and the Studio's) stay off for it. */
   aiBanned?: boolean;
 }
 
@@ -412,6 +413,10 @@ export interface Clip {
   masterDurationSec: number;
   /** Caption words, timed in master seconds. */
   captionWords: Word[];
+  /** Studio edit list: ranges (master seconds) cut out of [startSec, endSec]. The master is never changed. */
+  cuts: TimeRange[];
+  /** Caption style, crop, watermark and outro (Studio). */
+  look: ClipLook;
   effects: ClipEffects;
   /** Null until a render has been checked (clips made before the check, demo clips). */
   quality: ClipQuality | null;
@@ -436,6 +441,52 @@ export interface ClipLive {
   momentAt: string;
   /** Seconds from the moment to the clip landing in the Inbox. */
   latencySec: number;
+}
+
+/** One export of a clip, kept so it can be brought back. Version 0 is the clip as it first came. */
+export interface ClipVersion {
+  id: number;
+  clipId: number;
+  n: number;
+  label: string;
+  durationSec: number;
+  /** Plays this version. */
+  videoUrl: string;
+  /** The one the clip uses now. */
+  current: boolean;
+  createdAt: string;
+}
+
+/** What the Studio exports: the window, the edit list, the look and the words on screen. */
+export interface StudioEditInput {
+  title: string;
+  hook: string;
+  layout: ClipLayout;
+  startSec: number;
+  endSec: number;
+  cuts: TimeRange[];
+  effects: ClipEffects;
+  look: ClipLook;
+}
+
+/** One part of "Why this clip": 0..100, or null when it was not measured for this clip. */
+export interface ScorePart {
+  key: "hook" | "payoff" | "energy" | "chat" | "length";
+  label: string;
+  value: number | null;
+  note: string;
+}
+
+/** Everything the Studio screen needs for one clip. */
+export interface StudioInfo {
+  clip: Clip;
+  source: Source;
+  breakdown: ScorePart[];
+  ai: AiGate;
+  templates: BrandTemplate[];
+  versions: ClipVersion[];
+  /** The posting accounts a template can be applied by. */
+  accounts: { id: string; name: string; platform: Platform }[];
 }
 
 export interface ClipEditInput {

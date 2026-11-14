@@ -204,6 +204,11 @@ export function ClipsTab({
                         </button>
                       </>
                     )}
+                    {clip.postCount === 0 && (
+                      <a className="button" href={`#studio/${clip.id}`}>
+                        Studio
+                      </a>
+                    )}
                     {clip.status !== "rejected" && clip.postCount === 0 && (
                       <button type="button" onClick={() => void act(() => api.rejectClip(clip.id))}>
                         Reject

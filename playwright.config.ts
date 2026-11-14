@@ -15,7 +15,7 @@ export default defineConfig({
     {
       name: "desktop",
       testMatch:
-        /(review|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation|zzzz-proof|zzzz-submit)\.spec\.ts/,
+        /(review|studio|stats-dashboard|suggested|postingAccounts|trends|x-campaign-import|y-design|z-experiment|zz-growth|zz-live|zzz-google|zzz-isolation|zzzz-proof|zzzz-submit)\.spec\.ts/,
       dependencies: ["phone"],
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
     },

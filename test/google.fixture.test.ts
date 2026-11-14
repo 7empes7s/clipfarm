@@ -84,8 +84,8 @@ describe("thumbnails (faked Gemini image, real ffmpeg)", () => {
     const video = join(tmpRoot, "clip.mp4");
     await generateSample(video, 3, undefined, "540x960");
     const clip = clips.create({ sourceId: source.id, vodId: null, title: "Kai jumps", filePath: video, durationSec: 3, hook: "He actually JUMPED" });
-    const make = async () => {
-      const job = queue.enqueue(THUMBS_JOB, { clipId: clip.id }, { clipId: clip.id, maxAttempts: 1 });
+    const make = async (noAi = false) => {
+      const job = queue.enqueue(THUMBS_JOB, { clipId: clip.id, noAi }, { clipId: clip.id, maxAttempts: 1 });
       await queue.idle();
       const done = queue.list().find((j) => j.id === job.id)!;
       expect(done.error).toBeNull();
@@ -134,6 +134,13 @@ describe("thumbnails (faked Gemini image, real ffmpeg)", () => {
     // Removing the creator takes the thumbnails with it.
     sources.remove(source.id);
     expect(await readdir(join(mediaDir, "thumbs"))).toEqual([]);
+  });
+
+  it("a campaign that bans AI content gets a frame of the clip and Gemini is never asked", { timeout: 60_000 }, async () => {
+    const { clip, thumbs, gemini, make } = await setup();
+    expect((await make(true)).status).toBe("done");
+    expect(gemini.imageCalls).toHaveLength(0);
+    expect(thumbs.listForClip(clip.id).map((o) => [o.label, o.ai])).toEqual([["Frame from the clip", false]]);
   });
 
   it("when Google fails the job does not: the frame is used", { timeout: 60_000 }, async () => {
