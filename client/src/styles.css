@@ -3995,7 +3995,7 @@ button.danger {
 /* Timeline: filmstrip over waveform, the kept window between two marigold handles. The side room
    keeps a handle at either end (and its wider touch area) inside the screen. */
 .timeline {
-  padding: 0 var(--s3);
+  padding: 0 var(--s5);
   overflow-x: clip;
 }
 .timeline-track {
@@ -4050,9 +4050,9 @@ button.timeline-handle {
   position: absolute;
   top: -6px;
   bottom: -6px;
-  width: 18px;
+  width: 24px;
   min-height: 0;
-  margin-left: -9px;
+  margin-left: -12px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -4063,7 +4063,7 @@ button.timeline-handle {
 button.timeline-handle::before {
   content: "";
   position: absolute;
-  inset: 0 -3px;
+  inset: 0 -10px;
 }
 button.timeline-handle::after {
   content: "";
