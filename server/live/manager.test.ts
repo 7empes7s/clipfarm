@@ -16,6 +16,7 @@ import { Publisher } from "../publish/publisher.js";
 import { PostsRepo } from "../publish/repo.js";
 import { SourcesRepo } from "../sources/repo.js";
 import { parseWatchedCreator, WatchlistRepo } from "../sources/watchlist/repo.js";
+import { FakeChatTap } from "../pipeline/chat/fake.js";
 import { VodsRepo } from "../vods/repo.js";
 import { FakeLiveCapturer } from "./capturer.js";
 import { LIVE_SEGMENT_JOB, liveOnFinished } from "./job.js";
@@ -36,7 +37,7 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-function setup(opts: { maxSegments?: number; maxBacklog?: number; maxStreams?: number } = {}) {
+function setup(opts: { maxSegments?: number; maxBacklog?: number; maxStreams?: number; chatTap?: FakeChatTap } = {}) {
   let now = BEFORE;
   const clock = () => now;
   const db = openDb(":memory:");
@@ -63,6 +64,7 @@ function setup(opts: { maxSegments?: number; maxBacklog?: number; maxStreams?: n
     vods,
     queue,
     capturer,
+    chatTap: opts.chatTap,
     system: { freeDiskBytes: async () => system.disk, memAvailableBytes: async () => system.mem },
     notifier,
     mediaDir,
@@ -300,6 +302,29 @@ describe("rolling and falling behind", () => {
     // Still live: a new recording picked up, without a second notification.
     expect(t.repo.lastCapture(kai)).toMatchObject({ status: "recording" });
     expect(t.notifier.sent).toHaveLength(1);
+  });
+});
+
+describe("live chat", () => {
+  it("listens to the stream's chat while a segment records and stores it before the segment's job is queued", async () => {
+    const tap = new FakeChatTap({ messages: [{ sec: 0.5, user: "a", text: "KEKW" }, { sec: 1, user: "b", text: "W" }], clips: [] });
+    const t = setup({ maxSegments: 1, chatTap: tap });
+    t.at(AFTER);
+    t.watch("Kai");
+    await t.look();
+    const [capture] = t.repo.activeCaptures();
+    expect(tap.listened).toEqual([{ platform: "twitch", handle: "kai" }]);
+    expect(t.vods.chat(capture!.vodId)).toMatchObject({ bucketSec: 10, messages: [2], emotes: [2] });
+    expect(t.queue.list().map((j) => j.type)).toEqual([LIVE_SEGMENT_JOB]);
+  });
+
+  it("records as before without chat", async () => {
+    const t = setup({ maxSegments: 1, chatTap: new FakeChatTap(null) });
+    t.at(AFTER);
+    t.watch("Kai");
+    await t.look();
+    expect(t.vods.chat(t.repo.activeCaptures()[0]!.vodId)).toBeNull();
+    expect(t.queue.list()).toHaveLength(1);
   });
 });
 

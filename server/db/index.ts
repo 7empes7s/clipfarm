@@ -644,6 +644,10 @@ export const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- A VOD's chat replay in 10 s buckets (JSON), for chat-spike picks; NULL when it has no chat.
+  ALTER TABLE vods ADD COLUMN chat TEXT;
+  `,
+  `
   -- The streamer registry: who publicly pays for or allows clipping (with proof), and who has no program.
   CREATE TABLE streamer_registry (
     name TEXT PRIMARY KEY COLLATE NOCASE,

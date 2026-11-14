@@ -68,7 +68,8 @@ export class TwitchClient implements PlatformClient {
     return res.access_token;
   }
 
-  private async helix<T>(path: string, signal?: AbortSignal): Promise<T> {
+  /** A Helix call with the app token (also used for a VOD's community clips). */
+  async helix<T>(path: string, signal?: AbortSignal): Promise<T> {
     const token = await this.accessToken(signal);
     try {
       return await fetchJson<T>(this.doFetch, "Twitch", `${HELIX}${path}`, {
